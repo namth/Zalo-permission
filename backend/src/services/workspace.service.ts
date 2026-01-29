@@ -1,5 +1,5 @@
 import { query } from '@/lib/db';
-import { executeQuery } from '@/lib/neo4j';
+import { executeQuery } from '@/lib/db';
 import { logAuditAction } from './audit.service';
 import { getUserById } from './user.service';
 

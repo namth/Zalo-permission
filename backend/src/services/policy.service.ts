@@ -1,4 +1,4 @@
-import { executeQuery } from '@/lib/neo4j';
+import { executeQuery } from '@/lib/db';
 import { getZaloGroupByThreadId } from './workspace.service';
 import { getUserByZaloId, getUserRoleInWorkspace } from './user.service';
 import { getWorkspaceAgentConfig } from './agent.service';

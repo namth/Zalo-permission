@@ -1,4 +1,4 @@
-import { executeQuery } from '@/lib/neo4j';
+import { executeQuery } from '@/lib/db';
 import { query } from '@/lib/db';
 import { ZaloUserNode, UserProfile } from '@/types';
 
