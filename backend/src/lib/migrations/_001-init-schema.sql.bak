@@ -1,0 +1,47 @@
+-- Create users table (NEW - replaces old user_profile)
+-- This table stores user profile information like a contact list
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  zalo_id VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  address TEXT,
+  gender VARCHAR(20),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- DEPRECATED: Keep user_profile for backward compatibility
+-- Will be migrated to users table in 002-add-users-table.sql
+CREATE TABLE IF NOT EXISTS user_profile (
+  id SERIAL PRIMARY KEY,
+  zalo_user_id VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20),
+  note TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create workspace_config table
+CREATE TABLE IF NOT EXISTS workspace_config (
+  id SERIAL PRIMARY KEY,
+  workspace_id VARCHAR(255) UNIQUE NOT NULL,
+  default_agent VARCHAR(255) NOT NULL,
+  system_prompt TEXT NOT NULL,
+  status VARCHAR(50) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for users table
+CREATE INDEX IF NOT EXISTS idx_users_zalo_id ON users(zalo_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+
+-- Create indexes for legacy user_profile table
+CREATE INDEX IF NOT EXISTS idx_user_profile_zalo_id ON user_profile(zalo_user_id);
+
+-- Create indexes for workspace_config table
+CREATE INDEX IF NOT EXISTS idx_workspace_config_id ON workspace_config(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_config_status ON workspace_config(status);

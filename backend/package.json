@@ -1,0 +1,34 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Zalo Permission Backend - Next.js API",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:init": "ts-node src/lib/init-db.ts",
+    "db:migrate": "ts-node src/lib/migrations/run-migrations.ts",
+    "db:seed": "ts-node src/lib/seed.ts",
+    "db:schema": "ts-node src/lib/neo4j-schema.ts"
+  },
+  "dependencies": {
+    "neo4j-driver": "4.4.11",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1",
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^3.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.2",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.32"
+  }
+}

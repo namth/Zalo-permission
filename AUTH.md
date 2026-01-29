@@ -1,0 +1,445 @@
+# 🔐 Authentication & Authorization Policy
+
+**Purpose:** Định nghĩa cách hệ thống kiểm tra quyền hạn khi nhận message từ Zalo
+
+---
+
+## 1. Architecture Overview
+
+```
+Zalo Message
+    ↓
+[Webhook] → Extract: zalo_thread_id, zalo_user_id
+    ↓
+[Backend] → resolveWorkspaceContext()
+    ├─ Neo4j: Resolve ZaloGroup → Workspace (BINDS_TO)
+    ├─ Neo4j: Check ZaloUser & MEMBER_OF Workspace
+    ├─ Neo4j: Check Workspace & Agent (USES)
+    └─ SQL: Get workspace config & prompts
+    ↓
+[Response] → allowed, role, agent_key, system_prompt
+    ↓
+[n8n] → Execute Agent with workspace context
+```
+
+---
+
+## 2. ZaloUser Identification & Creation
+
+### 2.1 Identify ZaloUser
+
+**Input:** `zalo_user_id` từ Zalo message
+
+**Query (Neo4j):**
+
+```cypher
+MATCH (u:ZaloUser {zalo_user_id: $zalo_user_id})
+RETURN u
+```
+
+### 2.2 Auto-Create ZaloUser (if not exists)
+
+**Logic:**
+
+```
+IF zalouser exists
+  THEN return existing user
+ELSE
+  CREATE new ZaloUser with:
+    - zalo_user_id: from message
+    - name: null (empty)
+    - created_at: now()
+  THEN return new user
+```
+
+**Create Query (Neo4j):**
+
+```cypher
+CREATE (u:ZaloUser {
+  zalo_user_id: $zalo_user_id,
+  name: $name,
+  created_at: datetime()
+})
+RETURN u
+```
+
+**SQL:** Tạo record trong `user_profile` (optional, dùng khi user update profile)
+
+---
+
+## 3. Workspace Resolution & Membership Validation
+
+### 3.1 Resolve ZaloGroup → Workspace
+
+**Query (Neo4j):**
+
+```cypher
+MATCH (zg:ZaloGroup {zalo_thread_id: $zalo_thread_id})
+       -[:BINDS_TO]->
+       (w:Workspace)
+RETURN w
+```
+
+**If not found:**
+- Return `allowed: false`
+- Error: `WORKSPACE_NOT_FOUND`
+
+### 3.2 Check ZaloUser is Member of Workspace
+
+**Query (Neo4j):**
+
+```cypher
+MATCH (u:ZaloUser {zalo_user_id: $zalo_user_id})
+       -[rel:MEMBER_OF]->
+       (w:Workspace)
+RETURN rel.role, rel.joined_at
+```
+
+**Scenarios:**
+
+| Case | Result | Action |
+|------|--------|--------|
+| ZaloUser + Workspace relationship exists | MEMBER | Continue |
+| ZaloUser exists but not member | NOT MEMBER | Return allowed: false |
+| ZaloUser doesn't exist | NOT EXISTS | Create user, then NOT MEMBER → false |
+
+---
+
+## 4. Role-Based Access Control (RBAC)
+
+### 4.1 Role Types
+
+```
+User
+  ├─ admin
+  │   └─ Full access to all tools & commands
+  ├─ member
+  │   └─ Access to limited tools
+  └─ guest (future)
+      └─ View-only access
+```
+
+### 4.2 Role from Relationship
+
+**Query (Neo4j):**
+
+```cypher
+MATCH (u:User {zalo_id: $zalo_user_id})
+       -[rel:MEMBER_OF]->
+       (g:Group {zalo_thread_id: $zalo_thread_id})
+RETURN rel.role
+```
+
+**Return in Response:**
+
+```json
+{
+  "role": "admin"  // or "member"
+}
+```
+
+### 4.3 Tool Access by Role (Passed to n8n)
+
+n8n sẽ use `role` để filter tools & actions:
+
+```
+role = "admin"
+  → Allow: agent_support, agent_finance, admin_tools, all actions
+  
+role = "member"
+  → Allow: agent_support (limited features)
+  → Deny: agent_finance, admin_tools, restricted actions
+```
+
+**Note:** Role luôn lưu trên MEMBER_OF relationship, không phải trên User node
+
+---
+
+## 5. Agent & Config Resolution
+
+### 5.1 Get Agent Assigned to Workspace
+
+**Query (Neo4j):**
+
+```cypher
+MATCH (w:Workspace)
+       -[:USES]->
+       (a:Agent)
+WHERE w.id = $workspace_id
+RETURN a.key
+```
+
+**Result:** `agent_key` = "agent_support" (or other agents)
+
+### 5.2 Get Workspace Configuration
+
+**Query (SQL):**
+
+```sql
+SELECT 
+  default_agent,
+  system_prompt,
+  status
+FROM workspace_config
+WHERE workspace_id = $workspace_id
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `default_agent` | string | Which agent to use |
+| `system_prompt` | text | Instruction prompt |
+| `status` | string | active \| disabled |
+
+### 5.3 Check Workspace Status
+
+**Logic:**
+
+```
+IF status = "disabled"
+  THEN return allowed: false, status: "disabled"
+ELSE
+  THEN return allowed: true, status: "active"
+```
+
+---
+
+## 6. Complete Workspace Context Resolution Flow
+
+```
+┌──────────────────────────────────────┐
+│ Input: zalo_thread_id, zalo_user_id  │
+└──────────────┬───────────────────────┘
+               ↓
+┌──────────────────────────────────────┐
+│ 1. Validate input parameters         │
+│    - Exist & not empty               │
+└──────────────┬───────────────────────┘
+               ↓
+┌──────────────────────────────────────┐
+│ 2. Query ZaloGroup by zalo_thread_id │
+│    (Neo4j)                            │
+└──────────────┬───────────────────────┘
+               ↓
+┌──────────────────────────────────────┐
+│ 3. Resolve Workspace via BINDS_TO    │
+│    (Neo4j)                            │
+└──────────────┬───────────────────────┘
+               ↓
+        Workspace exists?
+       /              \
+     NO               YES
+     ↓                ↓
+   Error    ┌────────────────────────┐
+            │ 4. Get/Create ZaloUser │
+            │    (Neo4j)             │
+            └────────┬───────────────┘
+                     ↓
+            ┌────────────────────────┐
+            │ 5. Check MEMBER_OF     │
+            │    Workspace           │
+            └────────┬───────────────┘
+                     ↓
+              Is Member?
+            /            \
+          NO             YES
+          ↓               ↓
+       allowed:false  ┌──────────────┐
+                      │ 6. Get Role  │
+                      │ from rel attr │
+                      └───────┬──────┘
+                              ↓
+                      ┌──────────────────┐
+                      │ 7. Get Agent     │
+                      │ from USES rel    │
+                      │ (Workspace)      │
+                      └───────┬──────────┘
+                              ↓
+                      ┌──────────────────┐
+                      │ 8. Get Config    │
+                      │    from SQL      │
+                      │ (workspace_config│
+                      └───────┬──────────┘
+                              ↓
+                      ┌──────────────────┐
+                      │ 9. Check Status  │
+                      │ (active/disabled)│
+                      └───────┬──────────┘
+                              ↓
+        Status = disabled?
+           /            \
+         YES            NO
+         ↓              ↓
+    allowed:false    allowed:true
+    status:disabled
+                      ↓
+        ┌──────────────────────────────┐
+        │ Return workspace context     │
+        │ {                            │
+        │   allowed: true,             │
+        │   agent_key,                 │
+        │   role,                      │
+        │   system_prompt,             │
+        │   status: "active"           │
+        │ }                            │
+        └──────────────────────────────┘
+```
+
+---
+
+## 7. Database Schema - Relationships
+
+### Neo4j Schema
+
+```cypher
+// ZaloUser Node
+(:ZaloUser {
+  zalo_user_id: STRING UNIQUE,  // Primary identifier
+  name: STRING,
+  created_at: TIMESTAMP
+})
+
+// ZaloGroup Node (Channel)
+(:ZaloGroup {
+  zalo_thread_id: STRING UNIQUE  // Primary identifier
+})
+
+// Workspace Node
+(:Workspace {
+  id: STRING UNIQUE,             // Primary identifier
+  name: STRING,
+  type: STRING,                  // company | team | personal
+  created_at: TIMESTAMP
+})
+
+// Agent Node (Service Identity)
+(:Agent {
+  key: STRING UNIQUE,            // agent_support, agent_finance
+  type: "ai_agent"
+})
+
+// BINDS_TO Relationship (Channel → Workspace)
+(ZaloGroup)-[:BINDS_TO]->(Workspace)
+
+// MEMBER_OF Relationship (User → Workspace)
+(ZaloUser)-[:MEMBER_OF {
+  role: STRING,       // "admin" | "member"
+  joined_at: TIMESTAMP
+}]->(Workspace)
+
+// USES Relationship (Workspace → Agent)
+(Workspace)-[:USES]->(Agent)
+```
+
+### SQL Schema
+
+```sql
+-- user_profile table (Optional metadata)
+CREATE TABLE user_profile (
+  id SERIAL PRIMARY KEY,
+  zalo_user_id VARCHAR UNIQUE,
+  phone VARCHAR,
+  note TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- workspace_config table
+CREATE TABLE workspace_config (
+  id SERIAL PRIMARY KEY,
+  workspace_id VARCHAR UNIQUE,
+  default_agent VARCHAR,
+  system_prompt TEXT,
+  status VARCHAR,  -- "active" | "disabled"
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+```
+
+---
+
+## 8. Error Scenarios
+
+### Scenario 1: ZaloUser is new
+
+```
+Input: zalo_user_id = "new_user_123", zalo_thread_id = "zalo_group_1"
+
+Flow:
+1. Resolve ZaloGroup → Workspace → FOUND (workspace_w1)
+2. Query ZaloUser → NOT FOUND
+3. Create ZaloUser (auto)
+4. Check MEMBER_OF Workspace → NOT FOUND
+5. Return: allowed: false, error: USER_NOT_MEMBER
+```
+
+### Scenario 2: ZaloUser is member but workspace is disabled
+
+```
+Input: zalo_user_id = "user_1", zalo_thread_id = "zalo_group_disabled"
+
+Flow:
+1. Resolve ZaloGroup → Workspace → FOUND (workspace_disabled)
+2. Query ZaloUser → FOUND
+3. Check MEMBER_OF → FOUND (role: member)
+4. Get Agent → FOUND
+5. Get Workspace Config → status: "disabled"
+6. Return: allowed: false, status: "disabled"
+```
+
+### Scenario 3: Everything OK - Admin user
+
+```
+Input: zalo_user_id = "admin_user", zalo_thread_id = "zalo_group_1"
+
+Flow:
+1. Resolve ZaloGroup → Workspace → FOUND (workspace_w1)
+2. Query ZaloUser → FOUND
+3. Check MEMBER_OF → FOUND (role: admin)
+4. Get Agent → FOUND (agent_support)
+5. Get Workspace Config → status: "active", system_prompt: "..."
+6. Return: 
+   {
+     "allowed": true,
+     "role": "admin",
+     "agent_key": "agent_support",
+     "system_prompt": "...",
+     "status": "active"
+   }
+```
+
+---
+
+## 9. Future Security Enhancements
+
+- [ ] API Key authentication
+- [ ] Rate limiting per group
+- [ ] Audit logging (who accessed what)
+- [ ] User permissions granularity (per-tool level)
+- [ ] Session management
+- [ ] IP whitelisting for Zalo webhook
+- [ ] Signature verification (Zalo webhook)
+
+---
+
+## 10. Implementation Checklist
+
+- [ ] Implement ZaloUser creation logic
+- [ ] Implement ZaloGroup → Workspace resolution (BINDS_TO)
+- [ ] Implement Workspace lookup
+- [ ] Implement ZaloUser MEMBER_OF Workspace check
+- [ ] Implement role extraction
+- [ ] Implement Agent resolution (Workspace USES)
+- [ ] Implement Workspace Config lookup (SQL)
+- [ ] Implement status check
+- [ ] Error handling for all cases
+- [ ] Logging & monitoring
+- [ ] Unit tests for each step
+- [ ] Integration tests with Zalo webhook
+
+---
+
+**Last Updated:** 17/01/2026  
+**Version:** 1.0.0  
+**Author:** Design Phase - Implementation pending
