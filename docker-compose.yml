@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: n8n-postgres
+    container_name: plutus-postgres
     restart: always
     environment:
       POSTGRES_USER: plutusr
@@ -39,7 +39,7 @@ services:
       - postgres
       - neo4j
     ports:
-      - "3000:3000"
+      - "7140:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s

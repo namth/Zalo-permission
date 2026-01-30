@@ -1,43 +1,187 @@
 #!/bin/bash
 # Initialize database structures and test data
 
+echo "=== Creating PostgreSQL Database and User ==="
+docker exec n8n-postgres psql -U postgres << 'EOF'
+CREATE DATABASE IF NOT EXISTS plutusdb;
+CREATE USER IF NOT EXISTS plutusr WITH PASSWORD 'Matkhaumoi2@@';
+GRANT ALL PRIVILEGES ON DATABASE plutusdb TO plutusr;
+EOF
+
+echo "=== Initializing PostgreSQL Schema ==="
+docker exec n8n-postgres psql -U plutusr -d plutusdb << 'EOF'
+
+-- ============================================
+-- WORKSPACE-BASED PERMISSION SYSTEM V3
+-- Fresh schema with simplified structure
+-- ============================================
+
+-- 1. USER_PROFILE (Contact List / Danh bạ)
+CREATE TABLE IF NOT EXISTS user_profile (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  zalo_id VARCHAR(255) UNIQUE NOT NULL,
+  full_name VARCHAR(255),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  gender VARCHAR(20),
+  note TEXT,
+  status VARCHAR(50) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profile_zalo_id ON user_profile(zalo_id);
+
+-- 2. WORKSPACES (Central Permission Unit)
+CREATE TABLE IF NOT EXISTS workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'active',
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspaces_status ON workspaces(status);
+
+-- 3. ZALO_GROUPS (Entry Point)
+CREATE TABLE IF NOT EXISTS zalo_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  thread_id VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_thread_id ON zalo_groups(thread_id);
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_workspace_id ON zalo_groups(workspace_id);
+
+-- 4. AGENTS (Global Agent Definitions)
+CREATE TABLE IF NOT EXISTS agents (
+  key VARCHAR(100) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. WORKSPACE_AGENT_CONFIG (Agent Config per Workspace)
+CREATE TABLE IF NOT EXISTS workspace_agent_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  agent_key VARCHAR(100) NOT NULL,
+  system_prompt TEXT,
+  temperature FLOAT DEFAULT 0.7,
+  max_tokens INT DEFAULT 2000,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_key) REFERENCES agents(key) ON DELETE RESTRICT,
+  UNIQUE(workspace_id, agent_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_agent_config_workspace ON workspace_agent_config(workspace_id);
+
+-- 6. WORKSPACE_USER_ROLES (Role per User in Workspace)
+CREATE TABLE IF NOT EXISTS workspace_user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  role VARCHAR(50) NOT NULL,
+  assigned_by UUID,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by) REFERENCES user_profile(id) ON DELETE SET NULL,
+  UNIQUE(workspace_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_user_roles_workspace ON workspace_user_roles(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_user_roles_user ON workspace_user_roles(user_id);
+
+-- 7. ACCOUNTS (Business Systems)
+CREATE TABLE IF NOT EXISTS accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  reference_id VARCHAR(255),
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_workspace ON accounts(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
+
+-- 8. AUDIT_LOGS (Complete Audit Trail)
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID,
+  user_id UUID,
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_id VARCHAR(255),
+  old_value JSONB,
+  new_value JSONB,
+  ip_address VARCHAR(45),
+  status VARCHAR(20) DEFAULT 'SUCCESS',
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace ON audit_logs(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+-- ============================================
+-- INSERT TEST DATA
+-- ============================================
+
+-- Insert test agents
+INSERT INTO agents (key, name, description) VALUES
+  ('agent_support', 'Support Agent', 'Customer support AI agent')
+ON CONFLICT DO NOTHING;
+
+-- Insert test workspace
+INSERT INTO workspaces (name, status, description) VALUES
+  ('workspace_1', 'active', 'Test workspace')
+ON CONFLICT DO NOTHING;
+
+-- Insert test Zalo group
+INSERT INTO zalo_groups (workspace_id, thread_id, name) 
+SELECT w.id, 'test_group_1', 'Test Group'
+FROM workspaces w WHERE w.name = 'workspace_1'
+ON CONFLICT DO NOTHING;
+
+-- Insert test user
+INSERT INTO user_profile (zalo_id, full_name, email, phone, status) VALUES
+  ('test_user_admin', 'Test Admin', 'admin@test.com', '0123456789', 'active')
+ON CONFLICT DO NOTHING;
+
+-- Assign role
+INSERT INTO workspace_user_roles (workspace_id, user_id, role)
+SELECT w.id, u.id, 'admin'
+FROM workspaces w, user_profile u
+WHERE w.name = 'workspace_1' AND u.zalo_id = 'test_user_admin'
+ON CONFLICT DO NOTHING;
+
+-- Configure workspace agent
+INSERT INTO workspace_agent_config (workspace_id, agent_key, system_prompt, temperature, max_tokens)
+SELECT w.id, 'agent_support', 'You are a support agent', 0.7, 2000
+FROM workspaces w WHERE w.name = 'workspace_1'
+ON CONFLICT DO NOTHING;
+
+EOF
+
 echo "=== Initializing Neo4j ==="
 docker exec plutus-neo4j cypher-shell \
   -u neo4j -p "$NEO4J_PASSWORD" \
   -f /scripts/neo4j-init.cypher
-
-echo "=== Initializing PostgreSQL ==="
-docker exec plutus-postgres psql \
-  -U plutusr -d plutusdb << 'EOF'
--- Create tables
-CREATE TABLE IF NOT EXISTS user_profile (
-  id SERIAL PRIMARY KEY,
-  zalo_user_id VARCHAR UNIQUE,
-  name VARCHAR,
-  phone VARCHAR,
-  note TEXT,
-  created_at TIMESTAMP DEFAULT now(),
-  updated_at TIMESTAMP DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS workspace_config (
-  id SERIAL PRIMARY KEY,
-  workspace_id VARCHAR UNIQUE,
-  agent_key VARCHAR,
-  system_prompt TEXT,
-  status VARCHAR DEFAULT 'active',
-  created_at TIMESTAMP DEFAULT now(),
-  updated_at TIMESTAMP DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_zalo ON user_profile(zalo_user_id);
-CREATE INDEX IF NOT EXISTS idx_workspace ON workspace_config(workspace_id);
-
--- Insert test data (optional)
-INSERT INTO workspace_config (workspace_id, agent_key, system_prompt, status)
-VALUES ('workspace_1', 'agent_support', 'You are a support agent', 'active')
-ON CONFLICT (workspace_id) DO NOTHING;
-
-EOF
 
 echo "=== Database initialization complete ==="
