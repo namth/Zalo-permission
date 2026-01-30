@@ -1,14 +1,12 @@
 services:
   postgres:
-    image: postgres:15
-    container_name: plutus-postgres
+    image: postgres:15-alpine
+    container_name: n8n-postgres
     restart: always
     environment:
       POSTGRES_USER: plutusr
       POSTGRES_PASSWORD: ccbbndctdkhmbddn
       POSTGRES_DB: plutusdb
-    ports:
-      - "5432:5432"
     volumes:
       - plutus_data:/var/lib/postgresql/data
 
