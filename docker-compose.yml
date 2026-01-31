@@ -7,6 +7,8 @@ services:
       POSTGRES_USER: plutusr
       POSTGRES_PASSWORD: ccbbndctdkhmbddn
       POSTGRES_DB: plutusdb
+    ports:
+      - "5445:5432"
     volumes:
       - plutus_data:/var/lib/postgresql/data
 

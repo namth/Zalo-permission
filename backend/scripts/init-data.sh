@@ -2,14 +2,14 @@
 # Initialize database structures and test data
 
 echo "=== Creating PostgreSQL Database and User ==="
-docker exec n8n-postgres psql -U postgres << 'EOF'
+docker exec plutus-postgres psql -U postgres << 'EOF'
 CREATE DATABASE IF NOT EXISTS plutusdb;
 CREATE USER IF NOT EXISTS plutusr WITH PASSWORD 'Matkhaumoi2@@';
 GRANT ALL PRIVILEGES ON DATABASE plutusdb TO plutusr;
 EOF
 
 echo "=== Initializing PostgreSQL Schema ==="
-docker exec n8n-postgres psql -U plutusr -d plutusdb << 'EOF'
+docker exec plutus-postgres psql -U plutusr -d plutusdb << 'EOF'
 
 -- ============================================
 -- WORKSPACE-BASED PERMISSION SYSTEM V3
