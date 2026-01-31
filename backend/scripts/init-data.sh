@@ -1,13 +1,6 @@
 #!/bin/bash
 # Initialize database structures and test data
 
-echo "=== Creating PostgreSQL Database and User ==="
-docker exec plutus-postgres psql -U postgres << 'EOF'
-CREATE DATABASE IF NOT EXISTS plutusdb;
-CREATE USER IF NOT EXISTS plutusr WITH PASSWORD 'Matkhaumoi2@@';
-GRANT ALL PRIVILEGES ON DATABASE plutusdb TO plutusr;
-EOF
-
 echo "=== Initializing PostgreSQL Schema ==="
 docker exec plutus-postgres psql -U plutusr -d plutusdb << 'EOF'
 
