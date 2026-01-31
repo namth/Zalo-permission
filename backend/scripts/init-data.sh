@@ -1,6 +1,12 @@
 #!/bin/bash
 # Initialize database structures and test data
 
+# Load environment variables from .env.docker
+if [ -f "../.env.docker" ]; then
+  source ../.env.docker
+  echo "✓ Loaded environment variables from .env.docker"
+fi
+
 echo "=== Initializing PostgreSQL Schema ==="
 docker exec plutus-postgres psql -U plutusr -d plutusdb << 'EOF'
 
