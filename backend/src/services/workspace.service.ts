@@ -417,7 +417,7 @@ export async function removeUserFromWorkspace(
   try {
     await executeQuery(
       `MATCH (u:User {id: $user_id})-[r:HAS_ROLE]->(w:Workspace {id: $workspace_id})
-       DELETE r`,
+        DELETE r`,
       { user_id, workspace_id }
     );
   } catch (error) {
@@ -425,4 +425,99 @@ export async function removeUserFromWorkspace(
   }
 
   await logAuditAction(workspace_id, removed_by || null, 'REMOVE_USER_FROM_WORKSPACE', 'User', user_id, null, null);
+}
+
+/**
+ * Search workspaces by name using trigram similarity
+ * Returns results sorted by similarity score (descending)
+ */
+export async function searchWorkspacesByName(
+  name: string,
+  limit: number = 20,
+  similarity_threshold: number = 0.3
+): Promise<{ workspaces: (Workspace & { similarity: number })[]; total: number }> {
+  // Validate input
+  if (!name || name.trim().length === 0) {
+    return { workspaces: [], total: 0 };
+  }
+
+  try {
+    // Enable pg_trgm extension if not already enabled
+    await query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+
+    // Search using trigram similarity
+    const result = await query(
+      `SELECT 
+        id, 
+        name, 
+        status, 
+        description, 
+        created_at, 
+        updated_at,
+        similarity(name, $1) as similarity
+      FROM workspaces
+      WHERE similarity(name, $1) > $2
+      ORDER BY similarity DESC
+      LIMIT $3`,
+      [name, similarity_threshold, limit]
+    );
+
+    // Get total count of matching results (without limit)
+    const countResult = await query(
+      `SELECT COUNT(*) as count
+       FROM workspaces
+       WHERE similarity(name, $1) > $2`,
+      [name, similarity_threshold]
+    );
+
+    return {
+      workspaces: result.rows,
+      total: parseInt(countResult.rows[0].count)
+    };
+  } catch (error) {
+    console.error('Error searching workspaces by name:', error);
+    // Fallback to LIKE search if trigram fails
+    return fallbackWorkspaceSearch(name, limit);
+  }
+}
+
+/**
+ * Fallback search using LIKE (if pg_trgm not available)
+ */
+async function fallbackWorkspaceSearch(
+  name: string,
+  limit: number = 20
+): Promise<{ workspaces: (Workspace & { similarity: number })[]; total: number }> {
+  const searchTerm = `%${name}%`;
+
+  const result = await query(
+    `SELECT 
+      id, 
+      name, 
+      status, 
+      description, 
+      created_at, 
+      updated_at,
+      CASE 
+        WHEN name ILIKE $1 THEN 1.0
+        WHEN name ILIKE $2 THEN 0.8
+        ELSE 0.5
+      END as similarity
+    FROM workspaces
+    WHERE name ILIKE $1 OR name ILIKE $2
+    ORDER BY similarity DESC
+    LIMIT $3`,
+    [searchTerm, `${name}%`, limit]
+  );
+
+  const countResult = await query(
+    `SELECT COUNT(*) as count FROM workspaces
+     WHERE name ILIKE $1 OR name ILIKE $2`,
+    [searchTerm, `${name}%`]
+  );
+
+  return {
+    workspaces: result.rows,
+    total: parseInt(countResult.rows[0].count)
+  };
 }

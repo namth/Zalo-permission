@@ -1,0 +1,227 @@
+{
+  "name": "Zalo AI Agent - WordPress & WooCommerce Category Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "zalo-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "7632014c-1234-5678-901a-b1c2d3e4f5g6",
+      "name": "Zalo_Webhook_Receiver",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 100],
+      "notes": "Nhận sự kiện tin nhắn từ Zalo OA Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nreturn {\n  user_id: body.sender.id,\n  message_text: body.message.text,\n  timestamp: body.timestamp,\n  raw_body: body\n};"
+      },
+      "id": "8743015d-2345-5678-901b-c2d3e4f5g6h7",
+      "name": "Extract_User_Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 100],
+      "notes": "Trích xuất ID người dùng và nội dung tin nhắn"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Bạn là trợ lý quản trị Website chuyên nghiệp. Nhiệm vụ của bạn là hỗ trợ người dùng quản lý danh mục bài viết (WordPress) và danh mục sản phẩm (WooCommerce) qua API.\n\n## Hướng dẫn sử dụng:\n\n### Quản lý danh mục bài viết (WordPress):\n- Lệnh: 'thêm danh mục bài viết [tên]', 'sửa danh mục [id] thành [tên]', 'xóa danh mục bài viết [id]', 'liệt kê danh mục bài viết'\n- Dùng Tool: WP_Category_Tool\n\n### Quản lý danh mục sản phẩm (WooCommerce):\n- Lệnh: 'thêm danh mục sản phẩm [tên]', 'sửa danh mục sản phẩm [id] thành [tên]', 'xóa danh mục sản phẩm [id]', 'liệt kê danh mục sản phẩm'\n- Dùng Tool: WC_Category_Tool\n\n## Quy tắc:\n1. Luôn xác nhận chi tiết hành động trước khi thực hiện (đặc biệt với DELETE).\n2. Sau khi thực hiện xong, thông báo kết quả ngắn gọn, rõ ràng.\n3. Nếu có lỗi, hãy giải thích nguyên nhân và gợi ý cách khắc phục.\n4. Nếu không hiểu yêu cầu, hãy yêu cầu làm rõ thêm."
+        }
+      },
+      "id": "9854126e-3456-6789-012c-d3e4f5g6h7i8",
+      "name": "AI_Agent_Manager",
+      "type": "n8n-nodes-base.aiAgent",
+      "typeVersion": 1,
+      "position": [700, 100],
+      "notes": "Bộ não AI điều phối các công cụ quản trị"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "a965237f-4567-7890-123d-e4f5g6h7i8j9",
+      "name": "OpenAI_Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "notes": "Model GPT-4o để xử lý ngôn ngữ tự nhiên"
+    },
+    {
+      "parameters": {},
+      "id": "b076348g-5678-8901-234e-f5g6h7i8j9k0",
+      "name": "Window_Buffer_Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryWindowBuffer",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "notes": "Lưu lịch sử hội thoại trong phiên làm việc"
+    },
+    {
+      "parameters": {
+        "name": "WP_Category_Tool",
+        "description": "Dùng để Thêm, Sửa, Xóa hoặc Liệt kê danh mục bài viết trên WordPress. Yêu cầu: action (GET/POST/PUT/DELETE), name (nếu tạo/sửa), category_id (nếu sửa/xóa).",
+        "method": "={{$fromAI('action')}}",
+        "url": "=https://your-domain.com/wp-json/wp/v2/categories{{$fromAI('category_id') ? '/' + $fromAI('category_id') : ''}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{$fromAI('name')}}"
+            },
+            {
+              "name": "force",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "id": "c187459h-6789-9012-345f-g6h7i8j9k0l1",
+      "name": "WP_Category_Tool",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 250],
+      "notes": "Tool CRUD cho WordPress Post Categories"
+    },
+    {
+      "parameters": {
+        "name": "WC_Category_Tool",
+        "description": "Dùng để quản lý danh mục sản phẩm WooCommerce. Yêu cầu: action (GET/POST/PUT/DELETE), name, category_id.",
+        "method": "={{$fromAI('action')}}",
+        "url": "=https://your-domain.com/wp-json/wc/v3/products/categories{{$fromAI('category_id') ? '/' + $fromAI('category_id') : ''}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{$fromAI('name')}}"
+            }
+          ]
+        }
+      },
+      "id": "d298560i-7890-0123-456g-h7i8j9k0l1m2",
+      "name": "WC_Category_Tool",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 400],
+      "notes": "Tool CRUD cho WooCommerce Product Categories"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/message/cs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Access-Token",
+              "value": "={{$env.ZALO_OA_ACCESS_TOKEN}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": {\n    \"user_id\": \"{{ $('Extract_User_Data').item.json.user_id }}\"\n  },\n  \"message\": {\n    \"text\": \"{{ $json.output }}\"\n  }\n}"
+      },
+      "id": "e309671j-8901-1234-567h-i8j9k0l1m2n3",
+      "name": "Send_Zalo_Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 100],
+      "notes": "Gửi phản hồi từ AI Agent về tin nhắn Zalo cho người dùng"
+    }
+  ],
+  "connections": {
+    "Zalo_Webhook_Receiver": {
+      "main": [
+        [
+          {
+            "node": "Extract_User_Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract_User_Data": {
+      "main": [
+        [
+          {
+            "node": "AI_Agent_Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Agent_Manager": {
+      "main": [
+        [
+          {
+            "node": "Send_Zalo_Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI_Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI_Agent_Manager",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window_Buffer_Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI_Agent_Manager",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WP_Category_Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI_Agent_Manager",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WC_Category_Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI_Agent_Manager",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {}
+}

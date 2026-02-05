@@ -147,7 +147,169 @@ curl -X POST http://localhost:3000/api/resolve-workspace-context \
 
 ---
 
-## 2. POST /api/sync-user (Optional MVP)
+## 2. GET /api/workspaces/search - Search Workspaces
+
+**Purpose:** Tìm kiếm workspace ID dựa trên workspace name (gần đúng) sử dụng trigram similarity
+
+**Request:**
+
+```http
+GET /api/workspaces/search?name=customer%20support&limit=10&threshold=0.3
+Content-Type: application/json
+```
+
+**Query Parameters:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | Yes | - | Workspace name to search |
+| `limit` | integer | No | 20 | Max results (max: 100) |
+| `threshold` | float | No | 0.3 | Similarity threshold (0-1, 0.3 = 30% match) |
+
+**Response (Success - 200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "w123",
+      "name": "Customer Support Team",
+      "status": "active",
+      "description": "Main support workspace",
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-24T15:45:00Z",
+      "similarity": 0.95
+    },
+    {
+      "id": "w124",
+      "name": "Support - Sales Team",
+      "status": "active",
+      "description": "Sales support workspace",
+      "created_at": "2024-01-20T12:00:00Z",
+      "updated_at": "2024-01-24T14:30:00Z",
+      "similarity": 0.85
+    }
+  ],
+  "pagination": {
+    "limit": 10,
+    "total": 2,
+    "hasMore": false
+  },
+  "search": {
+    "query": "customer support",
+    "threshold": 0.3,
+    "method": "trigram_similarity"
+  }
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Always true on success |
+| `data` | array | Array of matching workspaces |
+| `data[].similarity` | float | Similarity score (0-1) - higher is better |
+| `pagination.hasMore` | boolean | Whether more results exist |
+| `search.method` | string | Search algorithm used (trigram_similarity or fallback) |
+
+**Response (Error Cases):**
+
+### Case 1: Missing name parameter
+
+```json
+{
+  "success": false,
+  "error": "MISSING_PARAM",
+  "message": "Parameter \"name\" is required and cannot be empty"
+}
+```
+
+### Case 2: Invalid threshold
+
+```json
+{
+  "success": false,
+  "error": "INVALID_PARAM",
+  "message": "Parameter \"threshold\" must be between 0 and 1"
+}
+```
+
+### Case 3: Server Error
+
+```json
+{
+  "success": false,
+  "error": "SEARCH_FAILED",
+  "message": "Failed to search workspaces"
+}
+```
+
+**Status Codes:**
+
+| Code | Description |
+|------|-------------|
+| `200` | Thành công - trả về kết quả tìm kiếm |
+| `400` | Bad request - missing/invalid parameters |
+| `500` | Server error |
+
+**Algorithm Details:**
+
+- Sử dụng **PostgreSQL pg_trgm extension** cho trigram similarity matching
+- Tìm kiếm **gần đúng**, không yêu cầu tên chính xác
+- Kết quả được sắp xếp theo **similarity score** (cao nhất trước)
+- Nếu pg_trgm không available, fallback sang LIKE search
+- Similarity threshold mặc định `0.3` (30% match)
+
+**Example cURL:**
+
+```bash
+# Search workspaces like "customer support"
+curl -X GET "http://localhost:3000/api/workspaces/search?name=customer%20support&limit=10" \
+  -H "Content-Type: application/json"
+
+# Search with custom threshold (50% match)
+curl -X GET "http://localhost:3000/api/workspaces/search?name=sales&threshold=0.5" \
+  -H "Content-Type: application/json"
+
+# Strict search (80% match)
+curl -X GET "http://localhost:3000/api/workspaces/search?name=support%20team&threshold=0.8" \
+  -H "Content-Type: application/json"
+```
+
+**Example Response:**
+
+```bash
+{
+  "success": true,
+  "data": [
+    {
+      "id": "w123",
+      "name": "Customer Support",
+      "status": "active",
+      "description": null,
+      "created_at": "2024-01-15T10:30:00Z",
+      "updated_at": "2024-01-24T15:45:00Z",
+      "similarity": 0.95
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "total": 1,
+    "hasMore": false
+  },
+  "search": {
+    "query": "customer support",
+    "threshold": 0.3,
+    "method": "trigram_similarity"
+  }
+}
+```
+
+---
+
+## 3. POST /api/sync-user (Optional MVP)
 
 **Purpose:** Đồng bộ danh sách thành viên từ Zalo webhook vào workspace
 
@@ -216,7 +378,7 @@ Content-Type: application/json
 
 ---
 
-## 3. Error Handling
+## 4. Error Handling
 
 **Common Error Codes:**
 
@@ -233,7 +395,7 @@ Content-Type: application/json
 
 ---
 
-## 4. Response Format Guidelines
+## 5. Response Format Guidelines
 
 Tất cả responses phải có format:
 
@@ -262,14 +424,14 @@ hoặc (cho resolve-policy):
 
 ---
 
-## 5. Rate Limiting (Future)
+## 6. Rate Limiting (Future)
 
 - 1000 requests/hour per IP
 - 10000 requests/hour per API key (if authenticated)
 
 ---
 
-## 6. Pagination (Future)
+## 7. Pagination (Future)
 
 ```json
 {
@@ -285,7 +447,7 @@ hoặc (cho resolve-policy):
 
 ---
 
-## 7. Webhook Integration (n8n)
+## 8. Webhook Integration (n8n)
 
 Response từ `/api/resolve-workspace-context` được gửi trực tiếp tới n8n:
 
@@ -307,7 +469,7 @@ n8n (Agent, Tools, Prompt)
 
 ---
 
-## 6. POST /api/users - Create User (Contact List)
+## 9. POST /api/users - Create User (Contact List)
 
 **Purpose:** AI Agent thêm user mới vào danh bạ (contact list) & tự động setup Neo4j relationships
 
@@ -401,7 +563,7 @@ Content-Type: application/json
 
 ---
 
-## 7. GET /api/users - List Users
+## 10. GET /api/users - List Users
 
 **Purpose:** Get list of all users with pagination
 
@@ -450,7 +612,7 @@ Content-Type: application/json
 
 ---
 
-## 8. GET /api/users/:id - Get User Detail
+## 11. GET /api/users/:id - Get User Detail
 
 **Purpose:** Get specific user's profile
 
@@ -482,7 +644,7 @@ Content-Type: application/json
 
 ---
 
-## 9. PUT /api/users/:id - Update User Profile
+## 12. PUT /api/users/:id - Update User Profile
 
 **Purpose:** Update user's profile information
 
@@ -522,7 +684,7 @@ Content-Type: application/json
 
 ---
 
-## 10. DELETE /api/users/:id - Delete User
+## 13. DELETE /api/users/:id - Delete User
 
 **Purpose:** Delete user from contact list
 
@@ -546,7 +708,7 @@ Content-Type: application/json
 
 ---
 
-## 11. Testing
+## 14. Testing
 
 ### Local Testing
 
@@ -602,6 +764,18 @@ curl -X POST http://localhost:3000/api/sync-user \
       {"zalo_user_id": "u1", "name": "User 1", "role": "admin"}
     ]
   }'
+
+# Test search workspaces by name
+curl -X GET "http://localhost:3000/api/workspaces/search?name=customer" \
+  -H "Content-Type: application/json"
+
+# Test search with custom threshold
+curl -X GET "http://localhost:3000/api/workspaces/search?name=support&threshold=0.5&limit=10" \
+  -H "Content-Type: application/json"
+
+# Test search with strict matching
+curl -X GET "http://localhost:3000/api/workspaces/search?name=customer%20support&threshold=0.8" \
+  -H "Content-Type: application/json"
 ```
 
 ### Integration Testing
@@ -612,6 +786,6 @@ curl -X POST http://localhost:3000/api/sync-user \
 
 ---
 
-**Last Updated:** 24/01/2026  
-**Version:** 1.1.0
-**Changes:** Added User Management APIs (POST, GET, PUT, DELETE /api/users)
+**Last Updated:** 01/02/2026  
+**Version:** 1.2.0
+**Changes:** Added GET /api/workspaces/search - Workspace search with trigram similarity matching
