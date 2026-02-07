@@ -67,22 +67,9 @@ CREATE TABLE IF NOT EXISTS agents (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. WORKSPACE_AGENT_CONFIG (Agent Config per Workspace)
-CREATE TABLE IF NOT EXISTS workspace_agent_config (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID NOT NULL,
-  agent_key VARCHAR(100) NOT NULL,
-  system_prompt TEXT,
-  temperature FLOAT DEFAULT 0.7,
-  max_tokens INT DEFAULT 2000,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-  FOREIGN KEY (agent_key) REFERENCES agents(key) ON DELETE RESTRICT,
-  UNIQUE(workspace_id, agent_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_workspace_agent_config_workspace ON workspace_agent_config(workspace_id);
+-- 5. [DEPRECATED] WORKSPACE_AGENT_CONFIG - Removed in v2.0
+-- Agent configuration now stored directly in zalo_groups.agent_key column
+-- See migration 002a-drop-workspace-agent-config.sql and 002b-add-agent-to-zalo-groups.sql
 
 -- 6. WORKSPACE_USER_ROLES (Role per User in Workspace)
 CREATE TABLE IF NOT EXISTS workspace_user_roles (
@@ -172,11 +159,11 @@ FROM workspaces w, user_profile u
 WHERE w.name = 'workspace_1' AND u.zalo_id = 'test_user_admin'
 ON CONFLICT DO NOTHING;
 
--- Configure workspace agent
-INSERT INTO workspace_agent_config (workspace_id, agent_key, system_prompt, temperature, max_tokens)
-SELECT w.id, 'agent_support', 'You are a support agent', 0.7, 2000
-FROM workspaces w WHERE w.name = 'workspace_1'
-ON CONFLICT DO NOTHING;
+-- Assign agent to group (v2.0+)
+-- Agent is now linked directly to zalo_groups via agent_key column
+UPDATE zalo_groups
+SET agent_key = 'agent_support'
+WHERE id IN (SELECT id FROM zalo_groups LIMIT 1);
 
 EOF
 

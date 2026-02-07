@@ -42,7 +42,7 @@ Workspace:
 
 ---
 
-## 3. Thiết kế dữ liệu trong Neo4j (Quan hệ & phân quyền – ĐÃ CHỈNH)
+## 3. Thiết kế dữ liệu trong Neo4j (Quan hệ & phân quyền – DIRECT AGENT LINK)
 
 ### 3.1 Node Types
 
@@ -68,26 +68,27 @@ Workspace:
 (User)-[:PART_OF]->(Workspace)
 (User)-[:HAS_ROLE { role }]->(Workspace)
 
-(ZaloGroup)-[:USES_AGENT]->(Agent)
+(ZaloGroup)-[:USES_AGENT]->(Agent)   // ← DIRECT: Zalo Group connects directly to Agent
 (Workspace)-[:MANAGES]->(Account)
 ```
 
 ---
 
-### 3.3 Luồng kiểm tra quyền (ĐÃ LOẠI BỎ TOOL)
+### 3.3 Luồng kiểm tra quyền (TRỰC TIẾP QUA ZALO GROUP)
 
 **AI Agent nhận message từ Zalo**:
 
 1. Nhận `thread_id` + `zalo_user_id`
 2. Tìm `(ZaloGroup)` theo `thread_id`
-3. Resolve `(Workspace)`
-4. Kiểm tra `(ZaloGroup)-[:USES_AGENT]->(Agent)`
-5. Kiểm tra `(Workspace)-[:MANAGES]->(Account)` tương ứng hệ thống nghiệp vụ
-6. Cho phép hoặc từ chối action
+3. **Truy vấn Agent từ `(ZaloGroup)-[:USES_AGENT]->(Agent)` TRỰC TIẾP**
+4. Kiểm tra Workspace membership (nếu cần)
+5. Cho phép hoặc từ chối action
+
+> **THAY ĐỔI CHÍNH:** Loại bỏ bước resolve Workspace để lấy Agent. Thay vào đó, Agent được link trực tiếp tới ZaloGroup thông qua `USES_AGENT` relationship.
 
 ---
 
-## 4. Thiết kế dữ liệu trong Postgres (Dữ liệu nghiệp vụ & cấu hình – ĐÃ CHỈNH)
+## 4. Thiết kế dữ liệu trong Postgres (Dữ liệu nghiệp vụ & cấu hình – AGENT DIRECT LINK)
 
 ### 4.1 Bảng user_profile (Danh bạ người dùng)
 
@@ -122,16 +123,22 @@ workspaces (
 
 ---
 
-### 4.3 Bảng zalo_groups
+### 4.3 Bảng zalo_groups (LƯU TRỮ AGENT_KEY TRỰC TIẾP)
 
 ```sql
 zalo_groups (
   id UUID PK,
-  thread_id VARCHAR UNIQUE,
-  workspace_id UUID,
-  created_at TIMESTAMP
+  thread_id VARCHAR UNIQUE NOT NULL,
+  workspace_id UUID NOT NULL,
+  agent_key VARCHAR(100) NOT NULL,  -- ← THêm: Link trực tiếp tới Agent
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now(),
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+  FOREIGN KEY (agent_key) REFERENCES agents(key)
 )
 ```
+
+> **THAY ĐỔI:** Thêm cột `agent_key` để lưu agent được gán cho mỗi Zalo Group. Neo4j sẽ maintain thêm relationship `(ZaloGroup)-[:USES_AGENT]->(Agent)` tương ứng.
 
 ---
 
@@ -139,29 +146,17 @@ zalo_groups (
 
 ```sql
 agents (
-  key VARCHAR PK,
-  name VARCHAR,
-  description TEXT
+  key VARCHAR(100) PRIMARY KEY,
+  name VARCHAR NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
 )
 ```
 
 ---
 
-### 4.5 Bảng zalo_group_agent_config
-
-```sql
-zalo_group_agent_config (
-  id UUID PK,
-  zalo_group_id UUID,
-  agent_key VARCHAR,
-  system_prompt TEXT,
-  created_at TIMESTAMP
-)
-```
-
----
-
-### 4.6 Bảng accounts (Account nghiệp vụ chung)
+### 4.5 Bảng accounts (Account nghiệp vụ chung)
 
 ```sql
 accounts (

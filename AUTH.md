@@ -12,15 +12,16 @@ Zalo Message
 [Webhook] → Extract: zalo_thread_id, zalo_user_id
     ↓
 [Backend] → resolveWorkspaceContext()
-    ├─ Neo4j: Resolve ZaloGroup → Workspace (BINDS_TO)
-    ├─ Neo4j: Check ZaloUser & MEMBER_OF Workspace
-    ├─ Neo4j: Check Workspace & Agent (USES)
-    └─ SQL: Get workspace config & prompts
+    ├─ PostgreSQL: Get ZaloGroup & agent_key (TRỰC TIẾP)
+    ├─ Neo4j: Check ZaloUser & MEMBER_OF Workspace (optional)
+    └─ PostgreSQL: Get ZaloGroup status
     ↓
-[Response] → allowed, role, agent_key, system_prompt
+[Response] → allowed, role, agent_key
     ↓
 [n8n] → Execute Agent with workspace context
 ```
+
+> **THAY ĐỔI:** Loại bỏ bước resolve Workspace để lấy Agent. Thay vào đó, agent_key được lưu trực tiếp trong bảng zalo_groups.
 
 ---
 
@@ -155,44 +156,23 @@ role = "member"
 
 ---
 
-## 5. Agent & Config Resolution
+## 5. Agent & Config Resolution (DIRECT FROM ZALO_GROUPS)
 
-### 5.1 Get Agent Assigned to Workspace
-
-**Query (Neo4j):**
-
-```cypher
-MATCH (w:Workspace)
-       -[:USES]->
-       (a:Agent)
-WHERE w.id = $workspace_id
-RETURN a.key
-```
-
-**Result:** `agent_key` = "agent_support" (or other agents)
-
-### 5.2 Get Workspace Configuration
+### 5.1 Get Agent Assigned to ZaloGroup
 
 **Query (SQL):**
 
 ```sql
-SELECT 
-  default_agent,
-  system_prompt,
-  status
-FROM workspace_config
-WHERE workspace_id = $workspace_id
+SELECT agent_key, status
+FROM zalo_groups
+WHERE thread_id = $zalo_thread_id
 ```
 
-**Fields:**
+**Result:** `agent_key` = "agent_support" (or other agents), `status` = "active|disabled"
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `default_agent` | string | Which agent to use |
-| `system_prompt` | text | Instruction prompt |
-| `status` | string | active \| disabled |
+> **THAY ĐỔI:** Agent được lấy trực tiếp từ bảng zalo_groups, không cần resolve qua Workspace.
 
-### 5.3 Check Workspace Status
+### 5.2 Check ZaloGroup Status
 
 **Logic:**
 
@@ -205,7 +185,7 @@ ELSE
 
 ---
 
-## 6. Complete Workspace Context Resolution Flow
+## 6. Complete Workspace Context Resolution Flow (SIMPLIFIED)
 
 ```
 ┌──────────────────────────────────────┐
@@ -219,72 +199,69 @@ ELSE
                ↓
 ┌──────────────────────────────────────┐
 │ 2. Query ZaloGroup by zalo_thread_id │
-│    (Neo4j)                            │
+│    (PostgreSQL) - GET agent_key      │
 └──────────────┬───────────────────────┘
                ↓
-┌──────────────────────────────────────┐
-│ 3. Resolve Workspace via BINDS_TO    │
-│    (Neo4j)                            │
-└──────────────┬───────────────────────┘
-               ↓
-        Workspace exists?
-       /              \
-     NO               YES
-     ↓                ↓
-   Error    ┌────────────────────────┐
-            │ 4. Get/Create ZaloUser │
-            │    (Neo4j)             │
-            └────────┬───────────────┘
-                     ↓
-            ┌────────────────────────┐
-            │ 5. Check MEMBER_OF     │
-            │    Workspace           │
-            └────────┬───────────────┘
-                     ↓
-              Is Member?
-            /            \
-          NO             YES
-          ↓               ↓
-       allowed:false  ┌──────────────┐
-                      │ 6. Get Role  │
-                      │ from rel attr │
-                      └───────┬──────┘
-                              ↓
-                      ┌──────────────────┐
-                      │ 7. Get Agent     │
-                      │ from USES rel    │
-                      │ (Workspace)      │
-                      └───────┬──────────┘
-                              ↓
-                      ┌──────────────────┐
-                      │ 8. Get Config    │
-                      │    from SQL      │
-                      │ (workspace_config│
-                      └───────┬──────────┘
-                              ↓
-                      ┌──────────────────┐
-                      │ 9. Check Status  │
-                      │ (active/disabled)│
-                      └───────┬──────────┘
-                              ↓
-        Status = disabled?
-           /            \
-         YES            NO
-         ↓              ↓
-    allowed:false    allowed:true
-    status:disabled
-                      ↓
-        ┌──────────────────────────────┐
-        │ Return workspace context     │
-        │ {                            │
-        │   allowed: true,             │
-        │   agent_key,                 │
-        │   role,                      │
-        │   system_prompt,             │
-        │   status: "active"           │
-        │ }                            │
-        └──────────────────────────────┘
+      ZaloGroup exists?
+     /              \
+   NO               YES
+   ↓                ↓
+ Error     ┌─────────────────────────┐
+           │ 3. Get agent_key &      │
+           │    status from table    │
+           │ (PostgreSQL)            │
+           └────────┬────────────────┘
+                    ↓
+           agent_key exists?
+          /            \
+        NO             YES
+        ↓               ↓
+    allowed:false   ┌──────────────────┐
+                    │ 4. Get/Create    │
+                    │    ZaloUser      │
+                    │    (Neo4j)       │
+                    └────────┬─────────┘
+                             ↓
+                    ┌──────────────────┐
+                    │ 5. Check MEMBER  │
+                    │    _OF Workspace │
+                    │    (Neo4j)       │
+                    └────────┬─────────┘
+                             ↓
+                      Is Member?
+                    /            \
+                  NO             YES
+                  ↓               ↓
+             allowed:false    ┌──────────────┐
+                              │ 6. Get Role  │
+                              │ from rel attr│
+                              └───────┬──────┘
+                                      ↓
+                              ┌──────────────┐
+                              │ 7. Check     │
+                              │ ZaloGroup    │
+                              │ status       │
+                              └───────┬──────┘
+                                      ↓
+                  Status = disabled?
+                     /            \
+                   YES            NO
+                   ↓              ↓
+              allowed:false   allowed:true
+              status:disabled
+                                  ↓
+                    ┌──────────────────────────────┐
+                    │ Return workspace context     │
+                    │ {                            │
+                    │   allowed: true,             │
+                    │   agent_key,                 │
+                    │   role,                      │
+                    │   status: "active"           │
+                    │ }                            │
+                    └──────────────────────────────┘
 ```
+
+> **CẢI THIỆN:** Loại bỏ 2 bước resolve Workspace, query ZaloGroup & agent_key trực tiếp từ PostgreSQL.
 
 ---
 

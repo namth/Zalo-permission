@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from "react";
+import Link from "next/link";
 
 interface DashboardStats {
   workspaces: number;
@@ -15,44 +15,64 @@ export default function AdminDashboard() {
     workspaces: 0,
     users: 0,
     agents: 0,
-    auditLogs: 0
+    auditLogs: 0,
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch stats from API
-    setLoading(false);
+    fetchStats();
   }, []);
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/admin/stats");
+      const data = await response.json();
+
+      if (data.success) {
+        setStats({
+          workspaces: data.data.workspaces,
+          users: data.data.users,
+          agents: data.data.agents,
+          auditLogs: data.data.auditLogs,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const cards = [
     {
-      title: 'Workspaces',
+      title: "Workspaces",
       count: stats.workspaces,
-      icon: '🏢',
-      href: '/admin/workspaces',
-      color: 'bg-blue-50 border-blue-200'
+      icon: "🏢",
+      href: "/admin/workspaces",
+      color: "bg-blue-50 border-blue-200",
     },
     {
-      title: 'Users',
+      title: "Users",
       count: stats.users,
-      icon: '👥',
-      href: '/admin/users',
-      color: 'bg-green-50 border-green-200'
+      icon: "👥",
+      href: "/admin/users",
+      color: "bg-green-50 border-green-200",
     },
     {
-      title: 'Agents',
+      title: "Agents",
       count: stats.agents,
-      icon: '🤖',
-      href: '/admin/agents',
-      color: 'bg-purple-50 border-purple-200'
+      icon: "🤖",
+      href: "/admin/agents",
+      color: "bg-purple-50 border-purple-200",
     },
     {
-      title: 'Audit Logs',
+      title: "Audit Logs",
       count: stats.auditLogs,
-      icon: '📝',
-      href: '/admin/audit-logs',
-      color: 'bg-orange-50 border-orange-200'
-    }
+      icon: "📝",
+      href: "/admin/audit-logs",
+      color: "bg-orange-50 border-orange-200",
+    },
   ];
 
   return (
@@ -60,7 +80,9 @@ export default function AdminDashboard() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Welcome to Workspace Permission Management System</p>
+        <p className="text-gray-600 mt-2">
+          Welcome to Workspace Permission Management System
+        </p>
       </div>
 
       {/* Stats Grid */}
@@ -72,9 +94,11 @@ export default function AdminDashboard() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-600 text-sm font-medium">{card.title}</p>
+                  <p className="text-gray-600 text-sm font-medium">
+                    {card.title}
+                  </p>
                   <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {loading ? '-' : card.count}
+                    {loading ? "-" : card.count}
                   </p>
                 </div>
                 <div className="text-4xl">{card.icon}</div>
@@ -86,7 +110,9 @@ export default function AdminDashboard() {
 
       {/* Quick Actions */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Quick Actions
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href="/admin/workspaces?action=create">
             <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
@@ -113,7 +139,9 @@ export default function AdminDashboard() {
 
       {/* Info Section */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">System Information</h3>
+        <h3 className="text-lg font-semibold text-blue-900 mb-2">
+          System Information
+        </h3>
         <ul className="text-blue-800 space-y-2 text-sm">
           <li>✓ Database: PostgreSQL + Neo4j</li>
           <li>✓ Permission System: Workspace-based RBAC</li>

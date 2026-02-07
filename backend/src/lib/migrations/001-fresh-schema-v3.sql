@@ -31,18 +31,23 @@ CREATE TABLE IF NOT EXISTS workspaces (
 
 CREATE INDEX IF NOT EXISTS idx_workspaces_status ON workspaces(status);
 
--- 3. ZALO_GROUPS (Entry Point)
+-- 3. ZALO_GROUPS (Entry Point - with direct Agent link)
 CREATE TABLE IF NOT EXISTS zalo_groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL,
   thread_id VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255),
+  agent_key VARCHAR(100),  -- ← [NEW] Direct link to Agent
+  status VARCHAR(50) DEFAULT 'active',  -- ← [NEW] Group status (active/disabled)
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_key) REFERENCES agents(key) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_zalo_groups_thread_id ON zalo_groups(thread_id);
 CREATE INDEX IF NOT EXISTS idx_zalo_groups_workspace_id ON zalo_groups(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_agent_key ON zalo_groups(agent_key);
 
 -- 4. AGENTS (Global Agent Definitions)
 CREATE TABLE IF NOT EXISTS agents (
@@ -53,22 +58,9 @@ CREATE TABLE IF NOT EXISTS agents (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. WORKSPACE_AGENT_CONFIG (Agent Config per Workspace)
-CREATE TABLE IF NOT EXISTS workspace_agent_config (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID NOT NULL,
-  agent_key VARCHAR(100) NOT NULL,
-  system_prompt TEXT,
-  temperature FLOAT DEFAULT 0.7,
-  max_tokens INT DEFAULT 2000,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-  FOREIGN KEY (agent_key) REFERENCES agents(key) ON DELETE RESTRICT,
-  UNIQUE(workspace_id, agent_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_workspace_agent_config_workspace ON workspace_agent_config(workspace_id);
+-- [DEPRECATED IN V2.0] WORKSPACE_AGENT_CONFIG
+-- Agent configuration moved directly to zalo_groups table (agent_key column)
+-- This table is no longer created in v2.0+
 
 -- 6. WORKSPACE_USER_ROLES (Role per User in Workspace)
 CREATE TABLE IF NOT EXISTS workspace_user_roles (

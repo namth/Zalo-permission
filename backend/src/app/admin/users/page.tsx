@@ -13,11 +13,18 @@ interface User {
   created_at: string;
 }
 
+interface DeleteConfirm {
+  userId: string;
+  userName: string;
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -47,6 +54,32 @@ export default function UsersPage() {
       user.zalo_id.toLowerCase().includes(search.toLowerCase()) ||
       user.email?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleDeleteUser = async () => {
+    if (!deleteConfirm) return;
+    
+    try {
+      setDeleting(true);
+      const response = await fetch(`/api/users/${deleteConfirm.userId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setUsers(users.filter(u => u.id !== deleteConfirm.userId));
+        setError(null);
+      } else {
+        setError(data.error || 'Failed to delete user');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error deleting user');
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -90,8 +123,10 @@ export default function UsersPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Zalo ID</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Email</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Phone</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Giới tính</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -101,6 +136,7 @@ export default function UsersPage() {
                     <td className="px-6 py-4 text-sm font-mono text-gray-600">{user.zalo_id}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{user.email || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{user.phone || '-'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{user.gender || '-'}</td>
                     <td className="px-6 py-4 text-sm">
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -113,9 +149,17 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
-                      {new Date(user.created_at).toLocaleDateString()}
-                    </td>
-                  </tr>
+                       {new Date(user.created_at).toLocaleDateString()}
+                     </td>
+                     <td className="px-6 py-4 text-sm">
+                       <button
+                         onClick={() => setDeleteConfirm({ userId: user.id, userName: user.full_name })}
+                         className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-medium transition-colors"
+                       >
+                         Delete
+                       </button>
+                     </td>
+                    </tr>
                 ))}
               </tbody>
             </table>
@@ -125,6 +169,34 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm mx-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete User</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete <strong>{deleteConfirm.userName}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={deleting}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteUser}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,7 +23,9 @@ export interface ZaloGroup {
   workspace_id: string;
   thread_id: string;
   name?: string;
+  agent_key?: string;  // [NEW] Direct agent link
   created_at: Date;
+  updated_at?: Date;
 }
 
 /**
@@ -198,11 +200,13 @@ export async function deleteWorkspace(id: string, deleted_by?: string): Promise<
 
 /**
  * Add Zalo Group to Workspace
+ * @param agent_key - [NEW] The agent to assign to this group
  */
 export async function addZaloGroup(
   workspace_id: string,
   thread_id: string,
   name?: string,
+  agent_key?: string,
   created_by?: string
 ): Promise<ZaloGroup> {
   // Check if group already exists with different workspace
@@ -216,10 +220,10 @@ export async function addZaloGroup(
   }
 
   const result = await query(
-    `INSERT INTO zalo_groups (workspace_id, thread_id, name, created_at)
-     VALUES ($1, $2, $3, NOW())
-     RETURNING id, workspace_id, thread_id, name, created_at`,
-    [workspace_id, thread_id, name || null]
+    `INSERT INTO zalo_groups (workspace_id, thread_id, name, agent_key, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, NOW(), NOW())
+     RETURNING id, workspace_id, thread_id, name, agent_key, created_at, updated_at`,
+    [workspace_id, thread_id, name || null, agent_key || null]
   );
 
   if (result.rows.length === 0) {
@@ -268,7 +272,7 @@ export async function getWorkspaceZaloGroups(
   const total = countResult.rows[0].count;
 
   const result = await query(
-    `SELECT id, workspace_id, thread_id, name, created_at
+    `SELECT id, workspace_id, thread_id, name, agent_key, created_at, updated_at
      FROM zalo_groups
      WHERE workspace_id = $1
      ORDER BY created_at DESC
@@ -321,13 +325,79 @@ export async function removeZaloGroup(
  */
 export async function getZaloGroupByThreadId(thread_id: string): Promise<ZaloGroup | null> {
   const result = await query(
-    `SELECT id, workspace_id, thread_id, name, created_at
+    `SELECT id, workspace_id, thread_id, name, agent_key, status, created_at, updated_at
      FROM zalo_groups
      WHERE thread_id = $1`,
     [thread_id]
   );
 
   return result.rows.length > 0 ? result.rows[0] : null;
+}
+
+/**
+ * [NEW] Update agent for Zalo Group
+ */
+export async function updateZaloGroupAgent(
+  group_id: string,
+  agent_key: string,
+  updated_by?: string
+): Promise<ZaloGroup> {
+  const group = await query(
+    `SELECT id, workspace_id, thread_id, name, agent_key, status, created_at, updated_at
+     FROM zalo_groups
+     WHERE id = $1`,
+    [group_id]
+  );
+
+  if (group.rows.length === 0) {
+    throw new Error('Zalo group not found');
+  }
+
+  const result = await query(
+    `UPDATE zalo_groups
+     SET agent_key = $1, updated_at = NOW()
+     WHERE id = $2
+     RETURNING id, workspace_id, thread_id, name, agent_key, status, created_at, updated_at`,
+    [agent_key, group_id]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error('Failed to update zalo group agent');
+  }
+
+  const updated = result.rows[0];
+  const old = group.rows[0];
+
+  // Update in Neo4j - create/update USES_AGENT relationship
+  try {
+    await executeQuery(
+      `MATCH (g:ZaloGroup {id: $group_id})
+       OPTIONAL MATCH (g)-[r:USES_AGENT]->(oldAgent:Agent)
+       DELETE r
+       WITH g
+       MATCH (a:Agent {key: $agent_key})
+       CREATE (g)-[:USES_AGENT]->(a)
+       RETURN g, a`,
+      {
+        group_id,
+        agent_key
+      }
+    );
+  } catch (error) {
+    console.error('Failed to update zalo group agent in Neo4j:', error);
+  }
+
+  await logAuditAction(
+    old.workspace_id,
+    updated_by || null,
+    'UPDATE_ZALO_GROUP_AGENT',
+    'ZaloGroup',
+    group_id,
+    { agent_key: old.agent_key },
+    { agent_key: updated.agent_key }
+  );
+
+  return updated;
 }
 
 /**

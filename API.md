@@ -7,7 +7,7 @@
 
 ## 1. POST /api/resolve-workspace-context
 
-**Purpose:** Resolve Zalo group → workspace, kiểm tra quyền & lấy cấu hình agent khi có message từ Zalo
+**Purpose:** Resolve Zalo group → agent (TRỰC TIẾP), kiểm tra quyền & lấy cấu hình agent khi có message từ Zalo
 
 **Request:**
 
@@ -35,7 +35,6 @@ Content-Type: application/json
   "allowed": true,
   "agent_key": "agent_support",
   "role": "admin",
-  "system_prompt": "Bạn là một customer support agent. Hãy trả lời câu hỏi của khách hàng...",
   "status": "active",
   "created_at": "2024-01-15T10:30:00Z"
 }
@@ -47,20 +46,19 @@ Content-Type: application/json
 |-------|------|-------------|
 | `allowed` | boolean | User có được phép sử dụng agent không |
 | `agent_key` | string | Identifier của agent (e.g., agent_support, agent_finance) |
-| `role` | string | Role của user trong group (admin, member) |
-| `system_prompt` | string | System prompt cho agent |
+| `role` | string | Role của user trong workspace (admin, member) |
 | `status` | string | Trạng thái group (active, disabled) |
 | `created_at` | timestamp | Thời gian tạo config |
 
 **Response (Error Cases):**
 
-### Case 1: ZaloGroup không map được với Workspace
+### Case 1: ZaloGroup không tồn tại hoặc chưa cấu hình agent
 
 ```json
 {
   "allowed": false,
-  "error": "WORKSPACE_NOT_FOUND",
-  "message": "Zalo group không được liên kết với workspace nào"
+  "error": "ZALO_GROUP_NOT_FOUND",
+  "message": "Zalo group không tồn tại hoặc chưa được cấu hình agent"
 }
 ```
 
@@ -74,13 +72,13 @@ Content-Type: application/json
 }
 ```
 
-### Case 3: Workspace bị disable
+### Case 3: Zalo Group bị disable
 
 ```json
 {
   "allowed": false,
-  "error": "WORKSPACE_DISABLED",
-  "message": "Workspace hiện đang bị vô hiệu hóa",
+  "error": "GROUP_DISABLED",
+  "message": "Zalo group hiện đang bị vô hiệu hóa",
   "status": "disabled"
 }
 ```
@@ -108,17 +106,16 @@ Content-Type: application/json
 
 ```
 1. Validate input (zalo_thread_id, zalo_user_id)
-2. Query ZaloGroup by zalo_thread_id (Neo4j)
-3. Query Workspace via BINDS_TO relationship (Neo4j)
-4. If Workspace not found → return allowed: false
-5. Check ZaloUser exists (Neo4j) → create if not exists
-6. Check ZaloUser MEMBER_OF Workspace (Neo4j)
-7. If not member → return allowed: false
-8. Get role from MEMBER_OF relationship
-9. Get Agent from Workspace (USES relationship)
-10. Get config from SQL (workspace_config table)
-11. Check workspace status (active | disabled)
-12. Return full policy object
+2. Query ZaloGroup by zalo_thread_id (PostgreSQL)
+3. If ZaloGroup not found → return allowed: false
+4. Get agent_key from zalo_groups table
+5. If agent_key not set → return allowed: false
+6. Check ZaloUser exists (Neo4j) → create if not exists
+7. Check ZaloUser MEMBER_OF Workspace (Neo4j) - optional permission check
+8. If not member → return allowed: false
+9. Get role from MEMBER_OF relationship
+10. Get ZaloGroup status (active | disabled)
+11. Return full policy object
 ```
 
 **Example cURL:**

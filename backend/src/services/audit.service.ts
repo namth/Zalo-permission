@@ -1,4 +1,4 @@
-import { query } from '@/lib/db';
+import { query } from "@/lib/db";
 
 /**
  * Audit Log Type
@@ -30,8 +30,8 @@ export async function logAuditAction(
   old_value: any = null,
   new_value: any = null,
   ip_address: string | null = null,
-  status: string = 'SUCCESS',
-  error_message: string | null = null
+  status: string = "SUCCESS",
+  error_message: string | null = null,
 ): Promise<AuditLog> {
   const result = await query(
     `INSERT INTO audit_logs 
@@ -48,12 +48,12 @@ export async function logAuditAction(
       JSON.stringify(new_value),
       ip_address,
       status,
-      error_message
-    ]
+      error_message,
+    ],
   );
 
   if (result.rows.length === 0) {
-    throw new Error('Failed to create audit log');
+    throw new Error("Failed to create audit log");
   }
 
   const log = result.rows[0];
@@ -69,31 +69,27 @@ export async function logAuditAction(
 export async function getAuditLogs(
   workspace_id: string,
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
 ): Promise<{ logs: AuditLog[]; total: number }> {
   const countResult = await query(
     `SELECT COUNT(*) as count FROM audit_logs WHERE workspace_id = $1`,
-    [workspace_id]
+    [workspace_id],
   );
 
   const total = countResult.rows[0].count;
 
   const result = await query(
-    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, status, error_message, created_at
+    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, status, error_message, created_at
      FROM audit_logs
      WHERE workspace_id = $1
      ORDER BY created_at DESC
      LIMIT $2 OFFSET $3`,
-    [workspace_id, limit, offset]
+    [workspace_id, limit, offset],
   );
 
   return {
-    logs: result.rows.map(row => ({
-      ...row,
-      old_value: row.old_value ? JSON.parse(row.old_value) : null,
-      new_value: row.new_value ? JSON.parse(row.new_value) : null
-    })),
-    total
+    logs: result.rows,
+    total,
   };
 }
 
@@ -103,22 +99,18 @@ export async function getAuditLogs(
 export async function getAuditLogsForEntity(
   entity_type: string,
   entity_id: string,
-  limit: number = 50
+  limit: number = 50,
 ): Promise<AuditLog[]> {
   const result = await query(
-    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, status, error_message, created_at
+    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, status, error_message, created_at
      FROM audit_logs
      WHERE entity_type = $1 AND entity_id = $2
      ORDER BY created_at DESC
      LIMIT $3`,
-    [entity_type, entity_id, limit]
+    [entity_type, entity_id, limit],
   );
 
-  return result.rows.map(row => ({
-    ...row,
-    old_value: row.old_value ? JSON.parse(row.old_value) : null,
-    new_value: row.new_value ? JSON.parse(row.new_value) : null
-  }));
+  return result.rows;
 }
 
 /**
@@ -127,31 +119,67 @@ export async function getAuditLogsForEntity(
 export async function getAuditLogsForUser(
   user_id: string,
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
 ): Promise<{ logs: AuditLog[]; total: number }> {
   const countResult = await query(
     `SELECT COUNT(*) as count FROM audit_logs WHERE user_id = $1`,
-    [user_id]
+    [user_id],
   );
 
   const total = countResult.rows[0].count;
 
   const result = await query(
-    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, status, error_message, created_at
+    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, status, error_message, created_at
      FROM audit_logs
      WHERE user_id = $1
      ORDER BY created_at DESC
      LIMIT $2 OFFSET $3`,
-    [user_id, limit, offset]
+    [user_id, limit, offset],
   );
 
   return {
-    logs: result.rows.map(row => ({
-      ...row,
-      old_value: row.old_value ? JSON.parse(row.old_value) : null,
-      new_value: row.new_value ? JSON.parse(row.new_value) : null
-    })),
-    total
+    logs: result.rows,
+    total,
+  };
+}
+
+/**
+ * Get all audit logs with optional filtering
+ */
+export async function getAllAuditLogs(
+  limit: number = 50,
+  offset: number = 0,
+  action?: string,
+): Promise<{ logs: AuditLog[]; total: number }> {
+  let whereClause = "";
+  let params: any[] = [];
+  let paramIndex = 1;
+
+  if (action) {
+    whereClause = `WHERE action ILIKE $${paramIndex}`;
+    params.push(`%${action}%`);
+    paramIndex++;
+  }
+
+  const countResult = await query(
+    `SELECT COUNT(*) as count FROM audit_logs ${whereClause}`,
+    params,
+  );
+
+  const total = countResult.rows[0].count;
+
+  const result = await query(
+    `SELECT id, workspace_id, user_id, action, entity_type, entity_id, status, error_message, created_at
+     FROM audit_logs
+     ${whereClause}
+     ORDER BY created_at DESC
+     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+    [...params, limit, offset],
+  );
+
+  return {
+    logs: result.rows,
+    total,
   };
 }
 
@@ -165,7 +193,7 @@ export async function logAuditError(
   entity_type: string,
   entity_id: string | null,
   error: Error | string,
-  ip_address: string | null = null
+  ip_address: string | null = null,
 ): Promise<AuditLog> {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -178,7 +206,7 @@ export async function logAuditError(
     null,
     null,
     ip_address,
-    'FAILED',
-    errorMessage
+    "FAILED",
+    errorMessage,
   );
 }

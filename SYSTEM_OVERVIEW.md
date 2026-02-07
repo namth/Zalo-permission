@@ -104,11 +104,17 @@ Zalo Message → Resolve ZaloGroup → Workspace → Check Permission → Respon
 |------|----|-----------|---------|----|
 | ZaloUser | Workspace | MEMBER_OF | `role` (admin/member), `joined_at` | User là thành viên workspace |
 | ZaloGroup | Workspace | BINDS_TO | - | Group thuộc workspace này |
-| Workspace | Agent | USES | - | Workspace sử dụng agent này |
+| ZaloGroup | Agent | USES_AGENT | - | **[MỚI]** Group sử dụng agent này (trực tiếp) |
+| Workspace | Agent | USES | - | Workspace sử dụng agent này (legacy, có thể loại bỏ) |
 
 #### Query Examples
 
 ```cypher
+-- [MỚI] Resolve Agent từ ZaloGroup (TRỰC TIẾP)
+MATCH (zg:ZaloGroup {zalo_thread_id: "g123"})
+       -[:USES_AGENT]->(a:Agent)
+RETURN a.key
+
 -- Resolve workspace từ ZaloGroup
 MATCH (zg:ZaloGroup {zalo_thread_id: "g123"})
        -[:BINDS_TO]->(w:Workspace)
@@ -120,7 +126,7 @@ MATCH (u:ZaloUser {zalo_user_id: "u456"})
 WHERE w.id = "w789"
 RETURN u, r.role as role
 
--- Get workspace agents
+-- Get workspace agents (legacy)
 MATCH (w:Workspace {id: "w789"})
        -[:USES]->(a:Agent)
 RETURN a
@@ -171,10 +177,10 @@ updated_at       TIMESTAMP DEFAULT now()
 ```
 
 **Xử lý:**
-1. **Neo4j:** Tìm Workspace từ ZaloGroup (BINDS_TO)
-2. **Neo4j:** Kiểm tra User có MEMBER_OF Workspace không
-3. **Neo4j:** Lấy Agent mà Workspace USES
-4. **PostgreSQL:** Lấy workspace_config (system_prompt, status)
+1. **Neo4j:** Tìm ZaloGroup và lấy Agent **TRỰC TIẾP** (USES_AGENT)
+2. **PostgreSQL:** Lấy agent_key từ zalo_groups table
+3. **Neo4j:** Kiểm tra User có MEMBER_OF Workspace không (optional, nếu cần check permission)
+4. **PostgreSQL:** Lấy workspace config nếu cần
 5. **Kết hợp:** Trả response
 
 **Output (Success):**

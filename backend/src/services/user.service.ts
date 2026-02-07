@@ -36,7 +36,8 @@ export interface CreateUserRequest {
  */
 export async function createOrGetUser(
   data: CreateUserRequest,
-  workspace_id?: string
+  workspace_id?: string,
+  created_by?: string
 ): Promise<UserProfile> {
   // Check if user already exists
   const existing = await getUserByZaloId(data.zalo_id);
@@ -85,7 +86,7 @@ export async function createOrGetUser(
   // Log audit
   await logAuditAction(
     workspace_id || null,
-    user.id,
+    created_by || null,
     'CREATE_USER',
     'User',
     user.id,
@@ -151,7 +152,8 @@ export async function listUsers(
 export async function updateUser(
   id: string,
   updates: Partial<Omit<UserProfile, 'id' | 'zalo_id' | 'created_at' | 'updated_at'>>,
-  workspace_id?: string
+  workspace_id?: string,
+  updated_by?: string
 ): Promise<UserProfile> {
   // Get old value for audit
   const oldUser = await getUserById(id);
@@ -227,7 +229,7 @@ export async function updateUser(
   // Log audit
   await logAuditAction(
     workspace_id || null,
-    id,
+    updated_by || null,
     'UPDATE_USER',
     'User',
     id,
@@ -241,7 +243,7 @@ export async function updateUser(
 /**
  * Delete user from system
  */
-export async function deleteUser(id: string, workspace_id?: string): Promise<void> {
+export async function deleteUser(id: string, workspace_id?: string, deleted_by?: string): Promise<void> {
   const user = await getUserById(id);
   if (!user) {
     throw new Error(`User not found: ${id}`);
@@ -264,7 +266,7 @@ export async function deleteUser(id: string, workspace_id?: string): Promise<voi
   // Log audit
   await logAuditAction(
     workspace_id || null,
-    id,
+    deleted_by || null,
     'DELETE_USER',
     'User',
     id,
@@ -321,4 +323,179 @@ export async function getUserRoleInWorkspace(
   );
 
   return result.rows.length > 0 ? result.rows[0].role : null;
+}
+
+/**
+ * Get users in a Zalo group
+ */
+export async function getUsersInZaloGroup(
+  zalo_group_id: string,
+  limit: number = 100,
+  offset: number = 0
+): Promise<{ users: UserProfile[]; total: number }> {
+  // Query Neo4j to find users who are MEMBER_OF this group
+  try {
+    // Ensure limit and offset are integers (convert to Number then to int)
+    const safeLimit = parseInt(String(Math.max(0, Math.floor(limit))), 10);
+    const safeOffset = parseInt(String(Math.max(0, Math.floor(offset))), 10);
+    
+    console.log(`getUsersInZaloGroup: limit=${limit}, offset=${offset}, safeLimit=${safeLimit}, safeOffset=${safeOffset}, type=${typeof safeLimit}`);
+
+    const result = await executeQuery(
+      `MATCH (u:User)-[:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
+       RETURN u.id as id
+       ORDER BY u.created_at DESC
+       SKIP ${safeOffset}
+       LIMIT ${safeLimit}`,
+      { group_id: zalo_group_id }
+    );
+
+    const userIds = result.records.map(record => record.get('id'));
+
+    // Count total
+    const countResult = await executeQuery(
+      `MATCH (u:User)-[:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
+       RETURN COUNT(u) as count`,
+      { group_id: zalo_group_id }
+    );
+
+    const total = countResult.records[0]?.get('count') || 0;
+
+    // Get user details from PostgreSQL
+    if (userIds.length === 0) {
+      return { users: [], total };
+    }
+
+    const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
+    const queryResult = await query(
+      `SELECT id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at
+       FROM user_profile
+       WHERE id IN (${placeholders})`,
+      userIds
+    );
+
+    return { users: queryResult.rows, total };
+  } catch (error) {
+    console.error('Failed to get users in zalo group:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add user to Zalo group
+ * Creates MEMBER_OF relationship in Neo4j
+ */
+export async function addUserToZaloGroup(
+  user_id: string,
+  zalo_group_id: string,
+  workspace_id?: string,
+  created_by?: string
+): Promise<{ success: boolean; message: string }> {
+  // Verify user exists
+  const user = await getUserById(user_id);
+  if (!user) {
+    throw new Error(`User not found: ${user_id}`);
+  }
+
+  // Verify zalo group exists
+  const groupResult = await query(
+    `SELECT id, workspace_id FROM zalo_groups WHERE id = $1`,
+    [zalo_group_id]
+  );
+
+  if (groupResult.rows.length === 0) {
+    throw new Error(`Zalo group not found: ${zalo_group_id}`);
+  }
+
+  const group = groupResult.rows[0];
+  const resolvedWorkspaceId = workspace_id || group.workspace_id;
+
+  // Create relationship in Neo4j
+  try {
+    await executeQuery(
+      `MATCH (u:User {id: $user_id})
+       MATCH (g:ZaloGroup {id: $group_id})
+       MERGE (u)-[:MEMBER_OF]->(g)
+       RETURN u, g`,
+      {
+        user_id,
+        group_id: zalo_group_id
+      }
+    );
+  } catch (error) {
+    console.error('Failed to create MEMBER_OF relationship in Neo4j:', error);
+    // Continue - relationship creation is important but not critical
+  }
+
+  // Log audit
+  await logAuditAction(
+    resolvedWorkspaceId,
+    created_by || null,
+    'ADD_USER_TO_GROUP',
+    'UserGroupMembership',
+    zalo_group_id,
+    null,
+    { user_id, zalo_group_id }
+  );
+
+  return { success: true, message: `User ${user_id} added to Zalo group ${zalo_group_id}` };
+}
+
+/**
+ * Remove user from Zalo group
+ * Deletes MEMBER_OF relationship in Neo4j
+ */
+export async function removeUserFromZaloGroup(
+  user_id: string,
+  zalo_group_id: string,
+  workspace_id?: string,
+  deleted_by?: string
+): Promise<{ success: boolean; message: string }> {
+  // Verify user exists
+  const user = await getUserById(user_id);
+  if (!user) {
+    throw new Error(`User not found: ${user_id}`);
+  }
+
+  // Verify zalo group exists
+  const groupResult = await query(
+    `SELECT id, workspace_id FROM zalo_groups WHERE id = $1`,
+    [zalo_group_id]
+  );
+
+  if (groupResult.rows.length === 0) {
+    throw new Error(`Zalo group not found: ${zalo_group_id}`);
+  }
+
+  const group = groupResult.rows[0];
+  const resolvedWorkspaceId = workspace_id || group.workspace_id;
+
+  // Delete relationship in Neo4j
+  try {
+    await executeQuery(
+      `MATCH (u:User {id: $user_id})-[r:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
+       DELETE r
+       RETURN u, g`,
+      {
+        user_id,
+        group_id: zalo_group_id
+      }
+    );
+  } catch (error) {
+    console.error('Failed to delete MEMBER_OF relationship in Neo4j:', error);
+    // Continue - relationship deletion is important but not critical
+  }
+
+  // Log audit
+  await logAuditAction(
+    resolvedWorkspaceId,
+    deleted_by || null,
+    'REMOVE_USER_FROM_GROUP',
+    'UserGroupMembership',
+    zalo_group_id,
+    { user_id, zalo_group_id },
+    null
+  );
+
+  return { success: true, message: `User ${user_id} removed from Zalo group ${zalo_group_id}` };
 }

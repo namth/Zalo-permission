@@ -17,6 +17,7 @@ interface ZaloGroup {
   id: string;
   thread_id: string;
   name?: string;
+  agent_key?: string;
   created_at: string;
 }
 
@@ -360,6 +361,9 @@ export default function WorkspaceDetailPage() {
                         Name
                       </th>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
+                        Agent
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">
                         Created
                       </th>
                     </tr>
@@ -370,8 +374,24 @@ export default function WorkspaceDetailPage() {
                         <td className="px-6 py-4 text-sm font-mono text-gray-900">
                           {group.thread_id}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {group.name || "-"}
+                        <td className="px-6 py-4 text-sm">
+                          <Link
+                            href={`/admin/workspaces/${workspace_id}/groups/${group.id}`}
+                            className="text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            {group.name || "View Group"}
+                          </Link>
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          {group.agent_key ? (
+                            <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                              {group.agent_key}
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-semibold">
+                              None
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {new Date(group.created_at).toLocaleDateString()}

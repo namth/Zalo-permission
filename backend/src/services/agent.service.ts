@@ -14,20 +14,6 @@ export interface Agent {
 }
 
 /**
- * Workspace Agent Config Type
- */
-export interface WorkspaceAgentConfig {
-  id: string;
-  workspace_id: string;
-  agent_key: string;
-  system_prompt?: string;
-  temperature: number;
-  max_tokens: number;
-  created_at: Date;
-  updated_at: Date;
-}
-
-/**
  * Create agent (global)
  */
 export async function createAgent(
@@ -173,14 +159,14 @@ export async function deleteAgent(key: string, deleted_by?: string): Promise<voi
     throw new Error(`Agent not found: ${key}`);
   }
 
-  // Check if agent is used in any workspace
+  // Check if agent is used in any zalo groups (v2.0+)
   const used = await query(
-    `SELECT COUNT(*) as count FROM workspace_agent_config WHERE agent_key = $1`,
+    `SELECT COUNT(*) as count FROM zalo_groups WHERE agent_key = $1`,
     [key]
   );
 
   if (used.rows[0].count > 0) {
-    throw new Error(`Agent ${key} is used in workspaces, cannot delete`);
+    throw new Error(`Agent ${key} is used in Zalo groups, cannot delete`);
   }
 
   // Delete from PostgreSQL
@@ -200,172 +186,4 @@ export async function deleteAgent(key: string, deleted_by?: string): Promise<voi
   await logAuditAction(null, deleted_by || null, 'DELETE_AGENT', 'Agent', key, agent, null);
 }
 
-/**
- * Assign agent to workspace with config
- */
-export async function assignAgentToWorkspace(
-  workspace_id: string,
-  agent_key: string,
-  system_prompt?: string,
-  temperature: number = 0.7,
-  max_tokens: number = 2000,
-  assigned_by?: string
-): Promise<WorkspaceAgentConfig> {
-  // Check if agent exists
-  const agent = await getAgent(agent_key);
-  if (!agent) {
-    throw new Error(`Agent not found: ${agent_key}`);
-  }
 
-  // Check if already assigned
-  const existing = await query(
-    `SELECT id FROM workspace_agent_config WHERE workspace_id = $1 AND agent_key = $2`,
-    [workspace_id, agent_key]
-  );
-
-  if (existing.rows.length > 0) {
-    throw new Error(`Agent ${agent_key} already assigned to this workspace`);
-  }
-
-  const result = await query(
-    `INSERT INTO workspace_agent_config (workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-     RETURNING id, workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at`,
-    [workspace_id, agent_key, system_prompt || null, temperature, max_tokens]
-  );
-
-  if (result.rows.length === 0) {
-    throw new Error('Failed to assign agent to workspace');
-  }
-
-  const config = result.rows[0];
-
-  // Create relationship in Neo4j
-  try {
-    await executeQuery(
-      `MATCH (w:Workspace {id: $workspace_id})
-       MATCH (a:Agent {key: $agent_key})
-       MERGE (w)-[r:USES_AGENT]->(a)
-       RETURN r`,
-      { workspace_id, agent_key }
-    );
-  } catch (error) {
-    console.error('Failed to assign agent in Neo4j:', error);
-  }
-
-  await logAuditAction(workspace_id, assigned_by || null, 'ASSIGN_AGENT', 'Agent', agent_key, null, config);
-
-  return config;
-}
-
-/**
- * Get agent config for workspace
- */
-export async function getWorkspaceAgentConfig(
-  workspace_id: string,
-  agent_key?: string
-): Promise<WorkspaceAgentConfig | null> {
-  let query_str = `SELECT id, workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at
-                  FROM workspace_agent_config
-                  WHERE workspace_id = $1`;
-  const params = [workspace_id];
-
-  if (agent_key) {
-    query_str += ` AND agent_key = $2`;
-    params.push(agent_key);
-  } else {
-    query_str += ` LIMIT 1`;
-  }
-
-  const result = await query(query_str, params);
-
-  return result.rows.length > 0 ? result.rows[0] : null;
-}
-
-/**
- * Get all agent configs for workspace
- */
-export async function getWorkspaceAgentConfigs(workspace_id: string): Promise<WorkspaceAgentConfig[]> {
-  const result = await query(
-    `SELECT id, workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at
-     FROM workspace_agent_config
-     WHERE workspace_id = $1
-     ORDER BY created_at DESC`,
-    [workspace_id]
-  );
-
-  return result.rows;
-}
-
-/**
- * Update agent config
- */
-export async function updateAgentConfig(
-  config_id: string,
-  updates: Partial<Omit<WorkspaceAgentConfig, 'id' | 'workspace_id' | 'agent_key' | 'created_at' | 'updated_at'>>,
-  updated_by?: string
-): Promise<WorkspaceAgentConfig> {
-  // Get old config
-  const old = await query(
-    `SELECT id, workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at
-     FROM workspace_agent_config
-     WHERE id = $1`,
-    [config_id]
-  );
-
-  if (old.rows.length === 0) {
-    throw new Error('Agent config not found');
-  }
-
-  const oldConfig = old.rows[0];
-
-  const fields: string[] = [];
-  const values: any[] = [];
-  let paramIndex = 1;
-
-  if (updates.system_prompt !== undefined) {
-    fields.push(`system_prompt = $${paramIndex++}`);
-    values.push(updates.system_prompt);
-  }
-  if (updates.temperature !== undefined) {
-    fields.push(`temperature = $${paramIndex++}`);
-    values.push(updates.temperature);
-  }
-  if (updates.max_tokens !== undefined) {
-    fields.push(`max_tokens = $${paramIndex++}`);
-    values.push(updates.max_tokens);
-  }
-
-  if (fields.length === 0) {
-    return oldConfig;
-  }
-
-  fields.push(`updated_at = NOW()`);
-  values.push(config_id);
-
-  const result = await query(
-    `UPDATE workspace_agent_config
-     SET ${fields.join(', ')}
-     WHERE id = $${paramIndex}
-     RETURNING id, workspace_id, agent_key, system_prompt, temperature, max_tokens, created_at, updated_at`,
-    values
-  );
-
-  if (result.rows.length === 0) {
-    throw new Error('Failed to update agent config');
-  }
-
-  const updatedConfig = result.rows[0];
-
-  await logAuditAction(
-    updatedConfig.workspace_id,
-    updated_by || null,
-    'UPDATE_AGENT_CONFIG',
-    'AgentConfig',
-    config_id,
-    oldConfig,
-    updatedConfig
-  );
-
-  return updatedConfig;
-}
