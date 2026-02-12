@@ -1,0 +1,220 @@
+#!/bin/bash
+# Initialize database structures and test data
+
+echo "=== Initializing PostgreSQL Schema ==="
+
+# Đợi PostgreSQL khởi động
+sleep 5
+
+# Kiểm tra kết nối
+docker exec plutus-postgres pg_isready -U plutusr || echo "PostgreSQL chưa sẵn sàng"
+
+# Chạy SQL
+docker exec -e PGPASSWORD=ccbbndctdkhmbddn -i plutus-postgres psql -U plutusr -d plutusdb << 'EOF'
+
+-- ============================================
+-- WORKSPACE-BASED PERMISSION SYSTEM V3
+-- Fresh schema with simplified structure
+-- ============================================
+
+-- 1. USER_PROFILE (Contact List / Danh bạ)
+CREATE TABLE IF NOT EXISTS user_profile (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  zalo_id VARCHAR(255) UNIQUE NOT NULL,
+  full_name VARCHAR(255),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  gender VARCHAR(20),
+  note TEXT,
+  status VARCHAR(50) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profile_zalo_id ON user_profile(zalo_id);
+
+-- 2. WORKSPACES (Central Permission Unit)
+CREATE TABLE IF NOT EXISTS workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'active',
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspaces_status ON workspaces(status);
+
+-- 3. ZALO_GROUPS (Entry Point - with direct Agent link)
+CREATE TABLE IF NOT EXISTS zalo_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  thread_id VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(255),
+  agent_key VARCHAR(100),  -- ← [NEW] Direct link to Agent
+  status VARCHAR(50) DEFAULT 'active',  -- ← [NEW] Group status (active/disabled)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_key) REFERENCES agents(key) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_thread_id ON zalo_groups(thread_id);
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_workspace_id ON zalo_groups(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_agent_key ON zalo_groups(agent_key);
+CREATE INDEX IF NOT EXISTS idx_zalo_groups_name ON zalo_groups(name);
+
+-- 4. AGENTS (Global Agent Definitions)
+CREATE TABLE IF NOT EXISTS agents (
+  key VARCHAR(100) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. [DEPRECATED] WORKSPACE_AGENT_CONFIG - Removed in v2.0
+-- Agent configuration now stored directly in zalo_groups.agent_key column
+-- See migration 002a-drop-workspace-agent-config.sql and 002b-add-agent-to-zalo-groups.sql
+
+-- 6. WORKSPACE_USER_ROLES (Role per User in Workspace)
+CREATE TABLE IF NOT EXISTS workspace_user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  role VARCHAR(50) NOT NULL,
+  assigned_by UUID,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_by) REFERENCES user_profile(id) ON DELETE SET NULL,
+  UNIQUE(workspace_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_user_roles_workspace ON workspace_user_roles(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_user_roles_user ON workspace_user_roles(user_id);
+
+-- 7. ACCOUNTS (Business Systems)
+CREATE TABLE IF NOT EXISTS accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  reference_id VARCHAR(255),
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_workspace ON accounts(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
+
+-- 8. AUDIT_LOGS (Complete Audit Trail)
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID,
+  user_id UUID,
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_id VARCHAR(255),
+  old_value JSONB,
+  new_value JSONB,
+  ip_address VARCHAR(45),
+  status VARCHAR(20) DEFAULT 'SUCCESS',
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace ON audit_logs(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
+
+-- ============================================
+-- INSERT TEST DATA
+-- ============================================
+
+-- Insert test agents
+INSERT INTO agents (key, name, description) VALUES
+  ('agent_support', 'Support Agent', 'Customer support AI agent')
+ON CONFLICT DO NOTHING;
+
+-- Insert test workspace
+INSERT INTO workspaces (name, status, description) VALUES
+  ('workspace_1', 'active', 'Test workspace')
+ON CONFLICT DO NOTHING;
+
+-- Insert test Zalo group
+INSERT INTO zalo_groups (workspace_id, thread_id, name) 
+SELECT w.id, 'test_group_1', 'Test Group'
+FROM workspaces w WHERE w.name = 'workspace_1'
+ON CONFLICT DO NOTHING;
+
+-- Insert test user
+INSERT INTO user_profile (zalo_id, full_name, email, phone, status) VALUES
+  ('test_user_admin', 'Test Admin', 'admin@test.com', '0123456789', 'active')
+ON CONFLICT DO NOTHING;
+
+-- Assign role
+INSERT INTO workspace_user_roles (workspace_id, user_id, role)
+SELECT w.id, u.id, 'admin'
+FROM workspaces w, user_profile u
+WHERE w.name = 'workspace_1' AND u.zalo_id = 'test_user_admin'
+ON CONFLICT DO NOTHING;
+
+-- Assign agent to group (v2.0+)
+-- Agent is now linked directly to zalo_groups via agent_key column
+UPDATE zalo_groups
+SET agent_key = 'agent_support'
+WHERE id IN (SELECT id FROM zalo_groups LIMIT 1);
+
+EOF
+
+echo "=== Initializing Neo4j ==="
+sleep 10  # Đợi Neo4j khởi động đủ
+
+# Chạy cypher-shell với inline commands
+docker exec -i plutus-neo4j cypher-shell -u neo4j -p neo4j_password --format plain << 'CYPHER'
+// Create constraints
+// Properties: zalo_user_id, name, created_at
+CREATE CONSTRAINT zalouser_id IF NOT EXISTS FOR (u:ZaloUser) REQUIRE u.zalo_user_id IS UNIQUE;
+
+// Properties: id, zalo_thread_id, name, created_at, updated_at, status
+CREATE CONSTRAINT zalogroup_thread_id IF NOT EXISTS FOR (zg:ZaloGroup) REQUIRE zg.zalo_thread_id IS UNIQUE;
+CREATE CONSTRAINT zalogroup_id IF NOT EXISTS FOR (zg:ZaloGroup) REQUIRE zg.id IS UNIQUE;
+
+CREATE CONSTRAINT workspace_id IF NOT EXISTS FOR (w:Workspace) REQUIRE w.id IS UNIQUE;
+CREATE CONSTRAINT agent_key IF NOT EXISTS FOR (a:Agent) REQUIRE a.key IS UNIQUE;
+
+// Create indexes
+CREATE INDEX zalouser_id_idx IF NOT EXISTS FOR (u:ZaloUser) ON (u.zalo_user_id);
+CREATE INDEX zalogroup_thread_id_idx IF NOT EXISTS FOR (zg:ZaloGroup) ON (zg.zalo_thread_id);
+CREATE INDEX zalogroup_id_idx IF NOT EXISTS FOR (zg:ZaloGroup) ON (zg.id);
+CREATE INDEX zalogroup_name_idx IF NOT EXISTS FOR (zg:ZaloGroup) ON (zg.name);
+CREATE INDEX workspace_id_idx IF NOT EXISTS FOR (w:Workspace) ON (w.id);
+CREATE INDEX agent_key_idx IF NOT EXISTS FOR (a:Agent) ON (a.key);
+
+// Create test nodes
+MERGE (zg:ZaloGroup {zalo_thread_id: 'test_group_1', name: 'Test Group 1 - Support', created_at: datetime()});
+MERGE (w:Workspace {id: 'workspace_1', name: 'Test Workspace 1 - Support Team', type: 'team', created_at: datetime()});
+MERGE (a:Agent {key: 'agent_support', type: 'ai_agent'});
+MERGE (u:ZaloUser {zalo_user_id: 'test_user_admin', name: 'Test Admin User', created_at: datetime()});
+
+// Create relationships
+MATCH (zg:ZaloGroup {zalo_thread_id: 'test_group_1'})
+MATCH (w:Workspace {id: 'workspace_1'})
+MERGE (zg)-[:BINDS_TO]->(w);
+
+MATCH (w:Workspace {id: 'workspace_1'})
+MATCH (a:Agent {key: 'agent_support'})
+MERGE (w)-[:USES]->(a);
+
+MATCH (u:ZaloUser {zalo_user_id: 'test_user_admin'})
+MATCH (w:Workspace {id: 'workspace_1'})
+MERGE (u)-[:MEMBER_OF {role: 'admin', joined_at: datetime()}]->(w);
+CYPHER
+
+echo "=== Database initialization complete ==="

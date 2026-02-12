@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15-bookworm
     container_name: plutus-postgres
     restart: always
     environment:
@@ -26,8 +26,8 @@ services:
 
   workspace-api:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: ./workspace-api
+      dockerfile: ./Dockerfile
     container_name: plutus-workspace-api
     restart: always
     environment:

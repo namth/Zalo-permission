@@ -1,0 +1,427 @@
+/**
+ * TypeScript Type Definitions
+ * Central place for all type definitions used across the application
+ */
+
+// ============================================================================
+// USER & WORKSPACE TYPES
+// ============================================================================
+
+export interface UserProfile {
+  id: string;
+  zalo_id: string;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  gender?: string;
+  note?: string;
+  status?: string;
+  embedding?: number[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZaloUserNode {
+  zalo_user_id: string;
+  name?: string;
+  created_at?: string;
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  status: 'active' | 'disabled';
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ZaloGroup {
+  id: string;
+  thread_id: string;
+  workspace_id: string;
+  agent_key?: string;  // Direct link to agent
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Agent {
+  key: string;
+  name: string;
+  description?: string;
+  type?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ============================================================================
+// TOOL & SKILL TYPES
+// ============================================================================
+
+export interface Tool {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  input_schema?: Record<string, any>;  // JSON schema
+  embedding?: number[];
+  status: 'active' | 'deprecated' | 'disabled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description?: string;
+  logic_config: SkillStep[];  // Array of execution steps
+  owner_id: string;
+  workspace_id: string;
+  is_shared: boolean;
+  embedding?: number[];
+  status: 'active' | 'archived' | 'disabled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillStep {
+  step: number;
+  tool: string;  // tool key
+  params: Record<string, any>;
+  description?: string;
+}
+
+// ============================================================================
+// PENDING TASK TYPES
+// ============================================================================
+
+export interface PendingTask {
+  id: string;
+  workspace_id: string;
+  thread_id: string;
+  user_id: string;
+  intent: string;
+  full_plan?: PlanStep[];
+  missing_parameters?: Record<string, string>;  // { param_key: description }
+  status: 'AWAITING_INPUT' | 'READY_TO_RESUME' | 'COMPLETED';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanStep {
+  step: number;
+  tool?: string;
+  action: string;
+  params?: Record<string, any>;
+  required_params?: string[];
+}
+
+// ============================================================================
+// AUDIT LOG TYPES
+// ============================================================================
+
+export interface AuditLog {
+  id: string;
+  workspace_id: string;
+  thread_id?: string;
+  user_id?: string;
+  agent_role: 'Planner' | 'Worker' | 'Observer';
+  action_type: string;
+  input_data?: Record<string, any>;
+  output_data?: Record<string, any>;
+  status: 'success' | 'failed' | 'pending';
+  error_message?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+}
+
+// ============================================================================
+// API REQUEST/RESPONSE TYPES
+// ============================================================================
+
+// Agent APIs
+export interface AuthAndResourcesRequest {
+  thread_id: string;
+  user_id: string;
+  workspace_id?: string;
+}
+
+export interface AuthAndResourcesResponse {
+  success: boolean;
+  workspace_id: string;
+  user_role: 'admin' | 'member';
+  pending_task?: PendingTask;
+  available_tools: Tool[];
+  available_skills: Skill[];
+  error?: string;
+}
+
+export interface PendingTaskRequest {
+  workspace_id: string;
+  thread_id: string;
+  user_id: string;
+  intent?: string;
+  full_plan?: PlanStep[];
+  missing_parameters?: Record<string, string>;
+  status: 'AWAITING_INPUT' | 'READY_TO_RESUME' | 'COMPLETED';
+}
+
+export interface PendingTaskResponse {
+  success: boolean;
+  data?: PendingTask;
+  error?: string;
+}
+
+export interface AuditLogRequest {
+  workspace_id: string;
+  thread_id?: string;
+  user_id?: string;
+  agent_role: 'Planner' | 'Worker' | 'Observer';
+  action_type: string;
+  input_data?: Record<string, any>;
+  output_data?: Record<string, any>;
+  status: 'success' | 'failed' | 'pending';
+  error_message?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AuditLogResponse {
+  success: boolean;
+  data?: AuditLog;
+  error?: string;
+}
+
+export interface LearnSkillRequest {
+  workspace_id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  logic_config: SkillStep[];
+  is_shared?: boolean;
+}
+
+export interface LearnSkillResponse {
+  success: boolean;
+  skill_id?: string;
+  error?: string;
+}
+
+// Admin APIs - Workspace Management
+export interface CreateWorkspaceRequest {
+  workspace_id: string;
+  name: string;
+  type?: 'team' | 'company' | 'personal';
+  agent_key?: string;
+  system_prompt: string;
+}
+
+export interface UpdateWorkspaceRequest {
+  name?: string;
+  type?: 'team' | 'company' | 'personal';
+  agent_key?: string;
+  system_prompt?: string;
+  status?: 'active' | 'disabled';
+}
+
+export interface WorkspaceListItem {
+  id: string;
+  name: string;
+  type: 'team' | 'company' | 'personal';
+  agent_key: string;
+  status: 'active' | 'disabled';
+  created_at: string;
+}
+
+export interface WorkspaceDetailResponse {
+  id: string;
+  name: string;
+  type: 'team' | 'company' | 'personal';
+  agent_key: string;
+  system_prompt: string;
+  status: 'active' | 'disabled';
+  created_at: string;
+  updated_at: string;
+  member_count: number;
+}
+
+// Admin APIs - Tool Management
+export interface CreateToolRequest {
+  key: string;
+  name: string;
+  description?: string;
+  input_schema?: Record<string, any>;
+}
+
+export interface CreateToolResponse {
+  success: boolean;
+  tool_id?: string;
+  error?: string;
+}
+
+export interface CreatePermissionRequest {
+  workspace_id: string;
+  tool_key: string;
+}
+
+export interface CreatePermissionResponse {
+  success: boolean;
+  relationship_id?: string;
+  error?: string;
+}
+
+// User APIs
+export interface ListSkillsRequest {
+  user_id: string;
+  workspace_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListSkillsResponse {
+  success: boolean;
+  skills: Skill[];
+  pagination?: {
+    limit: number;
+    offset: number;
+    total: number;
+    hasMore: boolean;
+  };
+  error?: string;
+}
+
+export interface ShareSkillRequest {
+  skill_id: string;
+  workspace_id: string;
+}
+
+export interface ShareSkillResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface ListAuditLogsRequest {
+  user_id: string;
+  workspace_id?: string;
+  thread_id?: string;
+  limit?: number;
+  offset?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface ListAuditLogsResponse {
+  success: boolean;
+  logs: AuditLog[];
+  pagination?: {
+    limit: number;
+    offset: number;
+    total: number;
+    hasMore: boolean;
+  };
+  error?: string;
+}
+
+// ============================================================================
+// UTILITY TYPES
+// ============================================================================
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginationMeta {
+  limit: number;
+  offset: number;
+  total: number;
+  hasMore: boolean;
+}
+
+// ============================================================================
+// NEO4J TYPES
+// ============================================================================
+
+export interface Neo4jNode {
+  labels: string[];
+  properties: Record<string, any>;
+}
+
+export interface Neo4jRelationship {
+  type: string;
+  properties?: Record<string, any>;
+}
+
+// ============================================================================
+// SEARCH TYPES
+// ============================================================================
+
+export interface SemanticSearchRequest {
+  query: string;
+  type: 'tool' | 'skill';  // What to search
+  workspace_id?: string;
+  limit?: number;
+  threshold?: number;  // Cosine similarity threshold
+}
+
+export interface SemanticSearchResult<T> {
+  item: T;
+  similarity: number;
+}
+
+export interface SemanticSearchResponse<T> {
+  success: boolean;
+  results: SemanticSearchResult<T>[];
+  query: string;
+  error?: string;
+}
+
+// ============================================================================
+// ERROR TYPES
+// ============================================================================
+
+export class ApiError extends Error {
+  constructor(
+    public statusCode: number,
+    public errorCode: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+export enum ErrorCode {
+  // Auth errors
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  FORBIDDEN = 'FORBIDDEN',
+  WORKSPACE_NOT_FOUND = 'WORKSPACE_NOT_FOUND',
+  USER_NOT_MEMBER = 'USER_NOT_MEMBER',
+
+  // Resource errors
+  TOOL_NOT_FOUND = 'TOOL_NOT_FOUND',
+  SKILL_NOT_FOUND = 'SKILL_NOT_FOUND',
+  AGENT_NOT_FOUND = 'AGENT_NOT_FOUND',
+  ZALO_GROUP_NOT_FOUND = 'ZALO_GROUP_NOT_FOUND',
+
+  // Validation errors
+  INVALID_INPUT = 'INVALID_INPUT',
+  MISSING_REQUIRED_FIELD = 'MISSING_REQUIRED_FIELD',
+  INVALID_STATUS = 'INVALID_STATUS',
+
+  // Business logic errors
+  PERMISSION_DENIED = 'PERMISSION_DENIED',
+  RESOURCE_ALREADY_EXISTS = 'RESOURCE_ALREADY_EXISTS',
+  SKILL_IMMUTABLE = 'SKILL_IMMUTABLE',
+
+  // System errors
+  DATABASE_ERROR = 'DATABASE_ERROR',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+  NEO4J_ERROR = 'NEO4J_ERROR',
+}

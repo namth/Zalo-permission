@@ -1,0 +1,254 @@
+{
+  "name": "Planner Agent Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "none",
+        "method": "POST",
+        "url": "=http://localhost:3000/api/agent/auth-and-resources",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "workspace_id",
+              "value": "={{ $json.workspace_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Get Auth Context",
+      "name": "Get Auth Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [100, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "method": "GET",
+        "url": "=http://localhost:3000/api/agent/pending-task?thread_id={{ $json.thread_id }}&user_id={{ $json.user_id }}&workspace_id={{ $node['Get Auth Context'].json.workspace_id }}",
+        "options": {}
+      },
+      "id": "Check Pending Task",
+      "name": "Check Pending Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [300, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Step: Analyze user message and decide next action\nconst message = $json.user_message;\nconst authContext = $input.first().json;\nconst pendingTask = $input.first().json.pending_task;\n\n// Simple heuristic decision logic\nconst hasExistingTask = !!pendingTask && pendingTask.status === 'AWAITING_INPUT';\nconst messageLength = message.length;\nconst hasParameters = messageLength > 50; // Simple heuristic\n\nreturn {\n  action: hasExistingTask ? 'RESUME_TASK' : (hasParameters ? 'PROCEED' : 'ASK_INPUT'),\n  workspace_id: authContext.workspace_id,\n  user_role: authContext.user_role,\n  available_tools: authContext.available_tools,\n  available_skills: authContext.available_skills,\n  pending_task: pendingTask\n};"
+      },
+      "id": "Decision Logic",
+      "name": "Decision Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "method": "POST",
+        "url": "=http://localhost:3000/api/agent/pending-task",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workspace_id",
+              "value": "={{ $json.workspace_id }}"
+            },
+            {
+              "name": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "intent",
+              "value": "={{ $json.user_message }}"
+            },
+            {
+              "name": "status",
+              "value": "AWAITING_INPUT"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Save Pending Task",
+      "name": "Save Pending Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 100]
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "method": "POST",
+        "url": "={{ $json.worker_webhook_url }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workspace_id",
+              "value": "={{ $json.workspace_id }}"
+            },
+            {
+              "name": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "plan",
+              "value": "={{ $json.full_plan }}"
+            },
+            {
+              "name": "available_tools",
+              "value": "={{ $json.available_tools }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Call Worker",
+      "name": "Call Worker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "method": "POST",
+        "url": "=http://localhost:3000/api/agent/audit-log",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workspace_id",
+              "value": "={{ $json.workspace_id }}"
+            },
+            {
+              "name": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "agent_role",
+              "value": "Planner"
+            },
+            {
+              "name": "action_type",
+              "value": "PLANNING_DECISION"
+            },
+            {
+              "name": "input_data",
+              "value": "={{ {user_message: $json.user_message, has_pending_task: !!$json.pending_task} }}"
+            },
+            {
+              "name": "output_data",
+              "value": "={{ {action: $json.action, tools_count: ($json.available_tools || []).length} }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "Log Audit",
+      "name": "Log Audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200]
+    }
+  ],
+  "connections": {
+    "Get Auth Context": {
+      "main": [
+        [
+          {
+            "node": "Check Pending Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Pending Task": {
+      "main": [
+        [
+          {
+            "node": "Decision Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Logic": {
+      "main": [
+        [
+          {
+            "node": "Save Pending Task",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Pending Task": {
+      "main": [
+        [
+          {
+            "node": "Log Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Worker": {
+      "main": [
+        [
+          {
+            "node": "Log Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true,
+    "timezone": "UTC"
+  },
+  "tags": ["AI Agent", "Planner"],
+  "triggerNodes": ["Webhook"],
+  "hash": "planner_workflow_v1"
+}
