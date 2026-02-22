@@ -7,15 +7,15 @@ function makeJsonSerializable(data: any): any {
   if (data === null || data === undefined) {
     return data;
   }
-  
+
   if (data instanceof Date) {
     return data.toISOString();
   }
-  
+
   if (Array.isArray(data)) {
     return data.map(makeJsonSerializable);
   }
-  
+
   if (typeof data === 'object') {
     const result: any = {};
     for (const key in data) {
@@ -25,7 +25,7 @@ function makeJsonSerializable(data: any): any {
     }
     return result;
   }
-  
+
   return data;
 }
 
@@ -37,7 +37,6 @@ export interface AuditLog {
   workspace_id: string | null;
   thread_id: string | null;
   user_id: string | null;
-  agent_role: string | null;  // 'Planner' | 'Worker' | 'Observer'
   action_type: string;
   input_data: any;
   output_data: any;
@@ -54,7 +53,6 @@ export async function logAuditAction(
   workspace_id: string | null,
   thread_id: string | null = null,
   user_id: string | null = null,
-  agent_role: string | null = null,
   action_type: string,
   input_data: any = null,
   output_data: any = null,
@@ -69,14 +67,13 @@ export async function logAuditAction(
 
   const result = await query(
     `INSERT INTO audit_logs 
-       (workspace_id, thread_id, user_id, agent_role, action_type, input_data, output_data, status, error_message, metadata, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-      RETURNING id, workspace_id, thread_id, user_id, agent_role, action_type, input_data, output_data, status, error_message, metadata, created_at`,
+       (workspace_id, thread_id, user_id, action_type, input_data, output_data, status, error_message, metadata, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      RETURNING id, workspace_id, thread_id, user_id, action_type, input_data, output_data, status, error_message, metadata, created_at`,
     [
       workspace_id,
       thread_id,
       user_id,
-      agent_role,
       action_type,
       serializedInputData ? JSON.stringify(serializedInputData) : null,
       serializedOutputData ? JSON.stringify(serializedOutputData) : null,
@@ -257,7 +254,6 @@ export async function logAuditError(
     workspace_id,
     thread_id,
     user_id,
-    null,  // agent_role
     action_type,
     null,
     null,

@@ -21,8 +21,10 @@ export default function ToolsPage() {
       setLoading(true);
       setError(null);
       const data = await fetchTools();
+      console.log('Fetched tools:', data);
       setTools(data);
     } catch (err) {
+      console.error('Failed to load tools:', err);
       setError(err instanceof Error ? err.message : 'Error loading tools');
     } finally {
       setLoading(false);
@@ -31,7 +33,7 @@ export default function ToolsPage() {
 
   const filteredTools = tools.filter((tool) => {
     const matchesSearch = tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         tool.key.toLowerCase().includes(searchTerm.toLowerCase());
+      tool.key.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = !filterStatus || tool.status === filterStatus;
     return matchesSearch && matchesStatus;
   });

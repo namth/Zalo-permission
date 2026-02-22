@@ -1,6 +1,6 @@
 import { executeQuery } from '@/lib/db';
 import { getZaloGroupByThreadId } from './workspace.service';
-import { getUserByZaloId, getUserRoleInWorkspace } from './user.service';
+import { UserService } from './user.service';
 
 /**
  * Workspace Context Response
@@ -48,7 +48,7 @@ export async function resolveWorkspaceContext(
     const workspace_id = zaloGroup.workspace_id;
 
     // Step 6: Get or create user
-    const user = await getUserByZaloId(zalo_user_id);
+    const user = await UserService.getUserByZaloId(zalo_user_id);
     if (!user) {
       return {
         allowed: false,
@@ -58,7 +58,7 @@ export async function resolveWorkspaceContext(
     }
 
     // Step 7: Check user role in workspace (optional permission check)
-    const user_role = await getUserRoleInWorkspace(workspace_id, user.id);
+    const user_role = await UserService.getUserRoleInWorkspace(workspace_id, user.id);
     if (!user_role) {
       return {
         allowed: false,
@@ -93,7 +93,7 @@ export async function isAdminInWorkspace(
   user_id: string
 ): Promise<boolean> {
   try {
-    const role = await getUserRoleInWorkspace(workspace_id, user_id);
+    const role = await UserService.getUserRoleInWorkspace(workspace_id, user_id);
     return role === 'ADMIN';
   } catch (error) {
     console.error('Error checking admin role:', error);
@@ -109,7 +109,7 @@ export async function isMemberOfWorkspace(
   user_id: string
 ): Promise<boolean> {
   try {
-    const role = await getUserRoleInWorkspace(workspace_id, user_id);
+    const role = await UserService.getUserRoleInWorkspace(workspace_id, user_id);
     return role !== null;
   } catch (error) {
     console.error('Error checking workspace membership:', error);

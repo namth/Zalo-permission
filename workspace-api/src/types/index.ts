@@ -41,19 +41,10 @@ export interface ZaloGroup {
   id: string;
   thread_id: string;
   workspace_id: string;
-  agent_key?: string;  // Direct link to agent
   created_at: string;
   updated_at: string;
 }
 
-export interface Agent {
-  key: string;
-  name: string;
-  description?: string;
-  type?: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 // ============================================================================
 // TOOL & SKILL TYPES
@@ -92,30 +83,6 @@ export interface SkillStep {
   description?: string;
 }
 
-// ============================================================================
-// PENDING TASK TYPES
-// ============================================================================
-
-export interface PendingTask {
-  id: string;
-  workspace_id: string;
-  thread_id: string;
-  user_id: string;
-  intent: string;
-  full_plan?: PlanStep[];
-  missing_parameters?: Record<string, string>;  // { param_key: description }
-  status: 'AWAITING_INPUT' | 'READY_TO_RESUME' | 'COMPLETED';
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PlanStep {
-  step: number;
-  tool?: string;
-  action: string;
-  params?: Record<string, any>;
-  required_params?: string[];
-}
 
 // ============================================================================
 // AUDIT LOG TYPES
@@ -126,7 +93,7 @@ export interface AuditLog {
   workspace_id: string;
   thread_id?: string;
   user_id?: string;
-  agent_role: 'Planner' | 'Worker' | 'Observer';
+  // agent_role removed
   action_type: string;
   input_data?: Record<string, any>;
   output_data?: Record<string, any>;
@@ -140,44 +107,11 @@ export interface AuditLog {
 // API REQUEST/RESPONSE TYPES
 // ============================================================================
 
-// Agent APIs
-export interface AuthAndResourcesRequest {
-  thread_id: string;
-  user_id: string;
-  workspace_id?: string;
-}
-
-export interface AuthAndResourcesResponse {
-  success: boolean;
-  workspace_id: string;
-  user_role: 'admin' | 'member';
-  pending_task?: PendingTask;
-  available_tools: Tool[];
-  available_skills: Skill[];
-  error?: string;
-}
-
-export interface PendingTaskRequest {
-  workspace_id: string;
-  thread_id: string;
-  user_id: string;
-  intent?: string;
-  full_plan?: PlanStep[];
-  missing_parameters?: Record<string, string>;
-  status: 'AWAITING_INPUT' | 'READY_TO_RESUME' | 'COMPLETED';
-}
-
-export interface PendingTaskResponse {
-  success: boolean;
-  data?: PendingTask;
-  error?: string;
-}
-
 export interface AuditLogRequest {
   workspace_id: string;
   thread_id?: string;
   user_id?: string;
-  agent_role: 'Planner' | 'Worker' | 'Observer';
+  // agent_role removed
   action_type: string;
   input_data?: Record<string, any>;
   output_data?: Record<string, any>;
@@ -212,14 +146,12 @@ export interface CreateWorkspaceRequest {
   workspace_id: string;
   name: string;
   type?: 'team' | 'company' | 'personal';
-  agent_key?: string;
   system_prompt: string;
 }
 
 export interface UpdateWorkspaceRequest {
   name?: string;
   type?: 'team' | 'company' | 'personal';
-  agent_key?: string;
   system_prompt?: string;
   status?: 'active' | 'disabled';
 }
@@ -228,7 +160,6 @@ export interface WorkspaceListItem {
   id: string;
   name: string;
   type: 'team' | 'company' | 'personal';
-  agent_key: string;
   status: 'active' | 'disabled';
   created_at: string;
 }
@@ -237,7 +168,6 @@ export interface WorkspaceDetailResponse {
   id: string;
   name: string;
   type: 'team' | 'company' | 'personal';
-  agent_key: string;
   system_prompt: string;
   status: 'active' | 'disabled';
   created_at: string;
@@ -276,6 +206,8 @@ export interface ListSkillsRequest {
   workspace_id?: string;
   limit?: number;
   offset?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface ListSkillsResponse {
@@ -306,8 +238,6 @@ export interface ListAuditLogsRequest {
   thread_id?: string;
   limit?: number;
   offset?: number;
-  startDate?: string;
-  endDate?: string;
 }
 
 export interface ListAuditLogsResponse {
@@ -407,7 +337,6 @@ export enum ErrorCode {
   // Resource errors
   TOOL_NOT_FOUND = 'TOOL_NOT_FOUND',
   SKILL_NOT_FOUND = 'SKILL_NOT_FOUND',
-  AGENT_NOT_FOUND = 'AGENT_NOT_FOUND',
   ZALO_GROUP_NOT_FOUND = 'ZALO_GROUP_NOT_FOUND',
 
   // Validation errors

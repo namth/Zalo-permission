@@ -1,27 +1,28 @@
 /**
  * POST /api/admin/permissions
+ * DELETE /api/admin/permissions
  * 
- * Create workspace tool permissions
- * Grant a workspace access to a tool
+ * Manage workspace tool permissions with synchronized databases
+ * POST: Grant a workspace access to a tool
+ * DELETE: Revoke a workspace's access to a tool
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-import { CreatePermissionRequest, CreatePermissionResponse } from '@/types';
-import { ToolService, AuditLogService } from '@/services';
-import { neo4jClient } from '@/lib/neo4j';
+import { PermissionSyncService } from '@/services/sync.service';
+import { AuditLogService } from '@/services';
+import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+export const dynamic = 'force-dynamic';
 
-export async function POST(req: NextRequest): Promise<NextResponse<CreatePermissionResponse>> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body: CreatePermissionRequest = await req.json();
-    const { workspace_id, tool_key } = body;
+    const body = await req.json();
+    const { workspace_id, tool_key, granted_by } = body;
 
-    logger.info(`[API] POST /api/admin/permissions - workspace: ${workspace_id}, tool: ${tool_key}`);
+    logger.info(
+      `[API] POST /api/admin/permissions - workspace: ${workspace_id}, tool: ${tool_key}`
+    );
 
     // Validation
     if (!workspace_id || !tool_key) {
@@ -34,46 +35,109 @@ export async function POST(req: NextRequest): Promise<NextResponse<CreatePermiss
       );
     }
 
-    // Initialize services
-    const toolService = new ToolService(db);
+    // Grant permission with full sync to PostgreSQL and Neo4j
+    const result = await PermissionSyncService.grantToolPermission(
+      workspace_id,
+      tool_key,
+      granted_by
+    );
+
+    // Log audit
+    const db = getDb();
     const auditLogService = new AuditLogService(db);
+    await auditLogService.createAuditLog({
+      workspace_id,
+      action_type: 'PERMISSION_GRANTED',
+      input_data: { tool_key },
+      output_data: { relationship_type: 'CAN_USE', tool_id: result.tool_id },
+      status: 'success',
+    });
 
-    // Verify tool exists
-    const tool = await toolService.getToolByKey(tool_key);
+    logger.info(
+      `[API] Permission granted: workspace ${workspace_id} can use tool ${tool_key}`
+    );
 
-    if (!tool) {
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          workspace_id,
+          tool_key,
+          relationship_id: `${workspace_id}:CAN_USE:${tool_key}`,
+          status: result.status,
+        },
+      },
+      { status: result.status === 'already_exists' ? 200 : 201 }
+    );
+  } catch (error) {
+    logger.error(`[API] POST /api/admin/permissions error: ${error}`);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest): Promise<NextResponse> {
+  try {
+    const body = await req.json();
+    const { workspace_id, tool_key, revoked_by } = body;
+
+    logger.info(
+      `[API] DELETE /api/admin/permissions - workspace: ${workspace_id}, tool: ${tool_key}`
+    );
+
+    // Validation
+    if (!workspace_id || !tool_key) {
       return NextResponse.json(
         {
           success: false,
-          error: `Tool ${tool_key} not found`,
+          error: 'Missing required fields: workspace_id, tool_key',
         },
-        { status: 404 }
+        { status: 400 }
       );
     }
 
-    // Create permission in Neo4j
-    await neo4jClient.createToolPermission(workspace_id, tool_key);
+    // Revoke permission with full sync to PostgreSQL and Neo4j
+    const result = await PermissionSyncService.revokeToolPermission(
+      workspace_id,
+      tool_key,
+      revoked_by
+    );
 
     // Log audit
+    const db = getDb();
+    const auditLogService = new AuditLogService(db);
     await auditLogService.createAuditLog({
       workspace_id,
-      agent_role: 'Observer',
-      action_type: 'PERMISSION_GRANTED',
+      action_type: 'PERMISSION_REVOKED',
       input_data: { tool_key },
       output_data: { relationship_type: 'CAN_USE' },
       status: 'success',
     });
 
-    const response: CreatePermissionResponse = {
-      success: true,
-      relationship_id: `${workspace_id}:CAN_USE:${tool_key}`,
-    };
+    logger.info(
+      `[API] Permission revoked: workspace ${workspace_id} can no longer use tool ${tool_key}`
+    );
 
-    logger.info(`[API] Permission granted: workspace ${workspace_id} can use tool ${tool_key}`);
-
-    return NextResponse.json(response, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          workspace_id,
+          tool_key,
+          relationship_id: `${workspace_id}:CAN_USE:${tool_key}`,
+          status: result.status,
+        },
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    logger.error(`[API] POST /api/admin/permissions error: ${error}`);
+    logger.error(`[API] DELETE /api/admin/permissions error: ${error}`);
 
     return NextResponse.json(
       {

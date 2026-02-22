@@ -17,7 +17,6 @@ export async function createWorkspaceAdmin(
     workspace_id,
     name,
     type = 'team',
-    agent_key = 'agent_support',
     system_prompt,
   } = req;
 
@@ -43,10 +42,9 @@ export async function createWorkspaceAdmin(
       `CREATE (w:Workspace {
         id: $workspace_id,
         name: $name,
-        type: $type,
-        created_at: datetime()
+        type: $type
       })
-      RETURN w { .id, .name, .type, .created_at } as workspace`,
+      RETURN w { .id, .name, .type } as workspace`,
       { workspace_id, name, type }
     );
 
@@ -54,22 +52,7 @@ export async function createWorkspaceAdmin(
       throw new Error('Failed to create workspace in Neo4j');
     }
 
-    // 2. Create or merge Agent in Neo4j
-    await executeQuery(
-      `MERGE (a:Agent {key: $agent_key})
-       SET a.type = 'ai_agent'
-       RETURN a`,
-      { agent_key }
-    );
-
-    // 3. Link Workspace -> Agent (USES)
-    await executeQuery(
-      `MATCH (w:Workspace {id: $workspace_id})
-       MATCH (a:Agent {key: $agent_key})
-       MERGE (w)-[:USES]->(a)
-       RETURN true`,
-      { workspace_id, agent_key }
-    );
+    // Agent linking removed
 
     // 4. Create workspace config in PostgreSQL
     let configResult;
@@ -78,13 +61,12 @@ export async function createWorkspaceAdmin(
         `INSERT INTO workspace_config (workspace_id, default_agent, system_prompt, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, NOW(), NOW())
          RETURNING id, workspace_id, default_agent, system_prompt, status, created_at, updated_at`,
-        [workspace_id, agent_key, system_prompt, 'active']
+        [workspace_id, null, system_prompt, 'active']
       );
     } catch (pgError: any) {
       console.error('PostgreSQL Error:', pgError.message);
       console.error('Query details:', {
         workspace_id,
-        agent_key,
         system_prompt: system_prompt.substring(0, 50) + '...',
       });
       throw new Error(`Failed to create workspace config in PostgreSQL: ${pgError.message}`);
@@ -101,10 +83,9 @@ export async function createWorkspaceAdmin(
       id: workspace.id,
       name: workspace.name,
       type: workspace.type,
-      agent_key,
       system_prompt: config.system_prompt,
       status: config.status,
-      created_at: workspace.created_at,
+      created_at: config.created_at,
       updated_at: config.updated_at,
       member_count: 0,
     };
@@ -122,8 +103,7 @@ export async function getAllWorkspaces(): Promise<WorkspaceListItem[]> {
     // Get all workspaces from Neo4j
     const neo4jResult = await executeQuery(
       `MATCH (w:Workspace)
-       OPTIONAL MATCH (w)-[:USES]->(a:Agent)
-       RETURN w { .id, .name, .type, .created_at } as workspace, a.key as agent_key`
+       RETURN w { .id, .name, .type } as workspace`
     );
 
     if (neo4jResult.records.length === 0) {
@@ -143,16 +123,14 @@ export async function getAllWorkspaces(): Promise<WorkspaceListItem[]> {
     // Combine results
     return neo4jResult.records.map((record) => {
       const workspace = record.get('workspace');
-      const agent_key = record.get('agent_key') || 'agent_support';
       const status = configMap.get(workspace.id) || 'active';
 
       return {
         id: workspace.id,
         name: workspace.name,
         type: workspace.type,
-        agent_key,
         status,
-        created_at: workspace.created_at,
+        created_at: configMap.get(workspace.id)?.created_at || new Date().toISOString(), // Fallback or fetch from PG if needed, but usually list endpoints fetch from pg config for timestamps
       };
     });
   } catch (error) {
@@ -171,11 +149,8 @@ export async function getWorkspaceDetail(
     // Get workspace + agent from Neo4j
     const neo4jResult = await executeQuery(
       `MATCH (w:Workspace {id: $workspace_id})
-       OPTIONAL MATCH (w)-[:USES]->(a:Agent)
-       OPTIONAL MATCH (u:ZaloUser)-[:MEMBER_OF]->(w)
        RETURN 
-         w { .id, .name, .type, .created_at } as workspace,
-         a.key as agent_key,
+         w { .id, .name, .type } as workspace,
          COUNT(u) as member_count`,
       { workspace_id }
     );
@@ -186,7 +161,6 @@ export async function getWorkspaceDetail(
 
     const record = neo4jResult.records[0];
     const workspace = record.get('workspace');
-    const agent_key = record.get('agent_key') || 'agent_support';
     const member_count = record.get('member_count')?.low || 0;
 
     // Get config from PostgreSQL
@@ -207,10 +181,9 @@ export async function getWorkspaceDetail(
       id: workspace.id,
       name: workspace.name,
       type: workspace.type,
-      agent_key,
       system_prompt: config.system_prompt,
       status: config.status,
-      created_at: workspace.created_at,
+      created_at: config.created_at,
       updated_at: config.updated_at,
       member_count,
     };
@@ -227,7 +200,7 @@ export async function updateWorkspaceAdmin(
   workspace_id: string,
   req: UpdateWorkspaceRequest
 ): Promise<WorkspaceDetailResponse> {
-  const { name, type, agent_key, system_prompt, status } = req;
+  const { name, type, system_prompt, status } = req;
 
   try {
     // Check if workspace exists
@@ -263,31 +236,7 @@ export async function updateWorkspaceAdmin(
       );
     }
 
-    // Update agent relationship if provided
-    if (agent_key) {
-      // Create/merge agent
-      await executeQuery(
-        `MERGE (a:Agent {key: $agent_key})
-         SET a.type = 'ai_agent'
-         RETURN a`,
-        { agent_key }
-      );
-
-      // Remove old USES relationship and create new one
-      await executeQuery(
-        `MATCH (w:Workspace {id: $workspace_id})-[old:USES]->()
-         DELETE old`,
-        { workspace_id }
-      );
-
-      await executeQuery(
-        `MATCH (w:Workspace {id: $workspace_id})
-         MATCH (a:Agent {key: $agent_key})
-         MERGE (w)-[:USES]->(a)
-         RETURN true`,
-        { workspace_id, agent_key }
-      );
-    }
+    // Agent update logic removed
 
     // Update PostgreSQL config
     if (system_prompt || status) {

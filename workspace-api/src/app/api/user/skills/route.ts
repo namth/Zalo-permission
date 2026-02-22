@@ -103,7 +103,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<ShareSkillRes
     await auditLogService.createAuditLog({
       workspace_id,
       user_id: userId,
-      agent_role: 'Observer',
       action_type: 'SKILL_SHARED',
       input_data: { skill_id },
       output_data: { relationship_type: 'SHARED_TO' },
@@ -158,7 +157,6 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     await auditLogService.createAuditLog({
       workspace_id: 'unknown',
       user_id: userId,
-      agent_role: 'Observer',
       action_type: 'SKILL_DELETED',
       input_data: { skill_id: skillId },
       status: 'success',

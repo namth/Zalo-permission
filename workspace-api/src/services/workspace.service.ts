@@ -1,7 +1,8 @@
+
 import { query } from '@/lib/db';
 import { executeQuery } from '@/lib/db';
 import { logAuditAction } from './audit.service';
-import { getUserById } from './user.service';
+import { UserService } from './user.service';
 
 /**
  * Serialize Date objects to ISO strings for JSON compatibility
@@ -65,7 +66,7 @@ export async function createWorkspace(
   // Create in Neo4j
   try {
     await executeQuery(
-      `CREATE (w:Workspace {id: $id, name: $name, created_at: datetime()})
+      `CREATE (w:Workspace {id: $id, name: $name})
        RETURN w`,
       {
         id: workspace.id,
@@ -81,7 +82,6 @@ export async function createWorkspace(
     workspace.id,
     null,  // thread_id
     created_by || null,  // user_id
-    null,  // agent_role
     'CREATE_WORKSPACE',  // action_type
     null,  // input_data
     workspace  // output_data
@@ -192,7 +192,6 @@ export async function updateWorkspace(
     id,
     null,  // thread_id
     updated_by || null,  // user_id
-    null,  // agent_role
     'UPDATE_WORKSPACE',  // action_type
     old,  // input_data
     updated  // output_data
@@ -228,7 +227,6 @@ export async function deleteWorkspace(id: string, deleted_by?: string): Promise<
     id,
     null,  // thread_id
     deleted_by || null,  // user_id
-    null,  // agent_role
     'DELETE_WORKSPACE',  // action_type
     workspace,  // input_data
     null  // output_data
@@ -237,7 +235,6 @@ export async function deleteWorkspace(id: string, deleted_by?: string): Promise<
 
 /**
  * Add Zalo Group to Workspace
- * @param agent_key - [NEW] The agent to assign to this group
  */
 export async function addZaloGroup(
   workspace_id: string,
@@ -273,7 +270,7 @@ export async function addZaloGroup(
     await executeQuery(
       `MATCH (w:Workspace {id: $workspace_id})
        MERGE (g:ZaloGroup {id: $id, thread_id: $thread_id})
-       SET g.name = $name, g.created_at = datetime()
+       SET g.name = $name
        MERGE (g)-[:BELONGS_TO]->(w)
        RETURN g`,
       {
@@ -291,7 +288,6 @@ export async function addZaloGroup(
     workspace_id,
     null,  // thread_id
     created_by || null,  // user_id
-    null,  // agent_role
     'ADD_ZALO_GROUP',  // action_type
     null,  // input_data
     group  // output_data
@@ -365,7 +361,6 @@ export async function removeZaloGroup(
     workspace_id,
     null,  // thread_id
     removed_by || null,  // user_id
-    null,  // agent_role
     'REMOVE_ZALO_GROUP',  // action_type
     group,  // input_data
     null  // output_data
@@ -422,7 +417,6 @@ export async function assignUserRole(
       workspace_id,
       null,  // thread_id
       assigned_by || null,  // user_id
-      null,  // agent_role
       'UPDATE_USER_ROLE',  // action_type
       { role: role === 'ADMIN' ? 'MEMBER' : 'ADMIN' },  // input_data
       userRole  // output_data
@@ -447,7 +441,7 @@ export async function assignUserRole(
   // Update in Neo4j
   try {
     await executeQuery(
-      `MATCH (u:User {id: $user_id})
+      `MATCH (u:ZaloUser {id: $user_id})
        MATCH (w:Workspace {id: $workspace_id})
        MERGE (u)-[r:HAS_ROLE]->(w)
        SET r.role = $role
@@ -462,7 +456,6 @@ export async function assignUserRole(
     workspace_id,
     null,  // thread_id
     assigned_by || null,  // user_id
-    null,  // agent_role
     'ASSIGN_USER_ROLE',  // action_type
     null,  // input_data
     userRole  // output_data
@@ -488,7 +481,7 @@ export async function removeUserFromWorkspace(
   // Delete from Neo4j
   try {
     await executeQuery(
-      `MATCH (u:User {id: $user_id})-[r:HAS_ROLE]->(w:Workspace {id: $workspace_id})
+      `MATCH (u:ZaloUser {id: $user_id})-[r:HAS_ROLE]->(w:Workspace {id: $workspace_id})
         DELETE r`,
       { user_id, workspace_id }
     );
@@ -500,7 +493,6 @@ export async function removeUserFromWorkspace(
     workspace_id,
     null,  // thread_id
     removed_by || null,  // user_id
-    null,  // agent_role
     'REMOVE_USER_FROM_WORKSPACE',  // action_type
     null,  // input_data
     null  // output_data
@@ -600,4 +592,144 @@ async function fallbackWorkspaceSearch(
     workspaces: result.rows.map(serializeRow),
     total: parseInt(countResult.rows[0].count)
   };
+}
+
+/**
+ * Get Users in Workspace
+ */
+export async function getWorkspaceUsers(
+  workspace_id: string,
+  limit: number = 100,
+  offset: number = 0
+): Promise<{ users: any[]; total: number }> {
+  const countResult = await query(
+    `SELECT COUNT(*) as count FROM workspace_user_roles WHERE workspace_id = $1`,
+    [workspace_id]
+  );
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  const result = await query(
+    `SELECT u.id, u.zalo_id, u.full_name, u.email, u.phone, ur.role, ur.created_at as joined_at
+     FROM workspace_user_roles ur
+     JOIN user_profile u ON ur.user_id = u.id
+     WHERE ur.workspace_id = $1
+     ORDER BY ur.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [workspace_id, limit, offset]
+  );
+
+  return { users: result.rows.map(serializeRow), total };
+}
+
+/**
+ * Get Tools in Workspace
+ */
+export async function getWorkspaceTools(
+  workspace_id: string
+): Promise<any[]> {
+  const result = await executeQuery(
+    `MATCH (w:Workspace {id: $workspace_id})-[:CAN_USE]->(t:Tool)
+     RETURN t { .id, .key, .name, .description, .status } as tool`,
+    { workspace_id }
+  );
+
+  return result.records.map(record => record.get('tool'));
+}
+
+/**
+ * Add Tool to Workspace
+ */
+export async function addToolToWorkspace(
+  workspace_id: string,
+  tool_id: string, // receiving tool_id (uuid) but Neo4j might use key or id. Tool node should have id.
+  added_by?: string
+): Promise<void> {
+  // Check if tool exists in PG to get the key or ensure it exists
+  const toolCheck = await query('SELECT key, name FROM tools WHERE id = $1', [tool_id]);
+  if (toolCheck.rows.length === 0) {
+    throw new Error('Tool not found');
+  }
+  const tool = toolCheck.rows[0];
+
+  await executeQuery(
+    `MATCH (w:Workspace {id: $workspace_id})
+     MATCH (t:Tool {key: $key})
+     MERGE (w)-[:CAN_USE]->(t)
+     RETURN w`,
+    { workspace_id, key: tool.key }
+  );
+
+  await logAuditAction(workspace_id, null, added_by || null, 'ADD_TOOL_TO_WORKSPACE', { tool_key: tool.key }, null);
+}
+
+/**
+ * Remove Tool from Workspace
+ */
+export async function removeToolFromWorkspace(
+  workspace_id: string,
+  tool_id: string,
+  removed_by?: string
+): Promise<void> {
+  const toolCheck = await query('SELECT key FROM tools WHERE id = $1', [tool_id]);
+  if (toolCheck.rows.length === 0) {
+    throw new Error('Tool not found');
+  }
+  const tool_key = toolCheck.rows[0].key;
+
+  await executeQuery(
+    `MATCH (w:Workspace {id: $workspace_id})-[r:CAN_USE]->(t:Tool {key: $key})
+     DELETE r`,
+    { workspace_id, key: tool_key }
+  );
+
+  await logAuditAction(workspace_id, null, removed_by || null, 'REMOVE_TOOL_FROM_WORKSPACE', { tool_key }, null);
+}
+
+/**
+ * Get Skills in Workspace
+ */
+export async function getWorkspaceSkills(
+  workspace_id: string,
+  limit: number = 100,
+  offset: number = 0
+): Promise<{ skills: any[]; total: number }> {
+  const countResult = await query(
+    `SELECT COUNT(*) as count FROM skills WHERE workspace_id = $1`,
+    [workspace_id]
+  );
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  const result = await query(
+    `SELECT id, name, description, is_shared, created_at
+       FROM skills
+       WHERE workspace_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+    [workspace_id, limit, offset]
+  );
+
+  return { skills: result.rows.map(serializeRow), total };
+}
+
+/**
+ * Remove Skill (Full delete)
+ */
+export async function deleteSkill(
+  skill_id: string,
+  deleted_by?: string
+): Promise<void> {
+  const skillResult = await query('SELECT workspace_id, name FROM skills WHERE id = $1', [skill_id]);
+  if (skillResult.rows.length === 0) throw new Error('Skill not found');
+  const skill = skillResult.rows[0];
+
+  // Delete from Neo4j
+  await executeQuery(
+    `MATCH (s:Skill {id: $id}) DETACH DELETE s`,
+    { id: skill_id }
+  );
+
+  // Delete from PG
+  await query('DELETE FROM skills WHERE id = $1', [skill_id]);
+
+  await logAuditAction(skill.workspace_id, null, deleted_by || null, 'DELETE_SKILL', { skill_name: skill.name }, null);
 }

@@ -8,7 +8,7 @@ import { AuditLog, AuditLogRequest } from '../types';
 import { logger } from '../lib/logger';
 
 export class AuditLogService {
-  constructor(private db: Pool) {}
+  constructor(private db: Pool) { }
 
   /**
    * Create an audit log entry
@@ -17,10 +17,10 @@ export class AuditLogService {
     try {
       const query = `
         INSERT INTO audit_logs (
-          workspace_id, thread_id, user_id, agent_role, action_type,
+          workspace_id, thread_id, user_id, action_type,
           input_data, output_data, status, error_message, metadata, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
         RETURNING *
       `;
 
@@ -28,7 +28,6 @@ export class AuditLogService {
         request.workspace_id,
         request.thread_id || null,
         request.user_id || null,
-        request.agent_role,
         request.action_type,
         request.input_data ? JSON.stringify(request.input_data) : null,
         request.output_data ? JSON.stringify(request.output_data) : null,
@@ -38,7 +37,7 @@ export class AuditLogService {
       ]);
 
       const log = this.mapRowToAuditLog(result.rows[0]);
-      logger.info(`Audit log created: ${log.id} (${request.agent_role}:${request.action_type})`);
+      logger.info(`Audit log created: ${log.id} (${request.action_type})`);
 
       return log;
     } catch (error) {
@@ -72,7 +71,6 @@ export class AuditLogService {
   async listAuditLogsByWorkspace(
     workspaceId: string,
     filters?: {
-      agentRole?: string;
       actionType?: string;
       status?: string;
       startDate?: string;
@@ -84,11 +82,6 @@ export class AuditLogService {
     try {
       let query = 'SELECT * FROM audit_logs WHERE workspace_id = $1';
       const params: any[] = [workspaceId];
-
-      if (filters?.agentRole) {
-        query += ` AND agent_role = $${params.length + 1}`;
-        params.push(filters.agentRole);
-      }
 
       if (filters?.actionType) {
         query += ` AND action_type = $${params.length + 1}`;
@@ -119,11 +112,6 @@ export class AuditLogService {
       // Get total count
       let countQuery = 'SELECT COUNT(*) as count FROM audit_logs WHERE workspace_id = $1';
       const countParams: any[] = [workspaceId];
-
-      if (filters?.agentRole) {
-        countQuery += ` AND agent_role = $${countParams.length + 1}`;
-        countParams.push(filters.agentRole);
-      }
 
       if (filters?.actionType) {
         countQuery += ` AND action_type = $${countParams.length + 1}`;
@@ -217,48 +205,6 @@ export class AuditLogService {
     }
   }
 
-  /**
-   * List audit logs by agent role
-   */
-  async listAuditLogsByAgentRole(
-    agentRole: 'Planner' | 'Worker' | 'Observer',
-    workspaceId?: string,
-    limit: number = 100,
-    offset: number = 0
-  ): Promise<{ logs: AuditLog[]; total: number }> {
-    try {
-      let query = 'SELECT * FROM audit_logs WHERE agent_role = $1';
-      const params: any[] = [agentRole];
-
-      if (workspaceId) {
-        query += ` AND workspace_id = $${params.length + 1}`;
-        params.push(workspaceId);
-      }
-
-      query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-      params.push(limit, offset);
-
-      const result = await this.db.query(query, params);
-      const logs = result.rows.map((row) => this.mapRowToAuditLog(row));
-
-      // Get total count
-      let countQuery = 'SELECT COUNT(*) as count FROM audit_logs WHERE agent_role = $1';
-      const countParams: any[] = [agentRole];
-
-      if (workspaceId) {
-        countQuery += ` AND workspace_id = $${countParams.length + 1}`;
-        countParams.push(workspaceId);
-      }
-
-      const countResult = await this.db.query(countQuery, countParams);
-      const total = parseInt(countResult.rows[0].count, 10);
-
-      return { logs, total };
-    } catch (error) {
-      logger.error(`Failed to list audit logs by agent role: ${error}`);
-      throw error;
-    }
-  }
 
   /**
    * Helper: Map database row to AuditLog interface
@@ -269,7 +215,6 @@ export class AuditLogService {
       workspace_id: row.workspace_id,
       thread_id: row.thread_id,
       user_id: row.user_id,
-      agent_role: row.agent_role,
       action_type: row.action_type,
       input_data: row.input_data ? JSON.parse(row.input_data) : undefined,
       output_data: row.output_data ? JSON.parse(row.output_data) : undefined,

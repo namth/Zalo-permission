@@ -1,5 +1,5 @@
-import { query } from '@/lib/db';
-import { executeQuery } from '@/lib/db';
+
+import { query, executeQuery } from '@/lib/db';
 import { logAuditAction } from './audit.service';
 
 /**
@@ -13,489 +13,187 @@ export interface UserProfile {
   phone: string | null;
   gender: string | null;
   note: string | null;
-  status: string;
+  status: 'active' | 'inactive';
   created_at: Date;
   updated_at: Date;
 }
 
-/**
- * Create User Request
- */
 export interface CreateUserRequest {
   zalo_id: string;
-  full_name: string;
+  full_name?: string;
   email?: string;
   phone?: string;
   gender?: string;
   note?: string;
 }
 
+export interface UpdateUserRequest {
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  gender?: string;
+  note?: string;
+  status?: 'active' | 'inactive';
+}
+
 /**
- * Create or get user by zalo_id
- * Syncs with Neo4j
+ * User Service
  */
-export async function createOrGetUser(
-  data: CreateUserRequest,
-  workspace_id?: string,
-  created_by?: string
-): Promise<UserProfile> {
-  // Check if user already exists
-  const existing = await getUserByZaloId(data.zalo_id);
-  if (existing) {
-    return existing;
-  }
+export class UserService {
+  /**
+   * Create new user
+   */
+  static async createUser(req: CreateUserRequest, created_by?: string): Promise<UserProfile> {
+    const { zalo_id, full_name, email, phone, gender, note } = req;
 
-  // Create in PostgreSQL
-  const result = await query(
-    `INSERT INTO user_profile (zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
-     RETURNING id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at`,
-    [
-      data.zalo_id,
-      data.full_name || data.zalo_id,
-      data.email || null,
-      data.phone || null,
-      data.gender || null,
-      data.note || null
-    ]
-  );
+    // Check if user exists
+    const check = await query('SELECT id FROM user_profile WHERE zalo_id = $1', [zalo_id]);
+    if (check.rows.length > 0) {
+      throw new Error(`User with Zalo ID ${zalo_id} already exists`);
+    }
 
-  if (result.rows.length === 0) {
-    throw new Error('Failed to create user');
-  }
-
-  const user = result.rows[0];
-
-  // Sync with Neo4j
-  try {
-    await executeQuery(
-      `MERGE (u:User {id: $id, zalo_id: $zalo_id})
-       SET u.full_name = $full_name, u.created_at = datetime()
-       RETURN u`,
-      {
-        id: user.id,
-        zalo_id: user.zalo_id,
-        full_name: user.full_name
-      }
+    // 1. Create in PostgreSQL
+    const result = await query(
+      `INSERT INTO user_profile (zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
+       RETURNING *`,
+      [zalo_id, full_name || null, email || null, phone || null, gender || null, note || null]
     );
-  } catch (error) {
-    console.error('Failed to sync user to Neo4j:', error);
-    // Continue - PostgreSQL is source of truth
+
+    const user = result.rows[0];
+
+    // 2. Sync to Neo4j (minimal data: id, zalo_id, name)
+    try {
+      await executeQuery(
+        `CREATE (u:ZaloUser {id: $id, zalo_id: $zalo_id, name: $name})
+         RETURN u`,
+        { id: user.id, zalo_id: user.zalo_id, name: user.full_name || null }
+      );
+    } catch (error) {
+      console.error('Failed to sync user to Neo4j:', error);
+      // Rollback PG? Or just log? For now, we log. Ideally, use transaction.
+    }
+
+    await logAuditAction('system', null, created_by || null, 'CREATE_USER', { user_id: user.id }, user);
+
+    return user;
   }
 
-  // Log audit
-  await logAuditAction(
-    workspace_id || null,
-    created_by || null,
-    'CREATE_USER',
-    'User',
-    user.id,
-    null,
-    user
-  );
+  /**
+   * Get all users
+   */
+  static async getUsers(limit: number = 100, offset: number = 0, search?: string): Promise<{ users: UserProfile[], total: number }> {
+    let queryText = 'SELECT * FROM user_profile';
+    let countQuery = 'SELECT COUNT(*) as total FROM user_profile';
+    const params: any[] = [];
 
-  return user;
-}
+    if (search) {
+      queryText += ` WHERE full_name ILIKE $1 OR zalo_id ILIKE $1 OR email ILIKE $1`;
+      countQuery += ` WHERE full_name ILIKE $1 OR zalo_id ILIKE $1 OR email ILIKE $1`;
+      params.push(`%${search}%`);
+    }
 
-/**
- * Get user by zalo_id
- */
-export async function getUserByZaloId(zalo_id: string): Promise<UserProfile | null> {
-  const result = await query(
-    `SELECT id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at
-     FROM user_profile
-     WHERE zalo_id = $1`,
-    [zalo_id]
-  );
+    const countResult = await query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total, 10);
 
-  return result.rows.length > 0 ? result.rows[0] : null;
-}
+    queryText += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
 
-/**
- * Get user by ID
- */
-export async function getUserById(id: string): Promise<UserProfile | null> {
-  const result = await query(
-    `SELECT id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at
-     FROM user_profile
-     WHERE id = $1`,
-    [id]
-  );
+    const result = await query(queryText, params);
 
-  return result.rows.length > 0 ? result.rows[0] : null;
-}
-
-/**
- * Get all users with pagination
- */
-export async function listUsers(
-  limit: number = 20,
-  offset: number = 0
-): Promise<{ users: UserProfile[]; total: number }> {
-  const countResult = await query('SELECT COUNT(*) as count FROM user_profile');
-  const total = countResult.rows[0].count;
-
-  const result = await query(
-    `SELECT id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at
-     FROM user_profile
-     ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
-
-  return { users: result.rows, total };
-}
-
-/**
- * Update user profile
- */
-export async function updateUser(
-  id: string,
-  updates: Partial<Omit<UserProfile, 'id' | 'zalo_id' | 'created_at' | 'updated_at'>>,
-  workspace_id?: string,
-  updated_by?: string
-): Promise<UserProfile> {
-  // Get old value for audit
-  const oldUser = await getUserById(id);
-  if (!oldUser) {
-    throw new Error(`User not found: ${id}`);
+    return { users: result.rows, total };
   }
 
-  const fields: string[] = [];
-  const values: any[] = [];
-  let paramIndex = 1;
-
-  if (updates.full_name !== undefined) {
-    fields.push(`full_name = $${paramIndex++}`);
-    values.push(updates.full_name);
-  }
-  if (updates.email !== undefined) {
-    fields.push(`email = $${paramIndex++}`);
-    values.push(updates.email);
-  }
-  if (updates.phone !== undefined) {
-    fields.push(`phone = $${paramIndex++}`);
-    values.push(updates.phone);
-  }
-  if (updates.gender !== undefined) {
-    fields.push(`gender = $${paramIndex++}`);
-    values.push(updates.gender);
-  }
-  if (updates.note !== undefined) {
-    fields.push(`note = $${paramIndex++}`);
-    values.push(updates.note);
-  }
-  if (updates.status !== undefined) {
-    fields.push(`status = $${paramIndex++}`);
-    values.push(updates.status);
+  /**
+   * Get user by ID
+   */
+  static async getUserById(id: string): Promise<UserProfile | null> {
+    const result = await query('SELECT * FROM user_profile WHERE id = $1', [id]);
+    return result.rows.length > 0 ? result.rows[0] : null;
   }
 
-  if (fields.length === 0) {
-    return oldUser;
-  }
+  /**
+   * Update user
+   */
+  static async updateUser(id: string, updates: UpdateUserRequest, updated_by?: string): Promise<UserProfile> {
+    const oldUser = await this.getUserById(id);
+    if (!oldUser) {
+      throw new Error('User not found');
+    }
 
-  fields.push(`updated_at = NOW()`);
-  values.push(id);
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
 
-  const result = await query(
-    `UPDATE user_profile
-     SET ${fields.join(', ')}
-     WHERE id = $${paramIndex}
-     RETURNING id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at`,
-    values
-  );
-
-  if (result.rows.length === 0) {
-    throw new Error(`User not found: ${id}`);
-  }
-
-  const updatedUser = result.rows[0];
-
-  // Sync with Neo4j
-  try {
-    await executeQuery(
-      `MATCH (u:User {id: $id})
-       SET u.full_name = $full_name
-       RETURN u`,
-      {
-        id: id,
-        full_name: updatedUser.full_name
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value !== undefined) {
+        fields.push(`${key} = $${paramIndex++}`);
+        values.push(value);
       }
+    });
+
+    if (fields.length === 0) return oldUser;
+
+    fields.push(`updated_at = NOW()`);
+    values.push(id);
+
+    // 1. Update PostgreSQL
+    const result = await query(
+      `UPDATE user_profile
+       SET ${fields.join(', ')}
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      values
     );
-  } catch (error) {
-    console.error('Failed to sync user update to Neo4j:', error);
+
+    const updatedUser = result.rows[0];
+
+    // 2. Update Neo4j (if relevant fields changed, e.g. zalo_id, though typically immutable)
+    // Here we only synced id and zalo_id. zalo_id is unique/immutable usually.
+
+    await logAuditAction('system', null, updated_by || null, 'UPDATE_USER', { user_id: id, changes: updates }, updatedUser);
+
+    return updatedUser;
   }
 
-  // Log audit
-  await logAuditAction(
-    workspace_id || null,
-    updated_by || null,
-    'UPDATE_USER',
-    'User',
-    id,
-    oldUser,
-    updatedUser
-  );
+  /**
+   * Delete user (Deep delete)
+   */
+  static async deleteUser(id: string, deleted_by?: string): Promise<void> {
+    const user = await this.getUserById(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-  return updatedUser;
-}
-
-/**
- * Delete user from system
- */
-export async function deleteUser(id: string, workspace_id?: string, deleted_by?: string): Promise<void> {
-  const user = await getUserById(id);
-  if (!user) {
-    throw new Error(`User not found: ${id}`);
-  }
-
-  // Delete from PostgreSQL
-  await query('DELETE FROM user_profile WHERE id = $1', [id]);
-
-  // Delete from Neo4j
-  try {
+    // 1. Delete from Neo4j (and all relationships)
     await executeQuery(
-      `MATCH (u:User {id: $id})
+      `MATCH (u:ZaloUser {id: $id})
        DETACH DELETE u`,
       { id }
     );
-  } catch (error) {
-    console.error('Failed to delete user from Neo4j:', error);
+
+    // 2. Delete from PostgreSQL
+    await query('DELETE FROM user_profile WHERE id = $1', [id]);
+
+    await logAuditAction('system', null, deleted_by || null, 'DELETE_USER', { user_id: id }, null);
   }
 
-  // Log audit
-  await logAuditAction(
-    workspace_id || null,
-    deleted_by || null,
-    'DELETE_USER',
-    'User',
-    id,
-    user,
-    null
-  );
-}
+  /**
+   * Get user by Zalo ID
+   */
+  static async getUserByZaloId(zalo_id: string): Promise<UserProfile | null> {
+    const result = await query('SELECT * FROM user_profile WHERE zalo_id = $1', [zalo_id]);
+    return result.rows.length > 0 ? result.rows[0] : null;
+  }
 
-/**
- * Get users in a workspace with their roles
- */
-export async function getWorkspaceUsers(
-  workspace_id: string,
-  limit: number = 100,
-  offset: number = 0
-): Promise<{ users: any[]; total: number }> {
-  const countResult = await query(
-    `SELECT COUNT(*) as count
-     FROM workspace_user_roles wr
-     JOIN user_profile u ON wr.user_id = u.id
-     WHERE wr.workspace_id = $1`,
-    [workspace_id]
-  );
-
-  const total = countResult.rows[0].count;
-
-  const result = await query(
-    `SELECT 
-       u.id, u.zalo_id, u.full_name, u.email, u.phone, u.gender, u.status,
-       wr.role, wr.assigned_by, wr.created_at as role_created_at
-     FROM workspace_user_roles wr
-     JOIN user_profile u ON wr.user_id = u.id
-     WHERE wr.workspace_id = $1
-     ORDER BY u.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [workspace_id, limit, offset]
-  );
-
-  return { users: result.rows, total };
-}
-
-/**
- * Get user role in workspace
- */
-export async function getUserRoleInWorkspace(
-  workspace_id: string,
-  user_id: string
-): Promise<string | null> {
-  const result = await query(
-    `SELECT role
-     FROM workspace_user_roles
-     WHERE workspace_id = $1 AND user_id = $2`,
-    [workspace_id, user_id]
-  );
-
-  return result.rows.length > 0 ? result.rows[0].role : null;
-}
-
-/**
- * Get users in a Zalo group
- */
-export async function getUsersInZaloGroup(
-  zalo_group_id: string,
-  limit: number = 100,
-  offset: number = 0
-): Promise<{ users: UserProfile[]; total: number }> {
-  // Query Neo4j to find users who are MEMBER_OF this group
-  try {
-    // Ensure limit and offset are integers (convert to Number then to int)
-    const safeLimit = parseInt(String(Math.max(0, Math.floor(limit))), 10);
-    const safeOffset = parseInt(String(Math.max(0, Math.floor(offset))), 10);
-    
-    console.log(`getUsersInZaloGroup: limit=${limit}, offset=${offset}, safeLimit=${safeLimit}, safeOffset=${safeOffset}, type=${typeof safeLimit}`);
-
-    const result = await executeQuery(
-      `MATCH (u:User)-[:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
-       RETURN u.id as id
-       ORDER BY u.created_at DESC
-       SKIP ${safeOffset}
-       LIMIT ${safeLimit}`,
-      { group_id: zalo_group_id }
+  /**
+   * Get user role in workspace
+   */
+  static async getUserRoleInWorkspace(workspace_id: string, user_id: string): Promise<string | null> {
+    const result = await query(
+      'SELECT role FROM workspace_user_roles WHERE workspace_id = $1 AND user_id = $2',
+      [workspace_id, user_id]
     );
-
-    const userIds = result.records.map(record => record.get('id'));
-
-    // Count total
-    const countResult = await executeQuery(
-      `MATCH (u:User)-[:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
-       RETURN COUNT(u) as count`,
-      { group_id: zalo_group_id }
-    );
-
-    const total = countResult.records[0]?.get('count') || 0;
-
-    // Get user details from PostgreSQL
-    if (userIds.length === 0) {
-      return { users: [], total };
-    }
-
-    const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
-    const queryResult = await query(
-      `SELECT id, zalo_id, full_name, email, phone, gender, note, status, created_at, updated_at
-       FROM user_profile
-       WHERE id IN (${placeholders})`,
-      userIds
-    );
-
-    return { users: queryResult.rows, total };
-  } catch (error) {
-    console.error('Failed to get users in zalo group:', error);
-    throw error;
+    return result.rows.length > 0 ? result.rows[0].role : null;
   }
-}
-
-/**
- * Add user to Zalo group
- * Creates MEMBER_OF relationship in Neo4j
- */
-export async function addUserToZaloGroup(
-  user_id: string,
-  zalo_group_id: string,
-  workspace_id?: string,
-  created_by?: string
-): Promise<{ success: boolean; message: string }> {
-  // Verify user exists
-  const user = await getUserById(user_id);
-  if (!user) {
-    throw new Error(`User not found: ${user_id}`);
-  }
-
-  // Verify zalo group exists
-  const groupResult = await query(
-    `SELECT id, workspace_id FROM zalo_groups WHERE id = $1`,
-    [zalo_group_id]
-  );
-
-  if (groupResult.rows.length === 0) {
-    throw new Error(`Zalo group not found: ${zalo_group_id}`);
-  }
-
-  const group = groupResult.rows[0];
-  const resolvedWorkspaceId = workspace_id || group.workspace_id;
-
-  // Create relationship in Neo4j
-  try {
-    await executeQuery(
-      `MATCH (u:User {id: $user_id})
-       MATCH (g:ZaloGroup {id: $group_id})
-       MERGE (u)-[:MEMBER_OF]->(g)
-       RETURN u, g`,
-      {
-        user_id,
-        group_id: zalo_group_id
-      }
-    );
-  } catch (error) {
-    console.error('Failed to create MEMBER_OF relationship in Neo4j:', error);
-    // Continue - relationship creation is important but not critical
-  }
-
-  // Log audit
-  await logAuditAction(
-    resolvedWorkspaceId,
-    created_by || null,
-    'ADD_USER_TO_GROUP',
-    'UserGroupMembership',
-    zalo_group_id,
-    null,
-    { user_id, zalo_group_id }
-  );
-
-  return { success: true, message: `User ${user_id} added to Zalo group ${zalo_group_id}` };
-}
-
-/**
- * Remove user from Zalo group
- * Deletes MEMBER_OF relationship in Neo4j
- */
-export async function removeUserFromZaloGroup(
-  user_id: string,
-  zalo_group_id: string,
-  workspace_id?: string,
-  deleted_by?: string
-): Promise<{ success: boolean; message: string }> {
-  // Verify user exists
-  const user = await getUserById(user_id);
-  if (!user) {
-    throw new Error(`User not found: ${user_id}`);
-  }
-
-  // Verify zalo group exists
-  const groupResult = await query(
-    `SELECT id, workspace_id FROM zalo_groups WHERE id = $1`,
-    [zalo_group_id]
-  );
-
-  if (groupResult.rows.length === 0) {
-    throw new Error(`Zalo group not found: ${zalo_group_id}`);
-  }
-
-  const group = groupResult.rows[0];
-  const resolvedWorkspaceId = workspace_id || group.workspace_id;
-
-  // Delete relationship in Neo4j
-  try {
-    await executeQuery(
-      `MATCH (u:User {id: $user_id})-[r:MEMBER_OF]->(g:ZaloGroup {id: $group_id})
-       DELETE r
-       RETURN u, g`,
-      {
-        user_id,
-        group_id: zalo_group_id
-      }
-    );
-  } catch (error) {
-    console.error('Failed to delete MEMBER_OF relationship in Neo4j:', error);
-    // Continue - relationship deletion is important but not critical
-  }
-
-  // Log audit
-  await logAuditAction(
-    resolvedWorkspaceId,
-    deleted_by || null,
-    'REMOVE_USER_FROM_GROUP',
-    'UserGroupMembership',
-    zalo_group_id,
-    { user_id, zalo_group_id },
-    null
-  );
-
-  return { success: true, message: `User ${user_id} removed from Zalo group ${zalo_group_id}` };
 }

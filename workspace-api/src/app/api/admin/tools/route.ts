@@ -1,22 +1,19 @@
 /**
  * /api/admin/tools
  * 
- * Manage system tools/integrations
+ * Manage system tools/integrations with synchronized PostgreSQL and Neo4j
  * GET: List all tools
- * POST: Create a new tool
+ * POST: Create a new tool (syncs to both databases)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
-import { CreateToolRequest, CreateToolResponse, Tool } from '@/types';
-import { ToolService, AuditLogService } from '@/services';
+import { ToolSyncService } from '@/services/sync.service';
+import { AuditLogService } from '@/services';
+import { getDb } from '@/lib/db';
+import { embeddingClient } from '@/lib/embedding';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
-
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -26,21 +23,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     logger.info(`[API] GET /api/admin/tools - status: ${status || 'all'}, limit: ${limit}, offset: ${offset}`);
 
-    // Initialize service
-    const toolService = new ToolService(db);
+    const db = getDb();
+    let query = `SELECT id, key, name, description, input_schema, status, created_at, updated_at 
+                 FROM tools`;
+    const params: any[] = [];
 
-    // Get tools
-    const result = await toolService.listTools(status || undefined, limit, offset);
+    if (status) {
+      query += ` WHERE status = $1`;
+      params.push(status);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
+
+    const result = await db.query(query, params);
+    const countResult = await db.query(
+      status ? `SELECT COUNT(*) as total FROM tools WHERE status = $1` : `SELECT COUNT(*) as total FROM tools`,
+      status ? [status] : []
+    );
+    const total = parseInt(countResult.rows[0].total, 10);
 
     return NextResponse.json(
       {
         success: true,
-        tools: result.tools,
+        data: result.rows,
         pagination: {
           limit,
           offset,
-          total: result.total,
-          hasMore: offset + limit < result.total,
+          total,
+          hasMore: offset + limit < total,
         },
       },
       { status: 200 }
@@ -58,10 +69,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse<CreateToolResponse>> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body: CreateToolRequest = await req.json();
-    const { key, name, description, input_schema } = body;
+    const body = await req.json();
+    const { key, name, description, input_schema, created_by } = body;
 
     logger.info(`[API] POST /api/admin/tools - tool: ${key}`);
 
@@ -87,36 +98,57 @@ export async function POST(req: NextRequest): Promise<NextResponse<CreateToolRes
       );
     }
 
-    // Initialize services
-    const toolService = new ToolService(db);
-    const auditLogService = new AuditLogService(db);
+    // Check if tool key already exists
+    const db = getDb();
+    const existing = await db.query(
+      'SELECT id FROM tools WHERE key = $1',
+      [key]
+    );
+    if (existing.rows.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Tool with key "${key}" already exists`,
+        },
+        { status: 409 }
+      );
+    }
 
-    // Create tool
-    const tool = await toolService.createTool({
+    // Generate embedding if description provided
+    let embedding: number[] | undefined;
+    if (description) {
+      embedding = await embeddingClient.generateEmbedding(description);
+    }
+
+    // Create tool with full sync to PostgreSQL and Neo4j
+    const tool = await ToolSyncService.createTool(
       key,
       name,
       description,
       input_schema,
-    });
+      embedding,
+      created_by
+    );
 
     // Log audit
+    const auditLogService = new AuditLogService(db);
     await auditLogService.createAuditLog({
       workspace_id: 'system',
-      agent_role: 'Observer',
       action_type: 'TOOL_CREATED',
       input_data: { key, name },
       output_data: { tool_id: tool.id },
       status: 'success',
     });
 
-    const response: CreateToolResponse = {
-      success: true,
-      tool_id: tool.id,
-    };
+    logger.info(`[API] Tool created with full sync: ${tool.id}`);
 
-    logger.info(`[API] Tool ${tool.id} created`);
-
-    return NextResponse.json(response, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: tool,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     logger.error(`[API] POST /api/admin/tools error: ${error}`);
 

@@ -31,6 +31,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           >
             🏢 Workspaces
           </Link>
+          <Link
+            href="/admin/users"
+            className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+          >
+            👥 Users
+          </Link>
 
           {/* RESOURCES */}
           <div className="pt-4 pb-2">
@@ -53,17 +59,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
           >
             🔐 Permissions
-          </Link>
-
-          {/* MONITORING */}
-          <div className="pt-4 pb-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase">Monitoring</p>
-          </div>
-          <Link
-            href="/admin/pending-tasks"
-            className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-          >
-            ⏳ Pending Tasks
           </Link>
         </nav>
       </aside>

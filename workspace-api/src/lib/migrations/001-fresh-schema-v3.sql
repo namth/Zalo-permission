@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS zalo_groups (
 
 CREATE INDEX IF NOT EXISTS idx_zalo_groups_thread_id ON zalo_groups(thread_id);
 CREATE INDEX IF NOT EXISTS idx_zalo_groups_workspace_id ON zalo_groups(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_zalo_groups_agent_key ON zalo_groups(agent_key);
+-- CREATE INDEX IF NOT EXISTS idx_zalo_groups_agent_key ON zalo_groups(agent_key); -- Removed in migration 003
 CREATE INDEX IF NOT EXISTS idx_zalo_groups_name ON zalo_groups(name);
 
 -- 4. AGENTS (Global Agent Definitions)
@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
   FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE SET NULL
 );
+
+-- Ensure entity_type exists (for migration safety on existing dbs)
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_id VARCHAR(255);
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_workspace ON audit_logs(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);

@@ -51,7 +51,7 @@ export async function createAccount(
   const account = serializeRow(result.rows[0]);
 
   // Log audit
-  await logAuditAction(workspace_id, created_by || null, 'CREATE_ACCOUNT', 'Account', account.id, null, account);
+  await logAuditAction(workspace_id, null, created_by || null, 'CREATE_ACCOUNT', { account_id: account.id }, account);
 
   return account;
 }
@@ -141,11 +141,10 @@ export async function updateAccount(
   // Log audit
   await logAuditAction(
     current.workspace_id,
+    null,
     updated_by || null,
     'UPDATE_ACCOUNT',
-    'Account',
-    id,
-    current,
+    { account_id: id, changes: updates },
     updated
   );
 
@@ -171,11 +170,10 @@ export async function deleteAccount(id: string, deleted_by?: string): Promise<vo
   // Log audit
   await logAuditAction(
     account.workspace_id,
+    null,
     deleted_by || null,
     'DELETE_ACCOUNT',
-    'Account',
-    id,
-    account,
+    { account_id: id },
     null
   );
 }

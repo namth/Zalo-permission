@@ -1,6 +1,10 @@
 import { getDb } from '../db';
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config({ path: '.env.local' });
 
 /**
  * Run all SQL migrations

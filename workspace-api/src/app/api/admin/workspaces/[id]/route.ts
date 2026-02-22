@@ -1,16 +1,16 @@
 /**
  * /api/admin/workspaces/[id]
  *
- * Admin API for managing individual workspaces
+ * Admin API for managing individual workspaces with synchronized databases
  * GET: Get workspace details
- * PUT: Update workspace
- * DELETE: Delete workspace
+ * PUT: Update workspace (syncs to both databases)
+ * DELETE: Delete workspace (syncs to both databases)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { logger } from "@/lib/logger";
-import { deleteWorkspaceAdmin } from "@/services/admin.service";
+import { WorkspaceSyncService } from "@/services/sync.service";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,12 @@ export async function GET(
     const { id } = params;
     logger.info(`[API] GET /api/admin/workspaces/${id}`);
 
-    const result = await db.query(`SELECT * FROM workspaces WHERE id = $1`, [
-      id,
-    ]);
+    const result = await db.query(
+      `SELECT id, name, description, status, created_at, updated_at 
+       FROM workspaces 
+       WHERE id = $1`,
+      [id],
+    );
 
     if (result.rows.length === 0) {
       return NextResponse.json(
@@ -66,36 +69,39 @@ export async function PUT(
   try {
     const { id } = params;
     const body = await req.json();
-    const { name, description } = body;
+    const { name, description, status, updated_by } = body;
 
     logger.info(`[API] PUT /api/admin/workspaces/${id}`);
 
-    const result = await db.query(
-      `UPDATE workspaces
-       SET name = COALESCE($1, name),
-           description = COALESCE($2, description),
-           updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [name || null, description || null, id],
-    );
+    // Build updates object with only provided fields
+    const updates: any = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (description !== undefined) updates.description = description?.trim();
+    if (status !== undefined) updates.status = status;
 
-    if (result.rows.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: "Workspace not found",
+          error: "No fields to update",
         },
-        { status: 404 },
+        { status: 400 },
       );
     }
 
-    logger.info(`[API] Workspace ${id} updated`);
+    // Update workspace with full sync to PostgreSQL and Neo4j
+    const workspace = await WorkspaceSyncService.updateWorkspace(
+      id,
+      updates,
+      updated_by
+    );
+
+    logger.info(`[API] Workspace ${id} updated with full sync`);
 
     return NextResponse.json(
       {
         success: true,
-        data: result.rows[0],
+        data: workspace,
       },
       { status: 200 },
     );
@@ -117,17 +123,23 @@ export async function DELETE(
 ): Promise<NextResponse> {
   try {
     const { id } = params;
+    const body = await req.json().catch(() => ({}));
+    const { deleted_by } = body;
+
     logger.info(`[API] DELETE /api/admin/workspaces/${id}`);
 
-    // Use deleteWorkspaceAdmin from admin.service to handle both PostgreSQL and Neo4j deletion
-    await deleteWorkspaceAdmin(id);
+    // Delete workspace with full sync (cascade delete all related data)
+    const workspace = await WorkspaceSyncService.deleteWorkspace(id, deleted_by);
 
-    logger.info(`[API] Workspace ${id} deleted from PostgreSQL and Neo4j`);
+    logger.info(
+      `[API] Workspace ${id} deleted from both PostgreSQL and Neo4j`
+    );
 
     return NextResponse.json(
       {
         success: true,
-        message: "Workspace deleted successfully",
+        message: "Workspace deleted successfully from both databases",
+        data: workspace,
       },
       { status: 200 },
     );

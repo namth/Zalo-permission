@@ -1,20 +1,18 @@
 /**
  * /api/admin/workspaces
  * 
- * Admin API for managing workspaces
+ * Admin API for managing workspaces with synchronized PostgreSQL and Neo4j
  * GET: List all workspaces
- * POST: Create a new workspace
+ * POST: Create a new workspace (syncs to both databases)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+import { WorkspaceSyncService } from '@/services/sync.service';
+import { AuditLogService } from '@/services';
+import { getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
-
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -23,11 +21,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     logger.info(`[API] GET /api/admin/workspaces - limit: ${limit}, offset: ${offset}`);
 
+    const db = getDb();
     const result = await db.query(
-      `SELECT * FROM workspaces ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      `SELECT id, name, description, status, created_at, updated_at 
+       FROM workspaces 
+       ORDER BY created_at DESC 
+       LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
-
     const countResult = await db.query(`SELECT COUNT(*) as total FROM workspaces`);
     const total = parseInt(countResult.rows[0].total, 10);
 
@@ -59,33 +60,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json();
-    const { name, description } = body;
+    const { name, description, created_by } = body;
 
     logger.info(`[API] POST /api/admin/workspaces - name: ${name}`);
 
-    if (!name) {
+    if (!name || name.trim().length === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Missing required field: name',
+          error: 'Missing or invalid required field: name',
         },
         { status: 400 }
       );
     }
 
-    const result = await db.query(
-      `INSERT INTO workspaces (name, description, created_at, updated_at)
-       VALUES ($1, $2, NOW(), NOW())
-       RETURNING *`,
-      [name, description || null]
+    // Create workspace with full sync to PostgreSQL and Neo4j
+    const workspace = await WorkspaceSyncService.createWorkspace(
+      name.trim(),
+      description?.trim() || undefined,
+      created_by
     );
 
-    logger.info(`[API] Workspace ${result.rows[0].id} created`);
+    logger.info(`[API] Workspace created with full sync: ${workspace.id}`);
 
     return NextResponse.json(
       {
         success: true,
-        data: result.rows[0],
+        data: workspace,
       },
       { status: 201 }
     );
