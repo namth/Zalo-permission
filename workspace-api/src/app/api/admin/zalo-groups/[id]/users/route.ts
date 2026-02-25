@@ -40,7 +40,7 @@ export async function POST(
             return NextResponse.json({ success: false, error: 'user_id is required' }, { status: 400 });
         }
 
-        const member = await ZaloGroupService.addUserToGroup(params.id, user_id, role || 'MEMBER', 'admin');
+        const member = await ZaloGroupService.addUserToGroup(params.id, user_id, role || 'MEMBER', undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, data: member }, { status: 201 });
     } catch (error) {
         logger.error(`Error adding user to zalo group: ${error}`);
@@ -61,7 +61,7 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: 'user_id is required' }, { status: 400 });
         }
 
-        await ZaloGroupService.removeUserFromGroup(params.id, user_id, 'admin');
+        await ZaloGroupService.removeUserFromGroup(params.id, user_id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'User removed from zalo group' }, { status: 200 });
     } catch (error) {
         logger.error(`Error removing user from zalo group: ${error}`);

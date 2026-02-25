@@ -42,7 +42,7 @@ export async function POST(
             return NextResponse.json({ success: false, error: 'user_id and role are required' }, { status: 400 });
         }
 
-        const result = await assignUserRole(params.id, user_id, role, 'admin');
+        const result = await assignUserRole(params.id, user_id, role, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, data: result }, { status: 201 });
     } catch (error) {
         logger.error(`Error assigning user role: ${error}`);
@@ -62,7 +62,7 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: 'user_id is required' }, { status: 400 });
         }
 
-        await removeUserFromWorkspace(params.id, user_id, 'admin');
+        await removeUserFromWorkspace(params.id, user_id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'User removed from workspace' }, { status: 200 });
     } catch (error) {
         logger.error(`Error removing user from workspace: ${error}`);

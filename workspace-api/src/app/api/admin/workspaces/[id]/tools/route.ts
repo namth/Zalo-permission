@@ -34,7 +34,7 @@ export async function POST(
             return NextResponse.json({ success: false, error: 'tool_id is required' }, { status: 400 });
         }
 
-        await addToolToWorkspace(params.id, tool_id, 'admin'); // TODO: get user from session
+        await addToolToWorkspace(params.id, tool_id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'Tool added to workspace' }, { status: 201 });
     } catch (error) {
         logger.error(`Error adding tool to workspace: ${error}`);
@@ -56,13 +56,13 @@ export async function DELETE(
             const url = new URL(req.url);
             const qToolId = url.searchParams.get('tool_id');
             if (qToolId) {
-                await removeToolFromWorkspace(params.id, qToolId, 'admin');
+                await removeToolFromWorkspace(params.id, qToolId, undefined); // TODO: replace with actual user_id from session
                 return NextResponse.json({ success: true, message: 'Tool removed from workspace' }, { status: 200 });
             }
             return NextResponse.json({ success: false, error: 'tool_id is required' }, { status: 400 });
         }
 
-        await removeToolFromWorkspace(params.id, tool_id, 'admin');
+        await removeToolFromWorkspace(params.id, tool_id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'Tool removed from workspace' }, { status: 200 });
     } catch (error) {
         logger.error(`Error removing tool from workspace: ${error}`);

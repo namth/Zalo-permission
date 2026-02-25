@@ -133,7 +133,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Log audit
     const auditLogService = new AuditLogService(db);
     await auditLogService.createAuditLog({
-      workspace_id: 'system',
+      workspace_id: null, // system-level action, no specific workspace
       action_type: 'TOOL_CREATED',
       input_data: { key, name },
       output_data: { tool_id: tool.id },

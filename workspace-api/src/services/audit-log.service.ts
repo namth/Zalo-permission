@@ -216,11 +216,11 @@ export class AuditLogService {
       thread_id: row.thread_id,
       user_id: row.user_id,
       action_type: row.action_type,
-      input_data: row.input_data ? JSON.parse(row.input_data) : undefined,
-      output_data: row.output_data ? JSON.parse(row.output_data) : undefined,
+      input_data: row.input_data && typeof row.input_data === 'string' ? JSON.parse(row.input_data) : row.input_data,
+      output_data: row.output_data && typeof row.output_data === 'string' ? JSON.parse(row.output_data) : row.output_data,
       status: row.status,
       error_message: row.error_message,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      metadata: row.metadata && typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
       created_at: row.created_at.toISOString(),
     };
   }

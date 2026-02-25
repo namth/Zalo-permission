@@ -88,14 +88,15 @@ export async function logAuditAction(
   }
 
   const log = result.rows[0];
-  // Parse JSON fields
-  if (log.input_data) {
+  // Parse JSON fields only if they are strings (TEXT column).
+  // If JSONB, pg driver already returns a parsed object — no need to parse again.
+  if (log.input_data && typeof log.input_data === 'string') {
     log.input_data = JSON.parse(log.input_data);
   }
-  if (log.output_data) {
+  if (log.output_data && typeof log.output_data === 'string') {
     log.output_data = JSON.parse(log.output_data);
   }
-  if (log.metadata) {
+  if (log.metadata && typeof log.metadata === 'string') {
     log.metadata = JSON.parse(log.metadata);
   }
 
@@ -269,8 +270,8 @@ export async function logAuditError(
 function parseAuditLog(row: any): AuditLog {
   return {
     ...row,
-    input_data: row.input_data ? JSON.parse(row.input_data) : undefined,
-    output_data: row.output_data ? JSON.parse(row.output_data) : undefined,
-    metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    input_data: row.input_data && typeof row.input_data === 'string' ? JSON.parse(row.input_data) : row.input_data,
+    output_data: row.output_data && typeof row.output_data === 'string' ? JSON.parse(row.output_data) : row.output_data,
+    metadata: row.metadata && typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata,
   };
 }

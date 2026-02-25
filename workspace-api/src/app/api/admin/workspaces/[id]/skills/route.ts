@@ -41,7 +41,7 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: 'skill_id is required' }, { status: 400 });
         }
 
-        await deleteSkill(skill_id, 'admin');
+        await deleteSkill(skill_id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'Skill deleted' }, { status: 200 });
     } catch (error) {
         logger.error(`Error deleting skill: ${error}`);

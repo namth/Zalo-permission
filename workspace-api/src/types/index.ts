@@ -90,7 +90,7 @@ export interface SkillStep {
 
 export interface AuditLog {
   id: string;
-  workspace_id: string;
+  workspace_id: string | null;
   thread_id?: string;
   user_id?: string;
   // agent_role removed
@@ -108,7 +108,7 @@ export interface AuditLog {
 // ============================================================================
 
 export interface AuditLogRequest {
-  workspace_id: string;
+  workspace_id: string | null;
   thread_id?: string;
   user_id?: string;
   // agent_role removed

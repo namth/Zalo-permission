@@ -1,19 +1,59 @@
-/**
- * POST /api/admin/permissions
- * DELETE /api/admin/permissions
- * 
- * Manage workspace tool permissions with synchronized databases
- * POST: Grant a workspace access to a tool
- * DELETE: Revoke a workspace's access to a tool
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { PermissionSyncService } from '@/services/sync.service';
 import { AuditLogService } from '@/services';
-import { getDb } from '@/lib/db';
+import { getDb, query } from '@/lib/db';
+import { executeQuery } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * GET /api/admin/permissions
+ * Returns permission matrix: all workspaces, all tools, and CAN_USE relationships
+ */
+export async function GET(_req: NextRequest): Promise<NextResponse> {
+  try {
+    // Get all workspaces
+    const workspacesResult = await query(
+      `SELECT id, name, created_at FROM workspaces ORDER BY name ASC`
+    );
+
+    // Get all active tools
+    const toolsResult = await query(
+      `SELECT id, key, name, status FROM tools WHERE status = 'active' ORDER BY name ASC`
+    );
+
+    // Get all CAN_USE relationships from Neo4j
+    let permissions: any[] = [];
+    try {
+      const neo4jResult = await executeQuery(
+        `MATCH (w:Workspace)-[:CAN_USE]->(t:Tool)
+         RETURN w.id as workspace_id, t.key as tool_key, t.id as tool_id`,
+        {}
+      );
+      permissions = neo4jResult.records.map(r => ({
+        workspace_id: r.get('workspace_id'),
+        tool_key: r.get('tool_key'),
+        tool_id: r.get('tool_id'),
+      }));
+    } catch (neo4jErr) {
+      logger.warn(`Could not fetch permissions from Neo4j: ${neo4jErr}`);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        workspaces: workspacesResult.rows,
+        tools: toolsResult.rows,
+        permissions,
+      },
+    }, { status: 200 });
+  } catch (error) {
+    logger.error(`GET /api/admin/permissions error: ${error}`);
+    return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+  }
+}
+
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {

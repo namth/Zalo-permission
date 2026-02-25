@@ -26,7 +26,7 @@ export async function PUT(
 ): Promise<NextResponse> {
     try {
         const body = await req.json();
-        const user = await UserService.updateUser(params.id, body, 'admin');
+        const user = await UserService.updateUser(params.id, body, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, data: user }, { status: 200 });
     } catch (error) {
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
@@ -38,7 +38,7 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ): Promise<NextResponse> {
     try {
-        await UserService.deleteUser(params.id, 'admin');
+        await UserService.deleteUser(params.id, undefined); // TODO: replace with actual user_id from session
         return NextResponse.json({ success: true, message: 'User deleted' }, { status: 200 });
     } catch (error) {
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });

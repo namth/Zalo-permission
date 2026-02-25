@@ -13,7 +13,7 @@ export class SkillService {
   constructor(
     private db: Pool,
     private neo4j: Neo4jClient
-  ) {}
+  ) { }
 
   /**
    * Create a new skill (learned from user instruction)
@@ -269,11 +269,13 @@ export class SkillService {
       id: row.id,
       name: row.name,
       description: row.description,
-      logic_config: Array.isArray(row.logic_config) ? row.logic_config : JSON.parse(row.logic_config),
+      logic_config: Array.isArray(row.logic_config)
+        ? row.logic_config
+        : typeof row.logic_config === 'string' ? JSON.parse(row.logic_config) : row.logic_config,
       owner_id: row.owner_id,
       workspace_id: row.workspace_id,
       is_shared: row.is_shared,
-      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
+      embedding: row.embedding && typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding,
       status: row.status,
       created_at: row.created_at.toISOString(),
       updated_at: row.updated_at.toISOString(),

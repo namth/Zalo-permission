@@ -74,7 +74,7 @@ export class UserService {
       // Rollback PG? Or just log? For now, we log. Ideally, use transaction.
     }
 
-    await logAuditAction('system', null, created_by || null, 'CREATE_USER', { user_id: user.id }, user);
+    await logAuditAction(null, null, created_by || null, 'CREATE_USER', { user_id: user.id }, user);
 
     return user;
   }
@@ -151,7 +151,7 @@ export class UserService {
     // 2. Update Neo4j (if relevant fields changed, e.g. zalo_id, though typically immutable)
     // Here we only synced id and zalo_id. zalo_id is unique/immutable usually.
 
-    await logAuditAction('system', null, updated_by || null, 'UPDATE_USER', { user_id: id, changes: updates }, updatedUser);
+    await logAuditAction(null, null, updated_by || null, 'UPDATE_USER', { user_id: id, changes: updates }, updatedUser);
 
     return updatedUser;
   }
@@ -175,7 +175,7 @@ export class UserService {
     // 2. Delete from PostgreSQL
     await query('DELETE FROM user_profile WHERE id = $1', [id]);
 
-    await logAuditAction('system', null, deleted_by || null, 'DELETE_USER', { user_id: id }, null);
+    await logAuditAction(null, null, deleted_by || null, 'DELETE_USER', { user_id: id }, null);
   }
 
   /**
