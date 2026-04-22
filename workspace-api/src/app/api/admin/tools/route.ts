@@ -12,6 +12,7 @@ import { AuditLogService } from '@/services';
 import { getDb } from '@/lib/db';
 import { embeddingClient } from '@/lib/embedding';
 import { logger } from '@/lib/logger';
+import { neo4jClient } from '@/lib/neo4j';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.info(`[API] GET /api/admin/tools - status: ${status || 'all'}, limit: ${limit}, offset: ${offset}`);
 
     const db = getDb();
-    let query = `SELECT id, key, name, description, input_schema, status, created_at, updated_at 
+    let query = `SELECT id, key, name, description, input_schema, output_schema, status, created_at, updated_at 
                  FROM tools`;
     const params: any[] = [];
 
@@ -43,10 +44,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
     const total = parseInt(countResult.rows[0].total, 10);
 
+    // Get group mapping from Neo4j
+    const neo4jRes = await neo4jClient.run(`
+      MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
+      RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
+    `);
+    
+    const groupMap = new Map<string, { id: string; key: string; name: string }>();
+    for (const record of neo4jRes.records) {
+      const toolId = record.get('tool_id');
+      const groupId = record.get('group_id');
+      
+      if (toolId && groupId) {
+        groupMap.set(String(toolId), {
+          id: String(groupId),
+          key: record.get('group_key'),
+          name: record.get('group_name')
+        });
+      }
+    }
+
+    const data = result.rows.map((row: any) => {
+      const rowId = String(row.id);
+      const group_info = groupMap.get(rowId) || null;
+      
+      return {
+        ...row,
+        group_info
+      };
+    });
+
     return NextResponse.json(
       {
         success: true,
-        data: result.rows,
+        data,
         pagination: {
           limit,
           offset,
@@ -72,9 +103,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json();
-    const { key, name, description, input_schema, created_by } = body;
+    const { key, name, description, input_schema, output_schema, created_by, group_id } = body;
 
-    logger.info(`[API] POST /api/admin/tools - tool: ${key}`);
+    logger.info(`[API] POST /api/admin/tools - tool: ${key}, group: ${group_id}`);
 
     // Validation
     if (!key || !name) {
@@ -126,7 +157,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       name,
       description,
       input_schema,
+      output_schema,
       embedding,
+      group_id,
       created_by
     );
 

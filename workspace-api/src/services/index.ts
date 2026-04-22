@@ -23,5 +23,4 @@ export {
   WorkspaceSyncService,
   ToolSyncService,
   ZaloGroupSyncService,
-  PermissionSyncService,
 } from './sync.service';

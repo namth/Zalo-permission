@@ -311,6 +311,198 @@ export class WorkspaceSyncService {
 }
 
 /**
+ * Tool Group Sync Operations
+ */
+export class ToolGroupSyncService {
+  /**
+   * Create tool group with full sync
+   */
+  static async createToolGroup(
+    key: string,
+    name: string,
+    description?: string,
+    created_by?: string
+  ) {
+    const txn = new SyncTransaction();
+    try {
+      await txn.begin();
+
+      // 1. Create in PostgreSQL
+      const pgResult = await txn.pgQuery(
+        `INSERT INTO tool_groups (key, name, description, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 'active', NOW(), NOW())
+         RETURNING id, key, name, description, status, created_at, updated_at`,
+        [key, name, description || null]
+      );
+
+      if (pgResult.rows.length === 0) {
+        throw new Error('Failed to create tool group in PostgreSQL');
+      }
+
+      const toolGroup = pgResult.rows[0];
+
+      // 2. Create in Neo4j
+      const neo4jResult = await txn.neo4jRun(
+        `CREATE (tg:ToolGroup {
+          id: $id,
+          key: $key,
+          name: $name
+        })
+        RETURN tg`,
+        {
+          id: toolGroup.id,
+          key: toolGroup.key,
+          name: toolGroup.name,
+        }
+      );
+
+      if (neo4jResult.records.length === 0) {
+        throw new Error('Failed to create tool group in Neo4j');
+      }
+
+      await txn.commit();
+      logger.info(`Tool Group created successfully: ${toolGroup.id}`);
+      return toolGroup;
+    } catch (error) {
+      await txn.rollback();
+      logger.error(`Failed to create tool group: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Update tool group with full sync
+   */
+  static async updateToolGroup(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      status?: string;
+    },
+    updated_by?: string
+  ) {
+    const txn = new SyncTransaction();
+    try {
+      await txn.begin();
+
+      const fields: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (updates.name !== undefined) {
+        fields.push(`name = $${paramIndex++}`);
+        values.push(updates.name);
+      }
+      if (updates.description !== undefined) {
+        fields.push(`description = $${paramIndex++}`);
+        values.push(updates.description);
+      }
+      if (updates.status !== undefined) {
+        fields.push(`status = $${paramIndex++}`);
+        values.push(updates.status);
+      }
+
+      if (fields.length === 0) {
+        const result = await txn.pgQuery('SELECT * FROM tool_groups WHERE id = $1', [id]);
+        return result.rows[0];
+      }
+
+      fields.push(`updated_at = NOW()`);
+      values.push(id);
+
+      // 1. Update in PostgreSQL
+      const pgResult = await txn.pgQuery(
+        `UPDATE tool_groups
+         SET ${fields.join(', ')}
+         WHERE id = $${paramIndex}
+         RETURNING id, key, name, description, status, created_at, updated_at`,
+        values
+      );
+
+      if (pgResult.rows.length === 0) {
+        throw new Error('Tool group not found in PostgreSQL');
+      }
+
+      const toolGroup = pgResult.rows[0];
+
+      // 2. Update in Neo4j
+      const updateFields: string[] = [];
+      const neo4jParams: Record<string, any> = { id };
+
+      if (updates.name !== undefined) {
+        updateFields.push('tg.name = $name');
+        neo4jParams.name = updates.name;
+      }
+
+      if (updateFields.length > 0) {
+        const neo4jResult = await txn.neo4jRun(
+          `MATCH (tg:ToolGroup {id: $id})
+           SET ${updateFields.join(', ')}
+           RETURN tg`,
+          neo4jParams
+        );
+
+        if (neo4jResult.records.length === 0) {
+          throw new Error('Tool group not found in Neo4j');
+        }
+      }
+
+      await txn.commit();
+      logger.info(`Tool Group updated successfully: ${id}`);
+      return toolGroup;
+    } catch (error) {
+      await txn.rollback();
+      logger.error(`Failed to update tool group: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete tool group with full sync
+   */
+  static async deleteToolGroup(id: string, deleted_by?: string) {
+    const txn = new SyncTransaction();
+    try {
+      await txn.begin();
+
+      // Get tool group data before deletion
+      const getResult = await txn.pgQuery('SELECT * FROM tool_groups WHERE id = $1', [id]);
+
+      if (getResult.rows.length === 0) {
+        throw new Error('Tool group not found');
+      }
+
+      const toolGroup = getResult.rows[0];
+
+      // 1. Delete from PostgreSQL (cascade will set tools.group_id to null)
+      await txn.pgQuery('DELETE FROM tool_groups WHERE id = $1', [id]);
+
+      // 2. Delete from Neo4j
+      const neo4jResult = await txn.neo4jRun(
+        `MATCH (tg:ToolGroup {id: $id})
+         OPTIONAL MATCH (tg)-[r]-()
+         DELETE r, tg
+         RETURN count(r) as relationshipCount`,
+        { id }
+      );
+
+      if (neo4jResult.records.length === 0) {
+        logger.warn(`Tool group ${id} not found in Neo4j, but continuing`);
+      }
+
+      await txn.commit();
+      logger.info(`Tool group deleted successfully: ${id}`);
+      return toolGroup;
+    } catch (error) {
+      await txn.rollback();
+      logger.error(`Failed to delete tool group: ${error}`);
+      throw error;
+    }
+  }
+}
+
+/**
  * Tool Sync Operations
  */
 export class ToolSyncService {
@@ -322,7 +514,9 @@ export class ToolSyncService {
     name: string,
     description?: string,
     input_schema?: any,
+    output_schema?: any,
     embedding?: number[],
+    group_id?: string,
     created_by?: string
   ) {
     const txn = new SyncTransaction();
@@ -331,14 +525,15 @@ export class ToolSyncService {
 
       // 1. Create in PostgreSQL
       const pgResult = await txn.pgQuery(
-        `INSERT INTO tools (key, name, description, input_schema, embedding, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
-         RETURNING id, key, name, description, input_schema, embedding, status, created_at, updated_at`,
+        `INSERT INTO tools (key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
+         RETURNING id, key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at`,
         [
           key,
           name,
           description || null,
           input_schema ? JSON.stringify(input_schema) : null,
+          output_schema ? JSON.stringify(output_schema) : null,
           embedding ? JSON.stringify(embedding) : null,
         ]
       );
@@ -350,19 +545,35 @@ export class ToolSyncService {
       const tool = pgResult.rows[0];
 
       // 2. Create in Neo4j
-      const neo4jResult = await txn.neo4jRun(
-        `CREATE (t:Tool {
-          id: $id,
-          key: $key,
-          name: $name
-        })
-        RETURN t`,
-        {
-          id: tool.id,
-          key: tool.key,
-          name: tool.name,
+      let neo4jResult;
+      if (group_id) {
+        const groupCheck = await txn.pgQuery('SELECT key FROM tool_groups WHERE id = $1', [group_id]);
+        if (groupCheck.rows.length > 0) {
+          const groupKey = groupCheck.rows[0].key;
+          neo4jResult = await txn.neo4jRun(
+            `CREATE (t:Tool {
+              id: $id,
+              key: $key,
+              name: $name
+            })
+            WITH t
+            MATCH (tg:ToolGroup {key: $groupKey})
+            MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
+            RETURN t`,
+            { id: tool.id, key: tool.key, name: tool.name, groupKey }
+          );
+        } else {
+          neo4jResult = await txn.neo4jRun(
+            `CREATE (t:Tool { id: $id, key: $key, name: $name }) RETURN t`,
+            { id: tool.id, key: tool.key, name: tool.name }
+          );
         }
-      );
+      } else {
+        neo4jResult = await txn.neo4jRun(
+          `CREATE (t:Tool { id: $id, key: $key, name: $name }) RETURN t`,
+          { id: tool.id, key: tool.key, name: tool.name }
+        );
+      }
 
       if (neo4jResult.records.length === 0) {
         throw new Error('Failed to create tool in Neo4j');
@@ -387,8 +598,10 @@ export class ToolSyncService {
       name?: string;
       description?: string;
       input_schema?: any;
+      output_schema?: any;
       embedding?: number[];
       status?: string;
+      group_id?: string | null;
     },
     updated_by?: string
   ) {
@@ -412,6 +625,10 @@ export class ToolSyncService {
         fields.push(`input_schema = $${paramIndex++}`);
         values.push(updates.input_schema ? JSON.stringify(updates.input_schema) : null);
       }
+      if (updates.output_schema !== undefined) {
+        fields.push(`output_schema = $${paramIndex++}`);
+        values.push(updates.output_schema ? JSON.stringify(updates.output_schema) : null);
+      }
       if (updates.embedding !== undefined) {
         fields.push(`embedding = $${paramIndex++}`);
         values.push(updates.embedding ? JSON.stringify(updates.embedding) : null);
@@ -421,28 +638,34 @@ export class ToolSyncService {
         values.push(updates.status);
       }
 
-      if (fields.length === 0) {
+      if (fields.length === 0 && updates.group_id === undefined) {
         const result = await txn.pgQuery('SELECT * FROM tools WHERE id = $1', [id]);
         return result.rows[0];
       }
 
-      fields.push(`updated_at = NOW()`);
-      values.push(id);
+      let tool;
+      if (fields.length > 0) {
+        fields.push(`updated_at = NOW()`);
+        values.push(id);
 
-      // 1. Update in PostgreSQL
-      const pgResult = await txn.pgQuery(
-        `UPDATE tools
-         SET ${fields.join(', ')}
-         WHERE id = $${paramIndex}
-         RETURNING id, key, name, description, input_schema, embedding, status, created_at, updated_at`,
-        values
-      );
+        // 1. Update in PostgreSQL
+        const pgResult = await txn.pgQuery(
+          `UPDATE tools
+           SET ${fields.join(', ')}
+           WHERE id = $${paramIndex}
+           RETURNING id, key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at`,
+          values
+        );
 
-      if (pgResult.rows.length === 0) {
-        throw new Error('Tool not found in PostgreSQL');
+        if (pgResult.rows.length === 0) {
+          throw new Error('Tool not found in PostgreSQL');
+        }
+
+        tool = pgResult.rows[0];
+      } else {
+        const result = await txn.pgQuery('SELECT * FROM tools WHERE id = $1', [id]);
+        tool = result.rows[0];
       }
-
-      const tool = pgResult.rows[0];
 
       // 2. Update in Neo4j
       const updateFields: string[] = [];
@@ -454,6 +677,33 @@ export class ToolSyncService {
       }
 
       // Removed status update from Neo4j
+
+      if (updates.group_id !== undefined) {
+        if (updates.group_id) {
+          const groupCheck = await txn.pgQuery('SELECT key FROM tool_groups WHERE id = $1', [updates.group_id]);
+          if (groupCheck.rows.length > 0) {
+            const groupKey = groupCheck.rows[0].key;
+            // Remove old relationship and create new one
+            await txn.neo4jRun(
+              `MATCH (t:Tool {id: $id})
+               OPTIONAL MATCH (t)-[r:BELONGS_TO_GROUP]->()
+               DELETE r
+               WITH t
+               MATCH (tg:ToolGroup {key: $groupKey})
+               MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
+               RETURN t`,
+              { id, groupKey }
+            );
+          }
+        } else {
+          // Remove relationship if group_id is explicitly set to null
+          await txn.neo4jRun(
+            `MATCH (t:Tool {id: $id})-[r:BELONGS_TO_GROUP]->()
+             DELETE r`,
+            { id }
+          );
+        }
+      }
 
       if (updateFields.length > 0) {
         const neo4jResult = await txn.neo4jRun(
@@ -553,9 +803,9 @@ export class ZaloGroupSyncService {
 
       // 2. Create in PostgreSQL
       const pgResult = await txn.pgQuery(
-        `INSERT INTO zalo_groups (workspace_id, thread_id, name, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', NOW(), NOW())
-         RETURNING id, workspace_id, thread_id, name, status, created_at, updated_at`,
+        `INSERT INTO zalo_groups (workspace_id, thread_id, name, created_at, updated_at)
+         VALUES ($1, $2, $3, NOW(), NOW())
+         RETURNING id, workspace_id, thread_id, name, created_at, updated_at`,
         [workspace_id, thread_id, name || null]
       );
 
@@ -617,10 +867,6 @@ export class ZaloGroupSyncService {
         fields.push(`name = $${paramIndex++}`);
         values.push(updates.name);
       }
-      if (updates.status !== undefined) {
-        fields.push(`status = $${paramIndex++}`);
-        values.push(updates.status);
-      }
 
       if (fields.length === 0) {
         const result = await txn.pgQuery(
@@ -638,7 +884,7 @@ export class ZaloGroupSyncService {
         `UPDATE zalo_groups
          SET ${fields.join(', ')}
          WHERE id = $${paramIndex}
-         RETURNING id, workspace_id, thread_id, name, status, created_at, updated_at`,
+         RETURNING id, workspace_id, thread_id, name, created_at, updated_at`,
         values
       );
 
@@ -730,154 +976,9 @@ export class ZaloGroupSyncService {
 }
 
 /**
- * Permission Sync Operations
+ * Workspace User Sync Operations
  */
-export class PermissionSyncService {
-  /**
-   * Grant tool permission to workspace
-   */
-  static async grantToolPermission(
-    workspace_id: string,
-    tool_key: string,
-    granted_by?: string
-  ) {
-    const txn = new SyncTransaction();
-    try {
-      await txn.begin();
-
-      // 1. Verify workspace exists
-      const wsCheck = await txn.pgQuery(
-        'SELECT id FROM workspaces WHERE id = $1',
-        [workspace_id]
-      );
-      if (wsCheck.rows.length === 0) {
-        throw new Error(`Workspace ${workspace_id} not found`);
-      }
-
-      // 2. Verify tool exists
-      const toolCheck = await txn.pgQuery(
-        'SELECT id FROM tools WHERE key = $1',
-        [tool_key]
-      );
-      if (toolCheck.rows.length === 0) {
-        throw new Error(`Tool ${tool_key} not found`);
-      }
-
-      const tool_id = toolCheck.rows[0].id;
-
-      // 3. Check if permission already exists
-      const permCheck = await txn.pgQuery(
-        'SELECT id FROM workspace_tools WHERE workspace_id = $1 AND tool_id = $2',
-        [workspace_id, tool_id]
-      );
-
-      if (permCheck.rows.length > 0) {
-        logger.info(`Permission already exists: workspace ${workspace_id} -> tool ${tool_key}`);
-        return { workspace_id, tool_id, status: 'already_exists' };
-      }
-
-      // 4. Create in PostgreSQL
-      const pgResult = await txn.pgQuery(
-        `INSERT INTO workspace_tools (workspace_id, tool_id, created_at)
-         VALUES ($1, $2, NOW())
-         RETURNING id, workspace_id, tool_id, created_at`,
-        [workspace_id, tool_id]
-      );
-
-      if (pgResult.rows.length === 0) {
-        throw new Error('Failed to create permission in PostgreSQL');
-      }
-
-      const permission = pgResult.rows[0];
-
-      // 5. Create relationship in Neo4j
-      const neo4jResult = await txn.neo4jRun(
-        `MATCH (w:Workspace {id: $workspace_id})
-         MATCH (t:Tool {key: $tool_key})
-         MERGE (w)-[rel:CAN_USE]->(t)
-         SET rel.created_at = datetime()
-         RETURN rel`,
-        {
-          workspace_id,
-          tool_key,
-        }
-      );
-
-      if (neo4jResult.records.length === 0) {
-        throw new Error('Failed to create permission in Neo4j');
-      }
-
-      await txn.commit();
-      logger.info(`Permission granted: workspace ${workspace_id} -> tool ${tool_key}`);
-      return { ...permission, status: 'granted' };
-    } catch (error) {
-      await txn.rollback();
-      logger.error(`Failed to grant tool permission: ${error}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Revoke tool permission from workspace
-   */
-  static async revokeToolPermission(
-    workspace_id: string,
-    tool_key: string,
-    revoked_by?: string
-  ) {
-    const txn = new SyncTransaction();
-    try {
-      await txn.begin();
-
-      // 1. Get tool ID
-      const toolResult = await txn.pgQuery(
-        'SELECT id FROM tools WHERE key = $1',
-        [tool_key]
-      );
-
-      if (toolResult.rows.length === 0) {
-        throw new Error(`Tool ${tool_key} not found`);
-      }
-
-      const tool_id = toolResult.rows[0].id;
-
-      // 2. Delete from PostgreSQL
-      const delResult = await txn.pgQuery(
-        'DELETE FROM workspace_tools WHERE workspace_id = $1 AND tool_id = $2 RETURNING id',
-        [workspace_id, tool_id]
-      );
-
-      if (delResult.rows.length === 0) {
-        throw new Error('Permission not found');
-      }
-
-      // 3. Delete from Neo4j
-      const neo4jResult = await txn.neo4jRun(
-        `MATCH (w:Workspace {id: $workspace_id})-[rel:CAN_USE]->(t:Tool {key: $tool_key})
-         DELETE rel
-         RETURN count(rel) as deleted`,
-        {
-          workspace_id,
-          tool_key,
-        }
-      );
-
-      if (neo4jResult.records.length === 0 || neo4jResult.records[0].get('deleted') === 0) {
-        logger.warn(
-          `Permission not found in Neo4j: workspace ${workspace_id} -> tool ${tool_key}`
-        );
-      }
-
-      await txn.commit();
-      logger.info(`Permission revoked: workspace ${workspace_id} -> tool ${tool_key}`);
-      return { workspace_id, tool_key, status: 'revoked' };
-    } catch (error) {
-      await txn.rollback();
-      logger.error(`Failed to revoke tool permission: ${error}`);
-      throw error;
-    }
-  }
-
+export class WorkspaceUserSyncService {
   /**
    * Assign user role in workspace
    */

@@ -26,25 +26,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         // Mark skill as shared
         await query(
-            `UPDATE skills SET is_shared = true, updated_at = NOW() WHERE id = $1
-       RETURNING id, name, description, owner_id, workspace_id, is_shared, logic_config, status, created_at, updated_at`,
+            `UPDATE skills SET is_shared = true, updated_at = NOW() WHERE id = $1`,
             [skill_id]
         );
 
+        // Update Neo4j relationships
+        const { neo4jClient } = await import('@/lib/neo4j');
+        if (Array.isArray(workspace_ids) && workspace_ids.length > 0) {
+            for (const workspaceId of workspace_ids) {
+                await neo4jClient.createSharingRelationship(skill_id, workspaceId);
+            }
+        }
+
         const updatedResult = await query(
-            `SELECT s.*, u.full_name as owner_name FROM skills s LEFT JOIN user_profile u ON s.owner_id = u.id WHERE s.id = $1`,
+            `SELECT s.* FROM skills s WHERE s.id = $1`,
             [skill_id]
         );
 
         const row = updatedResult.rows[0];
         const skill = {
-            ...row,
-            logic_config: Array.isArray(row.logic_config)
-                ? row.logic_config
-                : typeof row.logic_config === 'string' ? JSON.parse(row.logic_config) : row.logic_config,
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            is_shared: row.is_shared,
+            detail: row.detail,
+            status: row.status,
             created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
             updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+            category: null as string | null,
+            tools: [] as {id: string, name: string}[]
         };
+
+        // Populate details from Neo4j
+        const relations = await neo4jClient.getSkillRelations(skill.id);
+        skill.category = relations.category;
+        skill.tools = relations.tools;
 
         return NextResponse.json({ success: true, data: skill }, { status: 200 });
     } catch (error) {

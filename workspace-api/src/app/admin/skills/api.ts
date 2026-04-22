@@ -9,9 +9,10 @@ export interface Skill {
   workspace_id: string;
   status: 'active' | 'archived' | 'disabled';
   type: 'user' | 'system';
-  logic_config?: Record<string, any>;
+  detail?: string;
+  category?: string;
+  tools?: {id: string, name: string}[];
   shared_to?: string[]; // workspace IDs
-  usage_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -27,12 +28,14 @@ export async function fetchSkills(filters?: {
   owner_id?: string;
   status?: string;
   type?: string;
+  category?: string;
 }): Promise<Skill[]> {
   const query = new URLSearchParams();
   if (filters?.workspace_id) query.append('workspace_id', filters.workspace_id);
   if (filters?.owner_id) query.append('owner_id', filters.owner_id);
   if (filters?.status) query.append('status', filters.status);
   if (filters?.type) query.append('type', filters.type);
+  if (filters?.category) query.append('category', filters.category);
 
   const url = `/api/admin/skills${query.toString() ? '?' + query.toString() : ''}`;
   const response = await fetch(url);
@@ -120,4 +123,45 @@ export async function deleteSkill(id: string): Promise<void> {
   if (!response.ok || !data.success) {
     throw new Error(data.error || 'Failed to delete skill');
   }
+}
+
+export async function createSkill(skill: Omit<Partial<Skill>, 'tools'> & { tools?: string[], category?: string }): Promise<Skill> {
+  const response = await fetch('/api/admin/skills', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(skill),
+  });
+
+  const data = await response.json() as ApiResponse<Skill>;
+  
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to create skill');
+  }
+
+  return data.data!;
+}
+
+export async function updateSkill(id: string, skill: Omit<Partial<Skill>, 'tools'> & { tools?: string[], category?: string }): Promise<Skill> {
+  const response = await fetch(`/api/admin/skills/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(skill),
+  });
+
+  const data = await response.json() as ApiResponse<Skill>;
+  
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to update skill');
+  }
+
+  return data.data!;
+}
+
+export async function getCategories(): Promise<string[]> {
+  const response = await fetch('/api/admin/categories');
+  const data = await response.json() as ApiResponse<string[]>;
+  if (!response.ok || !data.success) {
+    return [];
+  }
+  return data.data || [];
 }

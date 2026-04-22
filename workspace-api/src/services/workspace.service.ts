@@ -1,6 +1,7 @@
 
 import { query } from '@/lib/db';
 import { executeQuery } from '@/lib/db';
+import neo4j from 'neo4j-driver';
 import { logAuditAction } from './audit.service';
 import { UserService } from './user.service';
 
@@ -109,18 +110,44 @@ export async function getWorkspace(id: string): Promise<Workspace | null> {
  */
 export async function listWorkspaces(
   limit: number = 100,
-  offset: number = 0
+  offset: number = 0,
+  filterByUserId?: string
 ): Promise<{ workspaces: Workspace[]; total: number }> {
-  const countResult = await query('SELECT COUNT(*) as count FROM workspaces');
-  const total = countResult.rows[0].count;
+  let workspaceIds: string[] | null = null;
 
-  const result = await query(
-    `SELECT id, name, status, description, created_at, updated_at
-     FROM workspaces
-     ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [limit, offset]
-  );
+  // If filtering by user, get workspace IDs from Neo4j
+  if (filterByUserId) {
+    const neo4jResult = await executeQuery(
+      `MATCH (u:ZaloUser {id: $user_id})-[:PART_OF]->(w:Workspace)
+       RETURN w.id AS id`,
+      { user_id: filterByUserId }
+    );
+    workspaceIds = neo4jResult.records.map(r => r.get('id'));
+    
+    if (workspaceIds.length === 0) {
+      return { workspaces: [], total: 0 };
+    }
+  }
+
+  let countQuery = 'SELECT COUNT(*) as count FROM workspaces';
+  let listQuery = `SELECT id, name, status, description, created_at, updated_at FROM workspaces`;
+  const params: any[] = [];
+
+  if (workspaceIds) {
+    countQuery += ' WHERE id = ANY($1)';
+    listQuery += ' WHERE id = ANY($1)';
+    params.push(workspaceIds);
+  }
+
+  const countResult = await query(countQuery, params);
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  const limitParamIndex = params.length + 1;
+  const offsetParamIndex = params.length + 2;
+  listQuery += ` ORDER BY created_at DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`;
+  params.push(limit, offset);
+
+  const result = await query(listQuery, params);
 
   return { workspaces: result.rows.map(serializeRow), total };
 }
@@ -253,9 +280,9 @@ export async function addZaloGroup(
   }
 
   const result = await query(
-    `INSERT INTO zalo_groups (workspace_id, thread_id, name, status, created_at, updated_at)
-     VALUES ($1, $2, $3, 'active', NOW(), NOW())
-     RETURNING id, workspace_id, thread_id, name, status, created_at, updated_at`,
+    `INSERT INTO zalo_groups (workspace_id, thread_id, name, created_at, updated_at)
+     VALUES ($1, $2, $3, NOW(), NOW())
+     RETURNING id, workspace_id, thread_id, name, created_at, updated_at`,
     [workspace_id, thread_id, name || null]
   );
 
@@ -302,23 +329,44 @@ export async function addZaloGroup(
 export async function getWorkspaceZaloGroups(
   workspace_id: string,
   limit: number = 100,
-  offset: number = 0
+  offset: number = 0,
+  filterByUserId?: string
 ): Promise<{ groups: ZaloGroup[]; total: number }> {
-  const countResult = await query(
-    `SELECT COUNT(*) as count FROM zalo_groups WHERE workspace_id = $1`,
-    [workspace_id]
-  );
+  let groupIds: string[] | null = null;
 
-  const total = countResult.rows[0].count;
+  // If filtering by user, get group IDs from Neo4j (where user is MEMBER_OF)
+  if (filterByUserId) {
+    const neo4jResult = await executeQuery(
+      `MATCH (u:ZaloUser {id: $user_id})-[:MEMBER_OF]->(g:ZaloGroup)-[:BELONGS_TO]->(w:Workspace {id: $workspace_id})
+       RETURN g.id AS id`,
+      { user_id: filterByUserId, workspace_id }
+    );
+    groupIds = neo4jResult.records.map(r => r.get('id'));
 
-  const result = await query(
-    `SELECT id, workspace_id, thread_id, name, status, created_at, updated_at
-     FROM zalo_groups
-     WHERE workspace_id = $1
-     ORDER BY created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [workspace_id, limit, offset]
-  );
+    if (groupIds.length === 0) {
+      return { groups: [], total: 0 };
+    }
+  }
+
+  let countQuery = `SELECT COUNT(*) as count FROM zalo_groups WHERE workspace_id = $1`;
+  let listQuery = `SELECT id, workspace_id, thread_id, name, created_at, updated_at FROM zalo_groups WHERE workspace_id = $1`;
+  const params: any[] = [workspace_id];
+
+  if (groupIds) {
+    countQuery += ' AND id = ANY($2)';
+    listQuery += ' AND id = ANY($2)';
+    params.push(groupIds);
+  }
+
+  const countResult = await query(countQuery, params);
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  const limitParamIndex = params.length + 1;
+  const offsetParamIndex = params.length + 2;
+  listQuery += ` ORDER BY created_at DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`;
+  params.push(limit, offset);
+
+  const result = await query(listQuery, params);
 
   return { groups: result.rows.map(serializeRow), total };
 }
@@ -372,7 +420,7 @@ export async function removeZaloGroup(
  */
 export async function getZaloGroupByThreadId(thread_id: string): Promise<ZaloGroup | null> {
   const result = await query(
-    `SELECT id, workspace_id, thread_id, name, status, created_at, updated_at
+    `SELECT id, workspace_id, thread_id, name, created_at, updated_at
      FROM zalo_groups
      WHERE thread_id = $1`,
     [thread_id]
@@ -382,7 +430,9 @@ export async function getZaloGroupByThreadId(thread_id: string): Promise<ZaloGro
 }
 
 /**
- * Assign user role in workspace
+ * Assign user role in workspace — Neo4j only
+ * Tạo/cập nhật relationship PART_OF giữa ZaloUser và Workspace trong Neo4j.
+ * Không dùng bảng workspace_user_roles.
  */
 export async function assignUserRole(
   workspace_id: string,
@@ -396,106 +446,71 @@ export async function assignUserRole(
     throw new Error(`Invalid role: ${role}`);
   }
 
-  // Check if user already has role
-  const existing = await query(
-    `SELECT id FROM workspace_user_roles WHERE workspace_id = $1 AND user_id = $2`,
-    [workspace_id, user_id]
+  // Lấy thông tin user từ PostgreSQL để xác nhận tồn tại
+  const userResult = await query(
+    `SELECT id, zalo_id, full_name FROM user_profile WHERE id = $1`,
+    [user_id]
   );
-
-  if (existing.rows.length > 0) {
-    // Update existing role
-    const result = await query(
-      `UPDATE workspace_user_roles
-       SET role = $1, assigned_by = $2, updated_at = NOW()
-       WHERE workspace_id = $3 AND user_id = $4
-       RETURNING id, workspace_id, user_id, role, assigned_by, created_at, updated_at`,
-      [role, assigned_by || null, workspace_id, user_id]
-    );
-
-    const userRole = serializeRow(result.rows[0]);
-    await logAuditAction(
-      workspace_id,
-      null,  // thread_id
-      assigned_by || null,  // user_id
-      'UPDATE_USER_ROLE',  // action_type
-      { role: role === 'ADMIN' ? 'MEMBER' : 'ADMIN' },  // input_data
-      userRole  // output_data
-    );
-    return userRole;
+  if (userResult.rows.length === 0) {
+    throw new Error(`User not found: ${user_id}`);
   }
 
-  // Create new role assignment
-  const result = await query(
-    `INSERT INTO workspace_user_roles (workspace_id, user_id, role, assigned_by, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, NOW(), NOW())
-     RETURNING id, workspace_id, user_id, role, assigned_by, created_at, updated_at`,
-    [workspace_id, user_id, role, assigned_by || null]
+  // Lấy thông tin workspace để xác nhận tồn tại
+  const wsResult = await query(
+    `SELECT id FROM workspaces WHERE id = $1`,
+    [workspace_id]
   );
-
-  if (result.rows.length === 0) {
-    throw new Error('Failed to assign user role');
+  if (wsResult.rows.length === 0) {
+    throw new Error(`Workspace not found: ${workspace_id}`);
   }
 
-  const userRole = serializeRow(result.rows[0]);
-
-  // Update in Neo4j
-  try {
-    await executeQuery(
-      `MATCH (u:ZaloUser {id: $user_id})
-       MATCH (w:Workspace {id: $workspace_id})
-       MERGE (u)-[r:HAS_ROLE]->(w)
-       SET r.role = $role
-       RETURN r`,
-      { user_id, workspace_id, role }
-    );
-  } catch (error) {
-    console.error('Failed to assign role in Neo4j:', error);
-  }
+  // MERGE relationship trong Neo4j — tạo mới hoặc cập nhật role
+  await executeQuery(
+    `MATCH (u:ZaloUser {id: $user_id})
+     MATCH (w:Workspace {id: $workspace_id})
+     MERGE (u)-[r:PART_OF]->(w)
+     SET r.role = $role, r.assigned_at = datetime()
+     RETURN r`,
+    { user_id, workspace_id, role }
+  );
 
   await logAuditAction(
     workspace_id,
-    null,  // thread_id
-    assigned_by || null,  // user_id
-    'ASSIGN_USER_ROLE',  // action_type
-    null,  // input_data
-    userRole  // output_data
+    null,
+    assigned_by || null,
+    'ASSIGN_USER_ROLE',
+    null,
+    { user_id, workspace_id, role }
   );
 
-  return userRole;
+  return { user_id, workspace_id, role };
 }
 
 /**
- * Remove user from workspace
+ * Remove user from workspace — Neo4j only
+ * Xóa relationship PART_OF giữa ZaloUser và Workspace trong Neo4j.
  */
 export async function removeUserFromWorkspace(
   workspace_id: string,
   user_id: string,
   removed_by?: string
 ): Promise<void> {
-  // Delete from PostgreSQL
-  await query(
-    'DELETE FROM workspace_user_roles WHERE workspace_id = $1 AND user_id = $2',
-    [workspace_id, user_id]
+  // Xóa relationship PART_OF với Workspace và MEMBER_OF với các ZaloGroup thuộc Workspace đó trong Neo4j
+  await executeQuery(
+    `MATCH (u:ZaloUser {id: $user_id})
+     OPTIONAL MATCH (u)-[r1:PART_OF]->(w:Workspace {id: $workspace_id})
+     OPTIONAL MATCH (u)-[r2:MEMBER_OF]->(g:ZaloGroup)-[:BELONGS_TO]->(w)
+     DELETE r1, r2`,
+    { user_id, workspace_id }
   );
-
-  // Delete from Neo4j
-  try {
-    await executeQuery(
-      `MATCH (u:ZaloUser {id: $user_id})-[r:HAS_ROLE]->(w:Workspace {id: $workspace_id})
-        DELETE r`,
-      { user_id, workspace_id }
-    );
-  } catch (error) {
-    console.error('Failed to remove user role from Neo4j:', error);
-  }
 
   await logAuditAction(
     workspace_id,
-    null,  // thread_id
-    removed_by || null,  // user_id
-    'REMOVE_USER_FROM_WORKSPACE',  // action_type
-    null,  // input_data
-    null  // output_data
+    null,
+    removed_by || null,
+    'REMOVE_USER_FROM_WORKSPACE',
+    null,
+    null
   );
 }
 
@@ -595,30 +610,80 @@ async function fallbackWorkspaceSearch(
 }
 
 /**
- * Get Users in Workspace
+ * Get Users in Workspace — từ Neo4j relationships
+ * Query các ZaloUser có relationship PART_OF tới Workspace,
+ * sau đó join với user_profile trong PostgreSQL để lấy thông tin chi tiết.
  */
 export async function getWorkspaceUsers(
   workspace_id: string,
   limit: number = 100,
   offset: number = 0
 ): Promise<{ users: any[]; total: number }> {
-  const countResult = await query(
-    `SELECT COUNT(*) as count FROM workspace_user_roles WHERE workspace_id = $1`,
-    [workspace_id]
+  // 1. Đếm tổng số user trước (disableLosslessIntegers: true → count() là JS number thuần)
+  const countResult = await executeQuery(
+    `MATCH (u:ZaloUser)-[:PART_OF]->(w:Workspace {id: $workspace_id})
+     RETURN count(u) AS total`,
+    { workspace_id }
   );
-  const total = parseInt(countResult.rows[0].count, 10);
+  const total: number = countResult.records.length > 0
+    ? (countResult.records[0].get('total') as number)
+    : 0;
 
-  const result = await query(
-    `SELECT u.id, u.zalo_id, u.full_name, u.email, u.phone, ur.role, ur.created_at as joined_at
-     FROM workspace_user_roles ur
-     JOIN user_profile u ON ur.user_id = u.id
-     WHERE ur.workspace_id = $1
-     ORDER BY ur.created_at DESC
-     LIMIT $2 OFFSET $3`,
-    [workspace_id, limit, offset]
+  if (total === 0) {
+    return { users: [], total: 0 };
+  }
+
+  // 2. Lấy danh sách user_id và role từ Neo4j (với phân trang)
+  const neo4jResult = await executeQuery(
+    `MATCH (u:ZaloUser)-[r:PART_OF]->(w:Workspace {id: $workspace_id})
+     RETURN u.id AS user_id, r.role AS role, r.assigned_at AS assigned_at
+     ORDER BY r.assigned_at DESC
+     SKIP $offset LIMIT $limit`,
+    { workspace_id, offset: neo4j.int(offset), limit: neo4j.int(limit) }
   );
 
-  return { users: result.rows.map(serializeRow), total };
+  const records = neo4jResult.records;
+
+  if (records.length === 0) {
+    return { users: [], total };
+  }
+
+  const userIds = records.map((r: any) => r.get('user_id'));
+  const roleMap = new Map<string, { role: string; assigned_at: string | null }>(
+    records.map((r: any) => {
+      const assignedAt = r.get('assigned_at');
+      return [
+        r.get('user_id'),
+        {
+          role: r.get('role') || 'MEMBER',
+          // Convert Neo4j temporal object (datetime()) to ISO string if needed
+          assigned_at: assignedAt
+            ? (typeof assignedAt === 'string' ? assignedAt : assignedAt.toString())
+            : null,
+        },
+      ];
+    })
+  );
+
+  // 3. Lấy thông tin chi tiết từ PostgreSQL
+  const placeholders = userIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
+  const pgResult = await query(
+    `SELECT id, zalo_id, full_name, email, phone
+     FROM user_profile
+     WHERE id = ANY(ARRAY[${placeholders}]::uuid[])`,
+    userIds
+  );
+
+  const users = pgResult.rows.map((u: any) => {
+    const meta = roleMap.get(u.id) || { role: 'MEMBER', assigned_at: null };
+    return serializeRow({
+      ...u,
+      role: meta.role,
+      joined_at: meta.assigned_at,
+    });
+  });
+
+  return { users, total };
 }
 
 /**
@@ -664,6 +729,7 @@ export async function addToolToWorkspace(
 
 /**
  * Remove Tool from Workspace
+ * Also cascade-deletes all Data nodes linked to this tool in this workspace
  */
 export async function removeToolFromWorkspace(
   workspace_id: string,
@@ -676,6 +742,7 @@ export async function removeToolFromWorkspace(
   }
   const tool_key = toolCheck.rows[0].key;
 
+  // Remove the CAN_USE relationship between Workspace and Tool
   await executeQuery(
     `MATCH (w:Workspace {id: $workspace_id})-[r:CAN_USE]->(t:Tool {key: $key})
      DELETE r`,
@@ -693,22 +760,28 @@ export async function getWorkspaceSkills(
   limit: number = 100,
   offset: number = 0
 ): Promise<{ skills: any[]; total: number }> {
-  const countResult = await query(
-    `SELECT COUNT(*) as count FROM skills WHERE workspace_id = $1`,
-    [workspace_id]
+  // Get skill IDs from Neo4j
+  const neo4jRes = await executeQuery(
+    `MATCH (s:Skill)-[:SHARED_TO]->(w:Workspace {id: $workspace_id})
+     RETURN s.id AS id`,
+    { workspace_id }
   );
-  const total = parseInt(countResult.rows[0].count, 10);
+  const skillIds = neo4jRes.records.map(r => r.get('id'));
+
+  if (skillIds.length === 0) {
+    return { skills: [], total: 0 };
+  }
 
   const result = await query(
     `SELECT id, name, description, is_shared, created_at
        FROM skills
-       WHERE workspace_id = $1
+       WHERE id = ANY($1)
        ORDER BY created_at DESC
        LIMIT $2 OFFSET $3`,
-    [workspace_id, limit, offset]
+    [skillIds, limit, offset]
   );
 
-  return { skills: result.rows.map(serializeRow), total };
+  return { skills: result.rows.map(serializeRow), total: skillIds.length };
 }
 
 /**
@@ -718,7 +791,7 @@ export async function deleteSkill(
   skill_id: string,
   deleted_by?: string
 ): Promise<void> {
-  const skillResult = await query('SELECT workspace_id, name FROM skills WHERE id = $1', [skill_id]);
+  const skillResult = await query('SELECT name FROM skills WHERE id = $1', [skill_id]);
   if (skillResult.rows.length === 0) throw new Error('Skill not found');
   const skill = skillResult.rows[0];
 

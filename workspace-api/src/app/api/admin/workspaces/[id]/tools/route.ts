@@ -47,22 +47,25 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ): Promise<NextResponse> {
     try {
-        const body = await req.json();
-        const { tool_id } = body; // Expecting tool_id in body for DELETE? Or query param? 
-        // Usually DELETE relationship uses query param or body. Let's support body.
+        let tool_id: string | null = null;
+        
+        try {
+            const body = await req.json();
+            tool_id = body.tool_id;
+        } catch (e) {
+            // Body might be empty or not JSON
+        }
 
         if (!tool_id) {
-            // Try query param
             const url = new URL(req.url);
-            const qToolId = url.searchParams.get('tool_id');
-            if (qToolId) {
-                await removeToolFromWorkspace(params.id, qToolId, undefined); // TODO: replace with actual user_id from session
-                return NextResponse.json({ success: true, message: 'Tool removed from workspace' }, { status: 200 });
-            }
+            tool_id = url.searchParams.get('tool_id');
+        }
+
+        if (!tool_id) {
             return NextResponse.json({ success: false, error: 'tool_id is required' }, { status: 400 });
         }
 
-        await removeToolFromWorkspace(params.id, tool_id, undefined); // TODO: replace with actual user_id from session
+        await removeToolFromWorkspace(params.id, tool_id, undefined);
         return NextResponse.json({ success: true, message: 'Tool removed from workspace' }, { status: 200 });
     } catch (error) {
         logger.error(`Error removing tool from workspace: ${error}`);

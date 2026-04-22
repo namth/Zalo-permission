@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Tool, fetchTools } from './api';
 import { StatusBadge } from './components';
+import { Plus } from '@phosphor-icons/react';
 
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
@@ -48,9 +49,10 @@ export default function ToolsPage() {
         </div>
         <Link
           href="/admin/tools/new"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
         >
-          + New Tool
+          <Plus size={16} weight="bold" />
+          New Tool
         </Link>
       </div>
 
@@ -114,29 +116,26 @@ export default function ToolsPage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Key</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Tool Group</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredTools.map((tool) => (
                   <tr key={tool.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 text-sm font-mono text-gray-900">{tool.key}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">{tool.name}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                      <Link href={`/admin/tools/${tool.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                        {tool.name}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{tool.group_info?.name || '—'}</td>
                     <td className="px-6 py-4 text-sm">
                       <StatusBadge status={tool.status} />
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {new Date(tool.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm space-x-3">
-                      <Link
-                        href={`/admin/tools/${tool.id}`}
-                        className="text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        Details
-                      </Link>
                     </td>
                   </tr>
                 ))}

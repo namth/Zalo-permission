@@ -148,7 +148,6 @@ export default function ToolDetailPage({ params }: { params: { id: string } }) {
             ← Back to Tools
           </Link>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">{tool.name}</h1>
-          <p className="text-gray-600 mt-2">{tool.description || 'No description provided'}</p>
         </div>
         <div className="space-x-2">
           <button
@@ -165,6 +164,7 @@ export default function ToolDetailPage({ params }: { params: { id: string } }) {
           </button>
         </div>
       </div>
+      <p className="text-gray-600 mt-2">{tool.description || 'No description provided'}</p>
 
       {isEditing && (
         <ToolForm
@@ -175,50 +175,63 @@ export default function ToolDetailPage({ params }: { params: { id: string } }) {
       )}
 
       {!isEditing && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Tool Information */}
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-4">Tool Information</h3>
-            <dl className="space-y-4">
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Key</dt>
-                <dd className="text-sm font-mono text-gray-900 mt-1">{tool.key}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Status</dt>
-                <dd className="text-sm mt-1">
-                  <StatusBadge status={tool.status} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Created</dt>
-                <dd className="text-sm text-gray-900 mt-1">
-                  {new Date(tool.created_at).toLocaleString()}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-600">Updated</dt>
-                <dd className="text-sm text-gray-900 mt-1">
-                  {new Date(tool.updated_at).toLocaleString()}
-                </dd>
-              </div>
-            </dl>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Tool Information */}
+            <div className="bg-white p-6 rounded-lg border border-gray-200">
+              <h3 className="font-semibold text-gray-900 mb-4">Tool Information</h3>
+              <dl className="space-y-4">
+                <div>
+                  <dt className="text-sm font-medium text-gray-600">Key</dt>
+                  <dd className="text-sm font-mono text-gray-900 mt-1">{tool.key}</dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-600">Tool Group</dt>
+                  <dd className="text-sm text-gray-900 mt-1">{tool.group_info?.name || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-600">Status</dt>
+                  <dd className="text-sm mt-1">
+                    <StatusBadge status={tool.status} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-600">Created</dt>
+                  <dd className="text-sm text-gray-900 mt-1">
+                    {new Date(tool.created_at).toLocaleString()}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-600">Updated</dt>
+                  <dd className="text-sm text-gray-900 mt-1">
+                    {new Date(tool.updated_at).toLocaleString()}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
           </div>
 
-          {/* Workspace Access */}
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-4">Workspace Access</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Manage which workspaces can use this tool
-            </p>
-            <Link
-              href={`/admin/permissions?tool=${tool.id}`}
-              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              Manage Permissions →
-            </Link>
-          </div>
-        </div>
+          {/* Input Schema */}
+          {tool.input_schema && (
+            <div className="bg-white p-6 rounded-lg border border-gray-200 md:col-span-2">
+              <h3 className="font-semibold text-gray-900 mb-3">Input Schema</h3>
+              <pre className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-all">
+                {JSON.stringify(tool.input_schema, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Output Schema */}
+          {tool.output_schema && (
+            <div className="bg-white p-6 rounded-lg border border-gray-200 md:col-span-2">
+              <h3 className="font-semibold text-gray-900 mb-3">Output Schema</h3>
+              <pre className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-all">
+                {JSON.stringify(tool.output_schema, null, 2)}
+              </pre>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -75,51 +75,6 @@ export async function verifyTool(toolId: string): Promise<boolean> {
 }
 
 /**
- * Verify workspace-tool permission exists in both databases
- */
-export async function verifyToolPermission(
-  workspaceId: string,
-  toolId: string
-): Promise<boolean> {
-  try {
-    // Check PostgreSQL
-    const pgResult = await query(
-      'SELECT id FROM workspace_tools WHERE workspace_id = $1 AND tool_id = $2',
-      [workspaceId, toolId]
-    );
-
-    if (pgResult.rows.length === 0) {
-      logger.warn(
-        `Permission not found in PostgreSQL: workspace ${workspaceId} -> tool ${toolId}`
-      );
-      return false;
-    }
-
-    // Check Neo4j
-    const neo4jResult = await executeQuery(
-      `MATCH (w:Workspace {id: $workspace_id})-[:CAN_USE]->(t:Tool {id: $tool_id})
-       RETURN count(*) as count`,
-      { workspace_id: workspaceId, tool_id: toolId }
-    );
-
-    const count = neo4jResult.records[0]?.get('count');
-    if (!count || count.toNumber() === 0) {
-      logger.warn(
-        `Permission not found in Neo4j: workspace ${workspaceId} -> tool ${toolId}`
-      );
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    logger.error(
-      `Error verifying tool permission (${workspaceId} -> ${toolId}): ${error}`
-    );
-    return false;
-  }
-}
-
-/**
  * Verify all workspaces exist in both databases
  */
 export async function verifyAllWorkspaces(): Promise<{
@@ -212,100 +167,28 @@ export async function verifyAllTools(): Promise<{
 }
 
 /**
- * Verify all workspace-tool permissions exist in both databases
- */
-export async function verifyAllPermissions(): Promise<{
-  total: number;
-  consistent: number;
-  inconsistent: Array<{
-    workspace_id: string;
-    tool_id: string;
-    location: 'pg' | 'neo4j';
-  }>;
-}> {
-  try {
-    // Get all permissions from PostgreSQL
-    const pgResult = await query(
-      `SELECT workspace_id, tool_id FROM workspace_tools 
-       ORDER BY workspace_id, tool_id`
-    );
-    const pgPerms = new Set(
-      pgResult.rows.map((r) => `${r.workspace_id}:${r.tool_id}`)
-    );
-
-    // Get all permissions from Neo4j
-    const neo4jResult = await executeQuery(
-      `MATCH (w:Workspace)-[:CAN_USE]->(t:Tool)
-       RETURN w.id as workspace_id, t.id as tool_id
-       ORDER BY workspace_id, tool_id`
-    );
-    const neo4jPerms = new Set(
-      neo4jResult.records.map(
-        (r) => `${r.get('workspace_id')}:${r.get('tool_id')}`
-      )
-    );
-
-    const inconsistent: Array<{
-      workspace_id: string;
-      tool_id: string;
-      location: 'pg' | 'neo4j';
-    }> = [];
-
-    // Find missing in Neo4j
-    pgPerms.forEach((perm) => {
-      if (!neo4jPerms.has(perm)) {
-        const [workspace_id, tool_id] = perm.split(':');
-        inconsistent.push({ workspace_id, tool_id, location: 'neo4j' });
-      }
-    });
-
-    // Find missing in PostgreSQL
-    neo4jPerms.forEach((perm) => {
-      if (!pgPerms.has(perm)) {
-        const [workspace_id, tool_id] = perm.split(':');
-        inconsistent.push({ workspace_id, tool_id, location: 'pg' });
-      }
-    });
-
-    return {
-      total: pgPerms.size,
-      consistent:
-        pgPerms.size - inconsistent.filter((i) => i.location === 'neo4j').length,
-      inconsistent,
-    };
-  } catch (error) {
-    logger.error(`Error verifying all permissions: ${error}`);
-    throw error;
-  }
-}
-
-/**
  * Full consistency check
  */
 export async function verifyFullConsistency(): Promise<{
   workspaces: Awaited<ReturnType<typeof verifyAllWorkspaces>>;
   tools: Awaited<ReturnType<typeof verifyAllTools>>;
-  permissions: Awaited<ReturnType<typeof verifyAllPermissions>>;
   isConsistent: boolean;
 }> {
   try {
     logger.info('Starting full database consistency check...');
 
-    const [workspaces, tools, permissions] = await Promise.all([
+    const [workspaces, tools] = await Promise.all([
       verifyAllWorkspaces(),
       verifyAllTools(),
-      verifyAllPermissions(),
     ]);
 
     const isConsistent =
       workspaces.inconsistent.length === 0 &&
-      tools.inconsistent.length === 0 &&
-      permissions.inconsistent.length === 0;
+      tools.inconsistent.length === 0;
 
     const result = {
       workspaces,
       tools,
-      permissions,
       isConsistent,
     };
 
@@ -318,9 +201,6 @@ export async function verifyFullConsistency(): Promise<{
       }
       if (tools.inconsistent.length > 0) {
         logger.warn(`  - Tool inconsistencies: ${tools.inconsistent.length}`);
-      }
-      if (permissions.inconsistent.length > 0) {
-        logger.warn(`  - Permission inconsistencies: ${permissions.inconsistent.length}`);
       }
     }
 

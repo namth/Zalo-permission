@@ -8,7 +8,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="text-gray-600 mt-2">Manage tools, skills, permissions, and workspaces</p>
+        <p className="text-gray-600 mt-2">Manage tools, skills, and workspaces</p>
       </div>
 
       {/* Resources Section */}
@@ -37,16 +37,6 @@ export default function AdminDashboard() {
             </Link>
           </div>
 
-          <div className="bg-white p-6 rounded-lg border border-gray-200 hover:border-blue-300 transition">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">🔐 Permissions</h3>
-            <p className="text-gray-600 mb-4">Manage workspace access to tools and skills</p>
-            <Link
-              href="/admin/permissions"
-              className="inline-block text-blue-600 hover:text-blue-800 font-medium"
-            >
-              View Matrix →
-            </Link>
-          </div>
         </div>
       </div>
 

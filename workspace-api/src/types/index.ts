@@ -56,6 +56,7 @@ export interface Tool {
   name: string;
   description?: string;
   input_schema?: Record<string, any>;  // JSON schema
+  output_schema?: Record<string, any>; // JSON schema
   embedding?: number[];
   status: 'active' | 'deprecated' | 'disabled';
   created_at: string;
@@ -66,9 +67,7 @@ export interface Skill {
   id: string;
   name: string;
   description?: string;
-  logic_config: SkillStep[];  // Array of execution steps
-  owner_id: string;
-  workspace_id: string;
+  detail?: string;
   is_shared: boolean;
   embedding?: number[];
   status: 'active' | 'archived' | 'disabled';
@@ -131,7 +130,7 @@ export interface LearnSkillRequest {
   owner_id: string;
   name: string;
   description: string;
-  logic_config: SkillStep[];
+  detail?: string;
   is_shared?: boolean;
 }
 
@@ -175,12 +174,12 @@ export interface WorkspaceDetailResponse {
   member_count: number;
 }
 
-// Admin APIs - Tool Management
 export interface CreateToolRequest {
   key: string;
   name: string;
   description?: string;
   input_schema?: Record<string, any>;
+  output_schema?: Record<string, any>;
 }
 
 export interface CreateToolResponse {
@@ -228,6 +227,16 @@ export interface ShareSkillRequest {
 }
 
 export interface ShareSkillResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface RemoveSkillRequest {
+  skill_id: string;
+  workspace_id: string;
+}
+
+export interface RemoveSkillResponse {
   success: boolean;
   error?: string;
 }

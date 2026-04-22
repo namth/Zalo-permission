@@ -58,13 +58,6 @@ export default function AdminDashboard() {
       href: "/admin/tools",
       color: "bg-purple-50 border-purple-200",
     },
-    {
-      title: "Permissions",
-      count: 0,
-      icon: "🔐",
-      href: "/admin/permissions",
-      color: "bg-indigo-50 border-indigo-200",
-    },
   ];
 
   return (
@@ -114,11 +107,6 @@ export default function AdminDashboard() {
           <Link href="/admin/tools">
             <button className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
               Manage Tools
-            </button>
-          </Link>
-          <Link href="/admin/permissions">
-            <button className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-              Manage Permissions
             </button>
           </Link>
         </div>

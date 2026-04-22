@@ -27,17 +27,15 @@ export class SkillService {
       }
 
       const query = `
-        INSERT INTO skills (name, description, logic_config, owner_id, workspace_id, is_shared, embedding, status, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO skills (name, description, detail, is_shared, embedding, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `;
 
       const result = await this.db.query(query, [
         request.name,
         request.description,
-        JSON.stringify(request.logic_config),
-        request.owner_id,
-        request.workspace_id,
+        request.detail,
         request.is_shared || false,
         embedding ? JSON.stringify(embedding) : null,
       ]);
@@ -79,32 +77,32 @@ export class SkillService {
     }
   }
 
-  /**
-   * List skills by owner
-   */
   async listSkillsByOwner(
-    ownerId: string,
+    ownerZaloId: string,
     limit: number = 50,
     offset: number = 0
   ): Promise<{ skills: Skill[]; total: number }> {
     try {
+      // Get skill IDs from Neo4j
+      const skillIds = await this.neo4j.getSkillIdsByFilter({ owner_zalo_id: ownerZaloId });
+      
+      if (skillIds.length === 0) {
+        return { skills: [], total: 0 };
+      }
+
       const query = `
         SELECT * FROM skills 
-        WHERE owner_id = $1 AND status = 'active'
+        WHERE id = ANY($1::uuid[]) AND status = 'active'
         ORDER BY created_at DESC 
         LIMIT $2 OFFSET $3
       `;
 
-      const result = await this.db.query(query, [ownerId, limit, offset]);
+      const result = await this.db.query(query, [skillIds, limit, offset]);
       const skills = result.rows.map((row) => this.mapRowToSkill(row));
 
-      // Get total count
-      const countResult = await this.db.query('SELECT COUNT(*) as count FROM skills WHERE owner_id = $1', [ownerId]);
-      const total = parseInt(countResult.rows[0].count, 10);
-
-      return { skills, total };
+      return { skills, total: skillIds.length };
     } catch (error) {
-      logger.error(`Failed to list skills by owner ${ownerId}: ${error}`);
+      logger.error(`Failed to list skills by owner ${ownerZaloId}: ${error}`);
       throw error;
     }
   }
@@ -154,17 +152,17 @@ export class SkillService {
   /**
    * Delete skill (soft delete - set status to archived)
    */
-  async deleteSkill(id: string, userId: string): Promise<void> {
+  async deleteSkill(id: string, userZaloId: string): Promise<void> {
     try {
-      // Verify ownership
-      const skillResult = await this.db.query('SELECT owner_id FROM skills WHERE id = $1', [id]);
+      // Verify ownership via Neo4j
+      const relations = await this.neo4j.getSkillRelations(id);
 
-      if (skillResult.rows.length === 0) {
-        throw new Error(`Skill ${id} not found`);
+      if (!relations.owner_zalo_id) {
+        throw new Error(`Skill ${id} ownership not found in Neo4j`);
       }
 
-      if (skillResult.rows[0].owner_id !== userId) {
-        throw new Error(`User ${userId} is not the owner of skill ${id}`);
+      if (relations.owner_zalo_id !== userZaloId) {
+        throw new Error(`User ${userZaloId} is not the owner of skill ${id}`);
       }
 
       // Soft delete by updating status
@@ -184,17 +182,17 @@ export class SkillService {
   /**
    * Share skill with workspace
    */
-  async shareSkill(skillId: string, workspaceId: string, userId: string): Promise<void> {
+  async shareSkill(skillId: string, workspaceId: string, userZaloId: string): Promise<void> {
     try {
-      // Verify ownership
-      const skillResult = await this.db.query('SELECT owner_id FROM skills WHERE id = $1', [skillId]);
+      // Verify ownership via Neo4j
+      const relations = await this.neo4j.getSkillRelations(skillId);
 
-      if (skillResult.rows.length === 0) {
-        throw new Error(`Skill ${skillId} not found`);
+      if (!relations.owner_zalo_id) {
+        throw new Error(`Skill ${skillId} ownership not found in Neo4j`);
       }
 
-      if (skillResult.rows[0].owner_id !== userId) {
-        throw new Error(`User ${userId} is not the owner of skill ${skillId}`);
+      if (relations.owner_zalo_id !== userZaloId) {
+        throw new Error(`User ${userZaloId} is not the owner of skill ${skillId}`);
       }
 
       // Update is_shared flag
@@ -269,11 +267,7 @@ export class SkillService {
       id: row.id,
       name: row.name,
       description: row.description,
-      logic_config: Array.isArray(row.logic_config)
-        ? row.logic_config
-        : typeof row.logic_config === 'string' ? JSON.parse(row.logic_config) : row.logic_config,
-      owner_id: row.owner_id,
-      workspace_id: row.workspace_id,
+      detail: row.detail,
       is_shared: row.is_shared,
       embedding: row.embedding && typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding,
       status: row.status,

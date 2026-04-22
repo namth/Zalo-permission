@@ -9,14 +9,50 @@
 ## Mục Lục
 
 - [1. Health Check](#1-health-check)
-- [2. Admin — Permissions](#2-admin--permissions)
+- [2. Authentication](#2-authentication)
 - [3. Admin — Users](#3-admin--users)
 - [4. Admin — Workspaces](#4-admin--workspaces)
+
+---
+
+## 2. Authentication (Xác thực)
+
+Hầu hết các API `/api/admin/*` đều yêu cầu xác thực. Bạn có thể xác thực theo 2 cách:
+
+### Cách 1: Sử dụng Bearer Token (Khuyên dùng cho curl/Postman)
+Gửi token trong header `Authorization`.
+
+**Quy trình lấy token để test:**
+
+1. **Đăng nhập để lấy token:**
+```bash
+curl --location 'https://zalo.st.io.vn/api/auth/login' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "identifier": "admin",
+    "password": "admin_password_2024"
+}'
+```
+*Lưu ý: Nếu bạn đã đổi password, hãy sử dụng password mới.*
+
+2. **Lấy trường `token` từ response và sử dụng trong header:**
+```bash
+curl --location 'https://zalo.st.io.vn/api/admin/skills' \
+--header 'Authorization: Bearer <YOUR_TOKEN_HERE>' \
+--header 'Content-Type: application/json' \
+--data-raw '{...}'
+```
+
+### Cách 2: Sử dụng Cookie (Dành cho trình duyệt)
+Sau khi đăng nhập thành công qua giao diện admin hoặc `/api/auth/login`, một cookie `auth_token` sẽ được thiết lập tự động.
+
+---
 - [5. Admin — Tools](#5-admin--tools)
 - [6. Admin — Skills](#6-admin--skills)
 - [7. Admin — Zalo Groups](#7-admin--zalo-groups)
-- [8. User — Skills](#8-user--skills)
-- [9. User — Audit Logs](#9-user--audit-logs)
+- [8. Admin — Pending Tasks](#8-admin--pending-tasks)
+- [9. User — Skills](#9-user--skills)
+- [10. User — Audit Logs](#10-user--audit-logs)
 
 ---
 
@@ -39,79 +75,6 @@ Kiểm tra trạng thái hoạt động của backend API.
 
 ---
 
-## 2. Admin — Permissions
-
-Quản lý quyền sử dụng tool của từng workspace (mối quan hệ `CAN_USE` trong Neo4j).
-
-### `GET /api/admin/permissions`
-
-Lấy ma trận phân quyền: danh sách workspaces, tools và các quan hệ CAN_USE hiện có.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "workspaces": [{ "id": "uuid", "name": "string", "created_at": "ISO8601" }],
-    "tools": [{ "id": "uuid", "key": "string", "name": "string", "status": "active" }],
-    "permissions": [{ "workspace_id": "uuid", "tool_key": "string", "tool_id": "uuid" }]
-  }
-}
-```
-
----
-
-### `POST /api/admin/permissions`
-
-Cấp quyền cho một workspace được sử dụng một tool. Đồng bộ cả PostgreSQL và Neo4j.
-
-**Request Body:**
-| Field | Kiểu | Bắt buộc | Mô tả |
-|---|---|---|---|
-| `workspace_id` | string (UUID) | ✅ | ID của workspace |
-| `tool_key` | string | ✅ | Key định danh của tool |
-| `granted_by` | string (UUID) | ❌ | ID người thực hiện cấp quyền |
-
-**Response (201 — tạo mới / 200 — đã tồn tại):**
-```json
-{
-  "success": true,
-  "data": {
-    "workspace_id": "uuid",
-    "tool_key": "string",
-    "relationship_id": "uuid:CAN_USE:tool_key",
-    "status": "created | already_exists"
-  }
-}
-```
-
----
-
-### `DELETE /api/admin/permissions`
-
-Thu hồi quyền của workspace đối với một tool. Đồng bộ cả PostgreSQL và Neo4j.
-
-**Request Body:**
-| Field | Kiểu | Bắt buộc | Mô tả |
-|---|---|---|---|
-| `workspace_id` | string (UUID) | ✅ | ID của workspace |
-| `tool_key` | string | ✅ | Key định danh của tool |
-| `revoked_by` | string (UUID) | ❌ | ID người thực hiện thu hồi |
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "workspace_id": "uuid",
-    "tool_key": "string",
-    "relationship_id": "uuid:CAN_USE:tool_key",
-    "status": "string"
-  }
-}
-```
-
----
 
 ## 3. Admin — Users
 
@@ -124,7 +87,7 @@ Lấy danh sách người dùng với phân trang và tìm kiếm.
 **Query Parameters:**
 | Tham số | Kiểu | Mặc định | Mô tả |
 |---|---|---|---|
-| `search` | string | — | Tìm kiếm theo tên/email |
+| `search` | string | — | Tìm kiếm theo tên/email/zaloID/SĐT |
 | `limit` | number | 20 | Số lượng kết quả tối đa |
 | `offset` | number | 0 | Vị trí bắt đầu phân trang |
 
@@ -476,10 +439,21 @@ Lấy danh sách tất cả tool.
 ```json
 {
   "success": true,
-  "data": [{ "id": "uuid", "key": "string", "name": "string", "description": "string", "input_schema": {}, "status": "active", ... }],
+  "data": [{ 
+    "id": "uuid", 
+    "key": "string", 
+    "name": "string", 
+    "description": "string", 
+    "input_schema": {}, 
+    "status": "active", 
+    "group_info": { "id": "uuid", "key": "string", "name": "string" } | null,
+    ... 
+  }],
   "pagination": { "limit": 100, "offset": 0, "total": 5, "hasMore": false }
 }
 ```
+
+> **Lưu ý:** Thông tin `group_info` được truy vấn từ Neo4j qua quan hệ `BELONGS_TO_GROUP`. PostgreSQL không còn lưu trữ trực tiếp thông tin này.
 
 ---
 
@@ -495,11 +469,14 @@ Tạo tool mới và đồng bộ Neo4j (tự động sinh embedding nếu có d
 | `description` | string | ❌ | Mô tả (dùng để sinh vector embedding) |
 | `input_schema` | object | ❌ | JSON Schema mô tả input của tool |
 | `created_by` | string (UUID) | ❌ | ID người tạo |
+| `group_id` | string (UUID) | ❌ | ID của Tool Group (đối ứng Neo4j) |
 
 **Response (201):**
 ```json
-{ "success": true, "data": { ...tool } }
+{ "success": true, "data": { ...tool, "group_info": { ... } } }
 ```
+
+> **Lưu ý:** Trường `group_id` trong request sẽ tạo quan hệ `BELONGS_TO_GROUP` trong Neo4j. Dữ liệu này không được lưu trong PostgreSQL.
 
 **Lỗi thường gặp:**
 - `400` — Thiếu `key` hoặc `name`; sai định dạng `key`
@@ -532,10 +509,11 @@ Cập nhật thông tin tool.
 | `description` | string | Mô tả mới |
 | `input_schema` | object | Schema mới |
 | `status` | string | Trạng thái mới |
+| `group_id` | string | ID Tool Group mới (hoặc `null` để huỷ nhóm) |
 
 **Response (200):**
 ```json
-{ "success": true, "data": { ...tool } }
+{ "success": true, "data": { ...tool, "group_id": "uuid" } }
 ```
 
 ---
@@ -562,11 +540,10 @@ Quản lý skills của người dùng và workspaces.
 Lấy danh sách skills với bộ lọc tùy chọn.
 
 **Query Parameters:**
-| Tham số | Kiểu | Mô tả |
-|---|---|---|
 | `workspace_id` | UUID | Lọc theo workspace |
 | `owner_id` | UUID | Lọc theo chủ sở hữu |
 | `status` | string | Lọc theo trạng thái (`active`, `archived`, `disabled`) |
+| `category` | string | Lọc theo danh mục |
 | `limit` | number | Mặc định 100 |
 | `offset` | number | Mặc định 0 |
 
@@ -574,8 +551,47 @@ Lấy danh sách skills với bộ lọc tùy chọn.
 ```json
 {
   "success": true,
-  "data": [{ "id": "uuid", "name": "string", "description": "string", "owner_id": "uuid", "owner_name": "string", "workspace_id": "uuid", "is_shared": false, "logic_config": [...], "status": "active", ... }],
+  "data": [{ 
+    "id": "uuid", 
+    "name": "string", 
+    "description": "string", 
+    "owner_id": "uuid", 
+    "owner_name": "string", 
+    "workspace_id": "uuid", 
+    "is_shared": false, 
+    "detail": "string (Markdown prompt)", 
+    "category": "string | null",
+    "tools": [{ "id": "uuid", "name": "string" }],
+    "status": "active", 
+    ... 
+  }],
   "pagination": { "limit": 100, "offset": 0, "total": 5, "hasMore": false }
+}
+```
+
+---
+
+### `POST /api/admin/skills`
+
+Tạo mới một skill hoàn chỉnh (bao gồm liên kết trong Neo4j).
+
+**Request Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `name` | string | ✅ | Tên skill |
+| `description` | string | ❌ | Mô tả ngắn |
+| `detail` | string | ✅ | Nội dung prompt chi tiết (Markdown) |
+| `category` | string | ❌ | Tên danh mục (nếu mới sẽ tự động tạo) |
+| `tools` | UUID[] | ❌ | Danh sách ID các tool mà skill sử dụng |
+| `owner_id` | UUID | ❌ | ID người sở hữu |
+| `workspace_id` | UUID | ❌ | ID workspace gốc |
+| `is_shared` | boolean | ❌ | Chia sẻ toàn cục (mặc định: false) |
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "data": { ...skill, "category": "string", "tools": [...] }
 }
 ```
 
@@ -605,6 +621,29 @@ Lấy chi tiết skill theo ID.
 **Path Params:** `id` — UUID của skill.
 
 **Response (200 / 404):**
+```json
+{
+  "success": true,
+  "data": { 
+    ...skill, 
+    "detail": "markdown string", 
+    "category": "string", 
+    "tools": [{ "id": "uuid", "name": "string" }] 
+  }
+}
+```
+
+---
+
+### `PUT /api/admin/skills/[id]`
+
+Cập nhật thông tin chi tiết của skill.
+
+**Path Params:** `id` — UUID của skill.
+
+**Request Body:** (Tương tự `POST /api/admin/skills`)
+
+**Response (200):**
 ```json
 { "success": true, "data": { ...skill } }
 ```
@@ -654,6 +693,20 @@ Huỷ chia sẻ skill với workspace.
 **Response (200):**
 ```json
 { "success": true, "message": "Skill unshared" }
+```
+
+---
+
+### `GET /api/admin/categories`
+
+Lấy danh sách tất cả các danh mục Skill hiện có trong Neo4j.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": ["Category 1", "Category 2", ...]
+}
 ```
 
 ---
@@ -882,19 +935,31 @@ Các API này được gọi bởi **n8n Planner Agent** để vận hành luồ
 
 ### `POST /api/agent/auth-and-resources`
 
-API cốt lõi cho Planner — xác thực người dùng và cung cấp danh sách tài nguyên (Tools/Skills) phù hợp trong một lần gọi.
+API cốt lõi cho Planner — xác thực người dùng qua ZaloGroup và trả về toàn bộ tài nguyên (Tools/Skills) của workspace trong một lần gọi.
 
 **Luồng xử lý:**
-1. **Neo4j Auth** — xác thực `ZaloUser → PART_OF → Workspace ← BELONGS_TO ← ZaloGroup(thread_id)`
-2. **Pending Task** — kiểm tra task đang chờ `AWAITING_INPUT` cho thread này
-3. **Hybrid Search** — nếu có `content`: vector search (pgvector) + lọc whitelist Neo4j; nếu không: trả toàn bộ whitelist
+1. **Neo4j Auth** — xác thực 2 điều kiện:
+   - `ZaloGroup(thread_id) -[:BELONGS_TO]→ Workspace` — Group thuộc workspace nào
+   - `ZaloUser(zalo_id) -[:MEMBER_OF]→ ZaloGroup` — User có là thành viên của group đó không
+2. **Priority Logic (Specific Mode)**:
+   - Nếu `tool_ids` hoặc `skill_ids` được cung cấp, API sẽ **chỉ** trả về các tài nguyên cụ thể đó và bỏ qua `pending_task` cùng các tài nguyên khác.
+3. **Pending Task** — kiểm tra task đang chờ `AWAITING_INPUT` cho thread này (chỉ khi không ở Specific Mode).
+4. **Resources & Filtering**:
+   - Nếu không có IDs cụ thể, API trả về tài nguyên dựa trên `resource_type`.
+   - Hỗ trợ lọc `tool_group` cho Tools và `category` cho Skills.
+
+> **Lưu ý:** `zalo_user_id` là Zalo string ID (ví dụ `"123456789"`), được map qua `ZaloUser.zalo_id` trong Neo4j.
 
 **Request Body:**
 | Field | Kiểu | Bắt buộc | Mô tả |
 |---|---|---|---|
 | `zalo_user_id` | string | ✅ | Zalo UID của người dùng |
 | `thread_id` | string | ✅ | Thread ID của nhóm Zalo |
-| `content` | string | ❌ | Tin nhắn người dùng — dùng để semantic search |
+| `resource_type` | string | ❌ | Loại tài nguyên: `all` (mặc định), `tools`, `skills`, `pending_task`, `none`. |
+| `tool_group` | string | ❌ | Key của Tool Group cần lọc. |
+| `category` | string | ❌ | Tên danh mục Skill cần lọc (dựa trên quan hệ Neo4j). |
+| `tool_ids` | UUID[] | ❌ | Danh sách ID Tool cụ thể cần lấy (Kích hoạt Specific Mode). |
+| `skill_ids` | UUID[] | ❌ | Danh sách ID Skill cụ thể cần lấy (Kích hoạt Specific Mode). |
 
 **Response (200):**
 ```json
@@ -902,21 +967,357 @@ API cốt lõi cho Planner — xác thực người dùng và cung cấp danh s�
   "success": true,
   "data": {
     "workspace_id": "uuid",
-    "role": "admin | member",
+    "role": "ADMIN | MEMBER",
+    "user": { "id": "uuid", "full_name": "Nguyen Van A", "gender": "male" } | null,
     "pending_task": { "id": "uuid", "intent": "...", "full_plan": {}, "missing_parameters": {}, "status": "AWAITING_INPUT" } | null,
-    "tools": [{ "id": "uuid", "key": "string", "name": "string", "description": "string", "input_schema": {}, "similarity": 0.92 }],
-    "skills": [{ "id": "uuid", "name": "string", "description": "string", "logic_config": [], "is_shared": true, "similarity": 0.88 }]
-  },
-  "meta": {
-    "elapsed_ms": 120,
-    "search_mode": "hybrid | whitelist",
-    "tools_count": 3,
-    "skills_count": 1
+    "tool_groups": [
+      {
+        "id": "uuid",
+        "key": "string",
+        "name": "string",
+        "description": "string",
+        "status": "active",
+        "context-data": "- **inova_id**: 19\n- **owner_user_id**: 19",
+        "tools": "### 1. Tool: Get Expiring Services (Key: `get_expiring_services`)\n- **UUID**: 550e8400-e29b-411d-a716-446655440000\n- **Description**: Lấy danh sách dịch vụ sắp hết hạn\n- **Parameters Schema**:\n```json\n{\n  \"type\": \"object\",\n  \"properties\": { ... }\n}\n```"
+      }
+    ],
+    "skills": [
+      { 
+        "id": "uuid", 
+        "name": "string", 
+        "description": "string", 
+        "detail": "markdown string", 
+        "is_shared": true, 
+        "status": "active" 
+      }
+    ]
   }
 }
 ```
 
 **Lỗi:**
 - `400` — Thiếu `zalo_user_id` hoặc `thread_id`
-- `403` — Người dùng không có quyền truy cập workspace từ thread này
+- `403` — User không phải thành viên của ZaloGroup, hoặc ZaloGroup không thuộc workspace nào
 - `500` — Lỗi server / Neo4j / PostgreSQL
+
+---
+
+### `POST /api/agent/get-skill`
+
+Lấy thông tin chi tiết của một Skill và danh sách các Tool liên quan (dưới dạng Markdown) cho Agent.
+
+**Request Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `skill_id` | UUID | ✅ | ID của Skill cần lấy thông tin |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "name": "Tên Skill",
+    "description": "Mô tả ngắn",
+    "detail": "# Hướng dẫn Markdown",
+    "category": "Kế toán",
+    "tools": "### 1. Tool: Name (Key: `key`)\n- **UUID**: ...\n- **Description**: ...\n...",
+    "is_shared": true,
+    "status": "active",
+    "created_at": "ISO8601",
+    "updated_at": "ISO8601"
+  }
+}
+```
+
+---
+
+### `GET /api/agent/check-membership`
+
+Kiểm tra nhanh xem một Zalo User có là thành viên của một Zalo Group hay không, dựa trên quan hệ Neo4j `ZaloUser -[:MEMBER_OF]→ ZaloGroup`. Đồng thời trả về thông tin Workspace mà Group thuộc về.
+
+> **Usecase:** Dùng để xác nhận quyền trước khi thực thi hành động, hoặc kiểm tra membership đơn giản mà không cần lấy toàn bộ tools/skills như `auth-and-resources`.
+
+**Query Parameters:**
+| Tham số | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `zalo_id` | string | ✅ | Zalo UID của người dùng (map với `ZaloUser.zalo_id` trong Neo4j) |
+| `thread_id` | string | ✅ | Thread ID của nhóm Zalo (map với `ZaloGroup.thread_id` trong Neo4j) |
+
+**Ví dụ:**
+```
+GET /api/agent/check-membership?zalo_id=123456789&thread_id=g-abc123
+```
+
+**Response (200) — Là thành viên:**
+```json
+{
+  "success": true,
+  "data": {
+    "zalo_id": "123456789",
+    "thread_id": "g-abc123",
+    "is_member": true,
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "role": "MEMBER",
+    "group_uuid": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "group_name": "Nhóm Kinh Doanh",
+    "workspace_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "workspace_name": "Administrator"
+  }
+}
+```
+
+**Response (200) — Không là thành viên (nhưng group & user đều tồn tại):**
+```json
+{
+  "success": true,
+  "data": {
+    "zalo_id": "123456789",
+    "thread_id": "g-abc123",
+    "is_member": false,
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "role": null,
+    "group_uuid": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "group_name": "Nhóm Kinh Doanh",
+    "workspace_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "workspace_name": "Administrator"
+  }
+}
+```
+
+**Response (200) — Group không tồn tại trong hệ thống:**
+```json
+{
+  "success": true,
+  "data": {
+    "zalo_id": "123456789",
+    "thread_id": "g-abc123",
+    "is_member": false,
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "role": null,
+    "group_uuid": null,
+    "group_name": null,
+    "workspace_uuid": null,
+    "workspace_name": null
+  }
+}
+```
+
+**Response (200) — User chưa được thêm vào hệ thống:**
+```json
+{
+  "success": true,
+  "data": {
+    "zalo_id": "123456789",
+    "thread_id": "g-abc123",
+    "is_member": false,
+    "user_id": null,
+    "role": null,
+    "group_uuid": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "group_name": "Nhóm Kinh Doanh",
+    "workspace_uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "workspace_name": "Administrator"
+  }
+}
+```
+
+> **Lưu ý:** API luôn trả về `200`. `is_member` được xác định dựa trên việc có tồn tại relationship `MEMBER_OF` trong Neo4j hay không. Các field `user_id`, `group_uuid`, `group_name`, `workspace_uuid`, `workspace_name` được lookup độc lập — trả về giá trị nếu tồn tại, `null` nếu không. `workspace_uuid`/`workspace_name` chỉ có giá trị khi group đã được link với workspace qua quan hệ `BELONGS_TO`.
+
+**Lỗi:**
+- `400` — Thiếu `zalo_id` hoặc `thread_id`
+- `500` — Lỗi server / Neo4j
+
+---
+
+### `POST /api/agent/check-membership`
+
+Tương tự GET nhưng nhận params qua request body (tiện hơn khi gọi từ n8n với HTTP Request node).
+
+**Request Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `zalo_id` | string | ✅ | Zalo UID của người dùng |
+| `thread_id` | string | ✅ | Thread ID của nhóm Zalo |
+
+**Ví dụ request:**
+```json
+{
+  "zalo_id": "123456789",
+  "thread_id": "g-abc123"
+}
+```
+
+**Response:** Giống hệt GET response ở trên.
+
+---
+
+### `POST /api/agent/tool-groups/data`
+
+Lấy các Data nodes liên kết với cả một Tool Group và một Workspace. API này thay thế logic `context-data` trước đây trong `auth-and-resources`.
+
+**Request Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `tool_group_id` | string | ✅ | ID hoặc Key của Tool Group |
+| `workspace_id` | string | ✅ | ID của Workspace |
+
+**Ví dụ request:**
+```json
+{
+  "tool_group_id": "inventory_group",
+  "workspace_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "key1": "value1",
+      "key2": "value2"
+    }
+  ]
+}
+```
+
+---
+
+### `GET / POST /api/agent/pending-task/search`
+
+Tìm kiếm thông tin của một Pending Task cụ thể dựa trên `user_id`, `thread_id` và `status`. Luôn trả về 1 kết quả mới nhất (dựa trên `updated_at`). Có thể gọi bằng cả GET (qua query params) và POST (qua body).
+
+**Parameters / Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `user_id` | UUID | ✅ | UUID của user trong hệ thống (Tách biệt với zalo_id) |
+| `thread_id` | string | ✅ | Zalo thread ID  |
+| `status` | string | ✅ | Trạng thái cần tìm (AWAITING_INPUT, READY_TO_RESUME, COMPLETED) |
+
+**Ví dụ GET:**
+```
+GET /api/agent/pending-task/search?user_id=123e4567-e89b-12d3...&thread_id=g-1234&status=AWAITING_INPUT
+```
+
+**Response (200 - Có kết quả):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "workspace_id": "uuid",
+    "thread_id": "g-1234",
+    "user_id": "123e4567-e89b-12d3...",
+    "intent": "...",
+    "full_plan": {},
+    "missing_parameters": {},
+    "status": "AWAITING_INPUT",
+    "created_at": "ISO8601",
+    "updated_at": "ISO8601"
+  }
+}
+```
+
+**Response (200 - Không tìm thấy task):**
+```json
+{
+  "success": true,
+  "data": null
+}
+```
+
+---
+
+## 11. Admin — Pending Tasks
+
+Quản lý các Pending Tasks của hệ thống (các tác vụ đang chờ AWAITING_INPUT từ user hoặc READY_TO_RESUME).
+
+### `GET /api/admin/pending-tasks`
+
+Lấy danh sách pending tasks. Hỗ trợ phân trang và lọc theo trạng thái.
+
+**Query Parameters:**
+| Tham số | Kiểu | Mô tả |
+|---|---|---|
+| `status` | string | `AWAITING_INPUT`, `READY_TO_RESUME`, hoặc `COMPLETED` |
+| `limit` | number | Mặc định 100 |
+| `offset` | number | Mặc định 0 |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": [{ "id": "uuid", "workspace_id": "uuid", "thread_id": "string", "user_id": "uuid", "intent": "string", "full_plan": {}, "missing_parameters": {}, "status": "AWAITING_INPUT", "created_at": "ISO8601", "updated_at": "ISO8601" }],
+  "pagination": { "limit": 100, "offset": 0, "total": 5, "hasMore": false }
+}
+```
+
+---
+
+### `POST /api/admin/pending-tasks`
+
+Tạo thủ công một pending task. Tự động ghi nhận `PENDING_TASK_CREATED` vào log.
+
+**Request Body:**
+| Field | Kiểu | Bắt buộc | Mô tả |
+|---|---|---|---|
+| `workspace_id` | UUID | ✅ | ID của workspace |
+| `thread_id` | string | ✅ | Zalo thread ID  |
+| `user_id` | UUID | ✅ | ID người dùng |
+| `intent` | string | ❌ | Ý định gốc của tác vụ |
+| `full_plan` | object | ❌ | JSON cấu trúc task plan |
+| `missing_parameters` | object | ❌ | JSON danh sách params còn thiếu |
+| `status` | string | ❌ | Trạng thái (mặc định: `AWAITING_INPUT`) |
+
+**Response (201):**
+```json
+{ "success": true, "data": { ...pendingTask } }
+```
+
+---
+
+### `GET /api/admin/pending-tasks/[id]`
+
+Lấy chi tiết pending task theo ID.
+
+**Path Params:** `id` — UUID của pending task.
+
+**Response (200 / 404):**
+```json
+{ "success": true, "data": { ...pendingTask } }
+```
+
+---
+
+### `PUT /api/admin/pending-tasks/[id]`
+
+Cập nhật pending task (trạng thái, dữ liệu JSON `full_plan`, `missing_parameters`). Ghi nhận `PENDING_TASK_UPDATED` log.
+
+**Path Params:** `id` — UUID của pending task.  
+**Request Body (ít nhất 1 field):**
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `status` | string | `AWAITING_INPUT` / `READY_TO_RESUME` / `COMPLETED` |
+| `intent` | string | Cập nhật intent |
+| `full_plan` | object | Thay đổi cấu trúc JSON kế hoạch |
+| `missing_parameters` | object | Cập nhật tham số thiếu |
+
+**Response (200):**
+```json
+{ "success": true, "data": { ...pendingTask } }
+```
+
+---
+
+### `DELETE /api/admin/pending-tasks/[id]`
+
+Xóa bỏ hoàn toàn pending task khỏi hệ thống vĩnh viễn và tạo hành động `PENDING_TASK_DELETED` trong audit log.
+
+**Path Params:** `id` — UUID của pending task.
+
+**Response (200 / 404):**
+```json
+{ "success": true, "message": "Pending task deleted successfully" }
+```
+

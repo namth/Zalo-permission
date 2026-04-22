@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { PencilSimple, Trash, Plus, X } from "@phosphor-icons/react";
 
 interface Workspace {
   id: string;
@@ -85,16 +86,26 @@ export default function WorkspacesPage() {
         <h1 className="text-3xl font-bold text-gray-900">Workspaces</h1>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
         >
-          {showForm ? "Cancel" : "New Workspace"}
+          {showForm ? (
+            <>
+              <X size={16} weight="bold" />
+              Cancel
+            </>
+          ) : (
+            <>
+              <Plus size={16} weight="bold" />
+              New Workspace
+            </>
+          )}
         </button>
       </div>
 
       {showForm && (
         <form
           onSubmit={handleCreate}
-          className="bg-white p-6 rounded-lg border border-gray-200"
+          className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm"
         >
           <div className="space-y-4">
             <input
@@ -117,8 +128,9 @@ export default function WorkspacesPage() {
             />
             <button
               type="submit"
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
             >
+              <Plus size={16} weight="bold" />
               Create
             </button>
           </div>
@@ -134,27 +146,35 @@ export default function WorkspacesPage() {
           {workspaces.map((ws) => (
             <div
               key={ws.id}
-              className="bg-white p-6 rounded-lg border border-gray-200 hover:border-blue-300 transition"
+              className="bg-white p-6 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition"
             >
-              <Link href={`/admin/workspaces/${ws.id}`}>
+              <Link href={`/admin/workspaces/${ws.id}`} className="block mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
                   {ws.name}
                 </h3>
                 {ws.description && (
                   <p className="text-gray-600 text-sm mt-2">{ws.description}</p>
                 )}
-                <p className="text-gray-500 text-xs mt-4">ID: {ws.id}</p>
+                <p className="text-gray-400 text-xs mt-3 font-mono">
+                  {ws.id}
+                </p>
               </Link>
-              <div className="mt-4 flex gap-2">
-                <Link href={`/admin/workspaces/${ws.id}`} className="flex-1">
-                  <button className="w-full px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+              <div className="flex gap-2 pt-3 border-t border-gray-100">
+                <Link href={`/admin/workspaces/${ws.id}`}>
+                  <button
+                    title="Edit workspace"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
+                  >
+                    <PencilSimple size={15} weight="bold" />
                     Edit
                   </button>
                 </Link>
                 <button
                   onClick={() => handleDelete(ws.id, ws.name)}
-                  className="px-3 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition"
+                  title="Delete workspace"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition"
                 >
+                  <Trash size={15} weight="bold" />
                   Delete
                 </button>
               </div>

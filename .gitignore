@@ -3,6 +3,8 @@ dist/
 build/
 .env
 .env.local
+.env.docker
+workspace-api/.env.docker
 *.log
 .DS_Store
 .vscode/

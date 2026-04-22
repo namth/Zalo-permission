@@ -37,13 +37,14 @@ services:
       NEO4J_PASSWORD: neo4j_password
       NODE_ENV: production
       PORT: 3000
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY}
     depends_on:
       - postgres
       - neo4j
     ports:
       - "7140:3000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3

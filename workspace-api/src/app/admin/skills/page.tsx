@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Skill, fetchSkills } from './api';
 import { StatusBadge, TypeBadge } from './components';
+import { ArrowSquareOut } from '@phosphor-icons/react';
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -11,11 +12,18 @@ export default function SkillsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterType, setFilterType] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
     loadSkills();
-  }, [filterStatus, filterType]);
+  }, [filterStatus, filterCategory]);
+
+  useEffect(() => {
+    fetch('/api/admin/categories').then(res => res.json()).then(data => {
+      if (data.success) setCategories(data.data);
+    });
+  }, []);
 
   const loadSkills = async () => {
     try {
@@ -23,7 +31,7 @@ export default function SkillsPage() {
       setError(null);
       const data = await fetchSkills({
         status: filterStatus || undefined,
-        type: filterType || undefined,
+        category: filterCategory || undefined,
       });
       setSkills(data);
     } catch (err) {
@@ -35,9 +43,21 @@ export default function SkillsPage() {
 
   const filteredSkills = skills.filter((skill) => {
     const matchesSearch = skill.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         skill.owner_name.toLowerCase().includes(searchTerm.toLowerCase());
+      skill.owner_name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
+
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setCurrentUser(data.user);
+      });
+  }, []);
+
+  const isAdmin = currentUser?.role === 'admin';
 
   return (
     <div className="space-y-6">
@@ -47,12 +67,22 @@ export default function SkillsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Skills Management</h1>
           <p className="text-gray-600 mt-2">View and manage user-learned skills and workflows</p>
         </div>
-        <Link
-          href="/admin/tools"
-          className="text-sm text-gray-600 hover:text-gray-900"
-        >
-          Back to Admin
-        </Link>
+        <div className="flex gap-3">
+          {isAdmin && (
+            <Link
+              href="/admin/skills/new"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition flex items-center justify-center"
+            >
+              + Create Skill
+            </Link>
+          )}
+          <Link
+            href="/admin/workspaces"
+            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm font-medium transition"
+          >
+            Workspaces
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -87,16 +117,15 @@ export default function SkillsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filter by type
+              Filter by Category
             </label>
             <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">All types</option>
-              <option value="user">User Skills</option>
-              <option value="system">System Skills</option>
+              <option value="">All Categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
@@ -128,39 +157,24 @@ export default function SkillsPage() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Description</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Category</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Owner</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Type</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Shared To</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredSkills.map((skill) => (
                   <tr key={skill.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">{skill.name}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{skill.owner_name}</td>
-                    <td className="px-6 py-4 text-sm">
-                      <TypeBadge type={skill.type} />
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <StatusBadge status={skill.status} />
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {skill.shared_to?.length ? `${skill.shared_to.length} workspace(s)` : 'Not shared'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {new Date(skill.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm space-x-3">
-                      <Link
-                        href={`/admin/skills/${skill.id}`}
-                        className="text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        Details
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                      <Link href={`/admin/skills/${skill.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                        {skill.name}
                       </Link>
                     </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{skill.description}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className="px-2 py-1 rounded bg-gray-100 text-gray-800 text-xs">{skill.category || 'None'}</span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{skill.owner_name}</td>
                   </tr>
                 ))}
               </tbody>
@@ -181,8 +195,8 @@ export default function SkillsPage() {
             <p className="text-2xl font-bold text-green-900">{skills.filter(s => s.status === 'active').length}</p>
           </div>
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-            <p className="text-sm text-purple-600 font-medium">User Skills</p>
-            <p className="text-2xl font-bold text-purple-900">{skills.filter(s => s.type === 'user').length}</p>
+            <p className="text-sm text-purple-600 font-medium">Categories</p>
+            <p className="text-2xl font-bold text-purple-900">{categories.length}</p>
           </div>
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
             <p className="text-sm text-indigo-600 font-medium">Shared</p>

@@ -23,8 +23,8 @@ export class ToolService {
       }
 
       const query = `
-        INSERT INTO tools (key, name, description, input_schema, embedding, status, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO tools (key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `;
 
@@ -33,6 +33,7 @@ export class ToolService {
         request.name,
         request.description || null,
         request.input_schema ? JSON.stringify(request.input_schema) : null,
+        request.output_schema ? JSON.stringify(request.output_schema) : null,
         embedding ? JSON.stringify(embedding) : null,
       ]);
 
@@ -149,6 +150,11 @@ export class ToolService {
       if (updates.input_schema !== undefined) {
         fields.push(`input_schema = $${paramIndex++}`);
         values.push(updates.input_schema ? JSON.stringify(updates.input_schema) : null);
+      }
+
+      if (updates.output_schema !== undefined) {
+        fields.push(`output_schema = $${paramIndex++}`);
+        values.push(updates.output_schema ? JSON.stringify(updates.output_schema) : null);
       }
 
       if (updates.status !== undefined) {
@@ -285,6 +291,7 @@ export class ToolService {
       name: row.name,
       description: row.description,
       input_schema: row.input_schema && typeof row.input_schema === 'string' ? JSON.parse(row.input_schema) : row.input_schema,
+      output_schema: row.output_schema && typeof row.output_schema === 'string' ? JSON.parse(row.output_schema) : row.output_schema,
       embedding: row.embedding && typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding,
       status: row.status,
       created_at: row.created_at.toISOString(),

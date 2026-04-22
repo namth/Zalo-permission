@@ -9,8 +9,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ZaloGroupSyncService } from '@/services/sync.service';
-import { getDb } from '@/lib/db';
+import { getWorkspaceZaloGroups } from '@/services/workspace.service';
+import { getCurrentUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,34 +21,32 @@ export async function GET(
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id: workspaceId } = params;
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '100', 10);
     const offset = parseInt(req.nextUrl.searchParams.get('offset') || '0', 10);
 
     logger.info(
-      `[API] GET /api/admin/workspaces/${workspaceId}/zalo-groups - limit: ${limit}, offset: ${offset}`
+      `[API] GET /api/admin/workspaces/${workspaceId}/zalo-groups - user: ${user.id}, role: ${user.role}`
     );
 
-    const db = getDb();
-    const result = await db.query(
-      `SELECT id, workspace_id, thread_id, name, status, created_at, updated_at 
-       FROM zalo_groups 
-       WHERE workspace_id = $1 
-       ORDER BY created_at DESC 
-       LIMIT $2 OFFSET $3`,
-      [workspaceId, limit, offset]
-    );
+    const filterByUserId = user.role !== 'admin' ? user.id : undefined;
 
-    const countResult = await db.query(
-      `SELECT COUNT(*) as total FROM zalo_groups WHERE workspace_id = $1`,
-      [workspaceId]
+    const { groups, total } = await getWorkspaceZaloGroups(
+      workspaceId,
+      limit,
+      offset,
+      filterByUserId
     );
-    const total = parseInt(countResult.rows[0].total, 10);
 
     return NextResponse.json(
       {
         success: true,
-        data: result.rows,
+        data: groups,
         pagination: {
           limit,
           offset,
@@ -73,12 +73,21 @@ export async function POST(
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (user.role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Permission denied' }, { status: 403 });
+    }
+
     const { id: workspaceId } = params;
     const body = await req.json();
     const { thread_id, name, created_by } = body;
 
     logger.info(
-      `[API] POST /api/admin/workspaces/${workspaceId}/zalo-groups - thread_id: ${thread_id}`
+      `[API] POST /api/admin/workspaces/${workspaceId}/zalo-groups - user: ${user.id}`
     );
 
     // Validation
@@ -144,12 +153,33 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (user.role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Permission denied' }, { status: 403 });
+    }
+
     const { id: workspaceId } = params;
-    const body = await req.json();
-    const { thread_id, deleted_by } = body;
+
+    // Hỗ trợ cả query param (?thread_id=...) và request body
+    let thread_id = req.nextUrl.searchParams.get('thread_id');
+    let deleted_by: string | undefined;
+
+    if (!thread_id) {
+      try {
+        const body = await req.json();
+        thread_id = body.thread_id;
+        deleted_by = body.deleted_by;
+      } catch {
+        // body không có hoặc không phải JSON
+      }
+    }
 
     logger.info(
-      `[API] DELETE /api/admin/workspaces/${workspaceId}/zalo-groups - thread_id: ${thread_id}`
+      `[API] DELETE /api/admin/workspaces/${workspaceId}/zalo-groups - user: ${user.id}`
     );
 
     if (!thread_id || thread_id.trim().length === 0) {

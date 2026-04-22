@@ -12,7 +12,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 import { neo4jClient } from '@/lib/neo4j';
-import { embeddingClient } from '@/lib/embedding';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +26,11 @@ interface AuthAndResourcesRequest {
     zalo_user_id: string;   // Zalo UID of the caller
     thread_id: string;      // Zalo group thread_id
     content?: string;       // Optional: user message for semantic search
+    tool_group?: string;    // Optional: filter by tool group key
+    category?: string;      // Optional: filter by skill category
+    resource_type?: 'all' | 'skills' | 'tools' | 'pending_task' | 'none'; // Optional: filter by resource category
+    tool_ids?: string[];    // Optional: get specific tools by UUID
+    skill_ids?: string[];   // Optional: get specific skills by UUID
 }
 
 interface ToolResult {
@@ -35,6 +39,7 @@ interface ToolResult {
     name: string;
     description: string | null;
     input_schema: any;
+    output_schema: any;
     status: string;
     similarity?: number;
 }
@@ -43,10 +48,8 @@ interface SkillResult {
     id: string;
     name: string;
     description: string | null;
-    logic_config: any;
+    detail: string | null;
     is_shared: boolean;
-    owner_id: string;
-    workspace_id: string;
     status: string;
     similarity?: number;
 }
@@ -62,6 +65,12 @@ interface PendingTask {
     status: string;
     created_at: string;
     updated_at: string;
+}
+
+interface UserProfile {
+    id: string;
+    full_name: string | null;
+    gender: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,27 +102,128 @@ async function getPendingTask(threadId: string): Promise<PendingTask | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3a: Fetch tools by whitelist (no semantic search)
+// Step 2b: Fetch user profile from PostgreSQL
 // ---------------------------------------------------------------------------
 
-async function getToolsByKeys(toolKeys: string[]): Promise<ToolResult[]> {
-    if (toolKeys.length === 0) return [];
-
-    const placeholders = toolKeys.map((_, i) => `$${i + 1}`).join(', ');
+async function getUserProfile(zaloId: string): Promise<UserProfile | null> {
     const result = await db.query(
-        `SELECT id, key, name, description, input_schema, status
-     FROM tools
-     WHERE key = ANY(ARRAY[${placeholders}]) AND status = 'active'
-     ORDER BY name ASC`,
-        toolKeys
+        `SELECT id, full_name, gender
+         FROM user_profile
+         WHERE zalo_id = $1 AND status = 'active'
+         LIMIT 1`,
+        [zaloId]
     );
 
-    return result.rows.map(row => ({
+    if (result.rows.length === 0) return null;
+    return result.rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// Step 3a: Fetch tool groups and nested tools
+// ---------------------------------------------------------------------------
+
+interface ToolGroupResult {
+    id: string;
+    key: string;
+    name: string;
+    description: string | null;
+    status: string;
+    'context-data'?: any;
+    tools: any;
+}
+
+async function getGroupedToolsByIds(toolIds: string[]): Promise<ToolGroupResult[]> {
+    if (toolIds.length === 0) return [];
+
+    // 1. Fetch tools details from PostgreSQL
+    const toolsResult = await db.query(
+        `SELECT id, key, name, description, input_schema, output_schema, status
+         FROM tools
+         WHERE id = ANY($1::uuid[]) AND status = 'active'
+         ORDER BY name ASC`,
+        [toolIds]
+    );
+
+    const tools = toolsResult.rows.map(row => ({
         ...row,
         input_schema: typeof row.input_schema === 'string'
             ? JSON.parse(row.input_schema)
             : row.input_schema,
+        output_schema: typeof row.output_schema === 'string'
+            ? JSON.parse(row.output_schema)
+            : row.output_schema,
     }));
+
+    if (tools.length === 0) return [];
+
+    // 2. Query Neo4j for group assignments of THESE specific tools (ONLY to get the mapping tool_id -> group_id)
+    const actualToolIds = tools.map(t => t.id);
+    const neo4jRes = await neo4jClient.run(
+        `MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
+         WHERE t.id IN $toolIds
+         RETURN t.id AS tool_id, tg.id AS group_id`,
+        { toolIds: actualToolIds }
+    );
+
+    const toolToGroupId = new Map<string, string>();
+    const uniqueGroupIds = new Set<string>();
+
+    for (const record of neo4jRes.records) {
+        const gid = record.get('group_id');
+        toolToGroupId.set(record.get('tool_id'), gid);
+        uniqueGroupIds.add(gid);
+    }
+
+    // 3. Fetch Tool Group details from PostgreSQL to ensure description is accurate
+    const groupMap = new Map<string, ToolGroupResult>();
+    if (uniqueGroupIds.size > 0) {
+        const groupsResult = await db.query(
+            `SELECT id, key, name, description, status
+             FROM tool_groups
+             WHERE id = ANY($1)`,
+            [Array.from(uniqueGroupIds)]
+        );
+
+        for (const row of groupsResult.rows) {
+            groupMap.set(row.id, {
+                id: row.id,
+                key: row.key,
+                name: row.name,
+                description: row.description,
+                status: row.status,
+                'context-data': [], // Placed before tools for order
+                tools: [],
+            });
+        }
+    }
+
+    // 4. Assemble tools into groups
+    const unassignedTools: ToolResult[] = [];
+    for (const tool of tools) {
+        const gid = toolToGroupId.get(tool.id);
+        if (gid && groupMap.has(gid)) {
+            groupMap.get(gid)!.tools!.push(tool);
+        } else {
+            unassignedTools.push(tool);
+        }
+    }
+
+    const toolGroups: ToolGroupResult[] = Array.from(groupMap.values());
+
+    // Tools without a group are placed in a virtual "General" group
+    if (unassignedTools.length > 0) {
+        toolGroups.push({
+            id: 'general',
+            key: 'general',
+            name: 'General Tools',
+            description: 'Uncategorized workspace tools',
+            status: 'active',
+            'context-data': [],
+            tools: unassignedTools,
+        });
+    }
+
+    return toolGroups;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,98 +233,18 @@ async function getToolsByKeys(toolKeys: string[]): Promise<ToolResult[]> {
 async function getSkillsByIds(skillIds: string[]): Promise<SkillResult[]> {
     if (skillIds.length === 0) return [];
 
-    const placeholders = skillIds.map((_, i) => `$${i + 1}`).join(', ');
     const result = await db.query(
-        `SELECT id, name, description, logic_config, is_shared, owner_id, workspace_id, status
+        `SELECT id, name, description, detail, is_shared, status
      FROM skills
-     WHERE id = ANY(ARRAY[${placeholders}]) AND status = 'active'
+     WHERE id = ANY($1::uuid[]) AND status = 'active'
      ORDER BY name ASC`,
-        skillIds
+        [skillIds]
     );
 
-    return result.rows.map(row => ({
-        ...row,
-        logic_config: typeof row.logic_config === 'string'
-            ? JSON.parse(row.logic_config)
-            : row.logic_config,
-    }));
+    return result.rows;
 }
 
-// ---------------------------------------------------------------------------
-// Step 3c: Hybrid search tools with pgvector + Neo4j whitelist filter
-// ---------------------------------------------------------------------------
 
-async function hybridSearchTools(
-    queryVector: number[],
-    allowedKeys: string[],
-    limit = 10
-): Promise<ToolResult[]> {
-    if (allowedKeys.length === 0) return [];
-
-    const placeholders = allowedKeys.map((_, i) => `$${i + 3}`).join(', ');
-    const result = await db.query(
-        `SELECT id, key, name, description, input_schema, status,
-            1 - (embedding <-> $1::vector) AS similarity
-     FROM tools
-     WHERE embedding IS NOT NULL
-       AND status = 'active'
-       AND key = ANY(ARRAY[${placeholders}])
-     ORDER BY similarity DESC
-     LIMIT $2`,
-        [JSON.stringify(queryVector), limit, ...allowedKeys]
-    );
-
-    return result.rows.map(row => ({
-        id: row.id,
-        key: row.key,
-        name: row.name,
-        description: row.description,
-        input_schema: typeof row.input_schema === 'string'
-            ? JSON.parse(row.input_schema)
-            : row.input_schema,
-        status: row.status,
-        similarity: parseFloat(row.similarity),
-    }));
-}
-
-// ---------------------------------------------------------------------------
-// Step 3d: Hybrid search skills with pgvector + Neo4j whitelist filter
-// ---------------------------------------------------------------------------
-
-async function hybridSearchSkills(
-    queryVector: number[],
-    allowedIds: string[],
-    limit = 10
-): Promise<SkillResult[]> {
-    if (allowedIds.length === 0) return [];
-
-    const placeholders = allowedIds.map((_, i) => `$${i + 3}`).join(', ');
-    const result = await db.query(
-        `SELECT id, name, description, logic_config, is_shared, owner_id, workspace_id, status,
-            1 - (embedding <-> $1::vector) AS similarity
-     FROM skills
-     WHERE embedding IS NOT NULL
-       AND status = 'active'
-       AND id = ANY(ARRAY[${placeholders}])
-     ORDER BY similarity DESC
-     LIMIT $2`,
-        [JSON.stringify(queryVector), limit, ...allowedIds]
-    );
-
-    return result.rows.map(row => ({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        logic_config: typeof row.logic_config === 'string'
-            ? JSON.parse(row.logic_config)
-            : row.logic_config,
-        is_shared: row.is_shared,
-        owner_id: row.owner_id,
-        workspace_id: row.workspace_id,
-        status: row.status,
-        similarity: parseFloat(row.similarity),
-    }));
-}
 
 // ---------------------------------------------------------------------------
 // Main handler
@@ -225,9 +255,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     try {
         const body: AuthAndResourcesRequest = await req.json();
-        const { zalo_user_id, thread_id, content } = body;
+        const { zalo_user_id, thread_id, content, tool_group, category, resource_type = 'all', tool_ids, skill_ids } = body;
 
-        logger.info(`[API] POST /api/agent/auth-and-resources - user: ${zalo_user_id}, thread: ${thread_id}`);
+        logger.info(`[API] POST /api/agent/auth-and-resources - user: ${zalo_user_id}, thread: ${thread_id}, type: ${resource_type}`);
 
         // --- Validate required fields ---
         if (!zalo_user_id || !thread_id) {
@@ -254,62 +284,121 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             );
         }
 
-        const { workspaceId, role, availableTools, availableSkills } = authCtx;
+        const { workspaceId, role, availableToolIds, availableSkills } = authCtx;
         logger.info(`[API] Auth success: user ${zalo_user_id} → workspace ${workspaceId} (${role})`);
+
+        // -----------------------------------------------------------------------
+        // Step 2 & 3: Determine what to fetch
+        // Priority: If tool_ids or skill_ids are provided, ONLY fetch those specific items.
+        // -----------------------------------------------------------------------
+        const isNone = resource_type === 'none';
+        const hasSpecificTools = !!(tool_ids && tool_ids.length > 0);
+        const hasSpecificSkills = !!(skill_ids && skill_ids.length > 0);
+        const inSpecificMode = hasSpecificTools || hasSpecificSkills;
+
+        const fetchTools = (hasSpecificTools || (!inSpecificMode && (resource_type === 'all' || resource_type === 'tools'))) && !isNone;
+        const fetchSkills = (hasSpecificSkills || (!inSpecificMode && (resource_type === 'all' || resource_type === 'skills'))) && !isNone;
+        const fetchPendingTask = (!inSpecificMode && (resource_type === 'all' || resource_type === 'pending_task')) && !isNone;
 
         // -----------------------------------------------------------------------
         // Step 2: Check pending tasks for this thread
         // -----------------------------------------------------------------------
-        const pendingTask = await getPendingTask(thread_id);
-        if (pendingTask) {
-            logger.info(`[API] Found pending task ${pendingTask.id} (AWAITING_INPUT) for thread ${thread_id}`);
+        let pendingTask = null;
+        if (fetchPendingTask) {
+            pendingTask = await getPendingTask(thread_id);
+            if (pendingTask) {
+                logger.info(`[API] Found pending task ${pendingTask.id} (AWAITING_INPUT) for thread ${thread_id}`);
+            }
         }
 
         // -----------------------------------------------------------------------
-        // Step 3: Retrieve tools & skills
-        // If content provided → Hybrid Search (semantic + whitelist)
-        // Otherwise → Return all whitelisted tools/skills from PostgreSQL
+        // Step 3: Prepare Identifiers
         // -----------------------------------------------------------------------
-        let tools: ToolResult[] = [];
-        let skills: SkillResult[] = [];
 
-        if (content && content.trim().length > 0) {
-            // Generate embedding for semantic search
-            logger.info(`[API] Generating embedding for content: "${content.substring(0, 60)}..."`);
-            let queryVector: number[];
-            try {
-                queryVector = await embeddingClient.generateEmbedding(content.trim());
-            } catch (embErr) {
-                // Fallback to whitelist-only if embedding fails (e.g. no OpenAI key)
-                logger.warn(`[API] Embedding failed, falling back to whitelist-only: ${embErr}`);
-                queryVector = [];
-            }
-
-            if (queryVector.length > 0) {
-                // Hybrid search: vector similarity filtered by Neo4j whitelist
-                [tools, skills] = await Promise.all([
-                    hybridSearchTools(queryVector, availableTools, 10),
-                    hybridSearchSkills(queryVector, availableSkills, 10),
-                ]);
+        // --- Prepare tool identifiers ---
+        let toolIdsToFetch: string[] = [];
+        if (fetchTools) {
+            if (hasSpecificTools) {
+                // If specific tools requested, only fetch those (filtered by auth whitelist)
+                toolIdsToFetch = availableToolIds.filter(id => tool_ids.includes(id));
             } else {
-                // Fallback: no embedding available, return full whitelist
-                [tools, skills] = await Promise.all([
-                    getToolsByKeys(availableTools),
-                    getSkillsByIds(availableSkills),
-                ]);
+                // Otherwise use all available whitelisted tools
+                toolIdsToFetch = availableToolIds;
             }
-        } else {
-            // No content provided — return all whitelisted resources
-            [tools, skills] = await Promise.all([
-                getToolsByKeys(availableTools),
-                getSkillsByIds(availableSkills),
-            ]);
+        }
+
+        // --- Prepare skill identifiers ---
+        let skillIdsToFetch: string[] = [];
+        if (fetchSkills) {
+            if (hasSpecificSkills) {
+                // If specific skills requested, only fetch those (filtered by auth whitelist)
+                skillIdsToFetch = availableSkills.filter(id => skill_ids.includes(id));
+            } else {
+                // Otherwise use whitelisted skills, optionally filtered by category in Neo4j
+                if (category) {
+                    skillIdsToFetch = await neo4jClient.filterSkillsByCategory(availableSkills, category);
+                } else {
+                    skillIdsToFetch = availableSkills;
+                }
+            }
+        }
+
+        logger.info(`[API] Fetching: tools=${fetchTools} (ids: ${toolIdsToFetch.length}), skills=${fetchSkills} (ids: ${skillIdsToFetch.length})`);
+
+        const [allToolGroups, skills, userProfile] = await Promise.all([
+            fetchTools ? getGroupedToolsByIds(toolIdsToFetch) : Promise.resolve([]),
+            fetchSkills ? getSkillsByIds(skillIdsToFetch) : Promise.resolve([]),
+            getUserProfile(zalo_user_id),
+        ]);
+
+        let toolGroups = allToolGroups;
+        if (tool_group) {
+            toolGroups = allToolGroups.filter(tg => tg.key === tool_group);
         }
 
         const elapsed = Date.now() - startTime;
+        let totalTools = 0;
+        
+        // Step 4: Format tools and fetch/format context-data into markdown strings
+        for (const tg of toolGroups) {
+            // Calculate total tools before converting to string
+            const toolsArray = (tg.tools as ToolResult[]) || [];
+            totalTools += toolsArray.length;
+
+            // Format Tools to Markdown - Clean, verbose format for AI Agents
+            tg.tools = toolsArray.length > 0
+                ? toolsArray.map((t, idx) => {
+                    let md = `### ${idx + 1}. Tool: ${t.name} (Key: \`${t.key}\`)\n` +
+                    `- **UUID**: ${t.id}\n` +
+                    `- **Description**: ${t.description || 'No description'}\n` +
+                    `- **Parameters Schema**:\n\`\`\`json\n${JSON.stringify(t.input_schema, null, 2)}\n\`\`\``;
+                    
+                    if (t.output_schema) {
+                        md += `\n- **Output Schema**:\n\`\`\`json\n${JSON.stringify(t.output_schema, null, 2)}\n\`\`\``;
+                    }
+                    return md;
+                }).join('\n\n')
+                : "";
+
+            // Fetch and Format Context Data
+            if (tg.id !== 'general') {
+                try {
+                    const groupData = await neo4jClient.getToolGroupDataForWorkspace(tg.key, workspaceId);
+                    tg['context-data'] = groupData.length > 0 
+                        ? groupData.map(d => `- **${d.key}**: ${d.value}`).join('\n')
+                        : "";
+                } catch (err) {
+                    logger.error(`[API] Failed to fetch data for tool group ${tg.key} in workspace ${workspaceId}: ${err}`);
+                    tg['context-data'] = "";
+                }
+            } else {
+                tg['context-data'] = "";
+            }
+        }
+
         logger.info(
             `[API] auth-and-resources complete in ${elapsed}ms: ` +
-            `workspace=${workspaceId}, tools=${tools.length}, skills=${skills.length}, ` +
+            `workspace=${workspaceId}, tool_groups=${toolGroups.length}, tools=${totalTools}, skills=${skills.length}, ` +
             `pending=${pendingTask ? pendingTask.id : 'none'}`
         );
 
@@ -319,15 +408,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 data: {
                     workspace_id: workspaceId,
                     role,
+                    user: userProfile,
                     pending_task: pendingTask,
-                    tools,
-                    skills,
-                },
-                meta: {
-                    elapsed_ms: elapsed,
-                    search_mode: content && content.trim().length > 0 ? 'hybrid' : 'whitelist',
-                    tools_count: tools.length,
-                    skills_count: skills.length,
+                    tool_groups: toolGroups,
+                    skills: fetchSkills ? skills : [],
                 },
             },
             { status: 200 }

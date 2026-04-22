@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Tool, createTool, updateTool } from './api';
+import { useState, useEffect } from 'react';
+import {
+  Tool,
+  createTool, updateTool,
+} from './api';
 
 interface ToolFormProps {
   tool?: Tool;
@@ -10,21 +13,58 @@ interface ToolFormProps {
 }
 
 export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
-  const [formData, setFormData] = useState<Partial<Tool>>(
-    tool || {
+  const [formData, setFormData] = useState<Partial<Tool>>(() => {
+    if (tool) {
+      return {
+        ...tool,
+        group_id: tool.group_id || tool.group_info?.id || ''
+      };
+    }
+    return {
       key: '',
       name: '',
       description: '',
       status: 'active',
-    }
+      group_id: '',
+    };
+  });
+  const [groups, setGroups] = useState<{ id: string, name: string }[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [inputSchemaRaw, setInputSchemaRaw] = useState<string>(
+    tool?.input_schema ? JSON.stringify(tool.input_schema, null, 2) : ''
   );
+  const [inputSchemaError, setInputSchemaError] = useState<string | null>(null);
+  const [outputSchemaRaw, setOutputSchemaRaw] = useState<string>(
+    tool?.output_schema ? JSON.stringify(tool.output_schema, null, 2) : ''
+  );
+  const [outputSchemaError, setOutputSchemaError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    const loadGroups = async () => {
+      try {
+        setLoadingGroups(true);
+        const res = await fetch('/api/admin/tool-groups');
+        const data = await res.json();
+        if (data.success && data.data) {
+          setGroups(data.data);
+        }
+      } catch (err) {
+        console.error('Failed to load tool groups for form', err);
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    loadGroups();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInputSchemaError(null);
+    setOutputSchemaError(null);
     setSuccess(false);
 
     // Validate required fields
@@ -37,11 +77,37 @@ export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
       return;
     }
 
+    // Parse input_schema JSON
+    let parsedInputSchema: Record<string, any> | undefined = undefined;
+    if (inputSchemaRaw.trim()) {
+      try {
+        parsedInputSchema = JSON.parse(inputSchemaRaw);
+      } catch {
+        setInputSchemaError('Input Schema is not valid JSON');
+        return;
+      }
+    }
+
+    // Parse output_schema JSON
+    let parsedOutputSchema: Record<string, any> | undefined = undefined;
+    if (outputSchemaRaw.trim()) {
+      try {
+        parsedOutputSchema = JSON.parse(outputSchemaRaw);
+      } catch {
+        setOutputSchemaError('Output Schema is not valid JSON');
+        return;
+      }
+    }
+
     try {
       setLoading(true);
-      await onSubmit(formData);
+      await onSubmit({ 
+        ...formData, 
+        input_schema: parsedInputSchema,
+        output_schema: parsedOutputSchema,
+      });
       setSuccess(true);
-      
+
       if (!tool) {
         // Reset form for new tool
         setFormData({
@@ -49,9 +115,12 @@ export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
           name: '',
           description: '',
           status: 'active',
+          group_id: '',
         });
+        setInputSchemaRaw('');
+        setOutputSchemaRaw('');
       }
-      
+
       if (onSuccess) {
         onSuccess();
       }
@@ -123,6 +192,58 @@ export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
+          Input Schema
+          <span className="ml-2 text-xs font-normal text-gray-400">(JSON)</span>
+        </label>
+        <textarea
+          value={inputSchemaRaw}
+          onChange={(e) => {
+            setInputSchemaRaw(e.target.value);
+            setInputSchemaError(null);
+          }}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm ${
+            inputSchemaError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+          }`}
+          placeholder={`{\n  "type": "object",\n  "properties": {\n    "param": { "type": "string" }\n  },\n  "required": ["param"]\n}`}
+          rows={8}
+          disabled={loading}
+        />
+        {inputSchemaError && (
+          <p className="text-xs text-red-600 mt-1">{inputSchemaError}</p>
+        )}
+        <p className="text-xs text-gray-500 mt-1">
+          Optional JSON Schema describing the tool&apos;s input parameters.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Output Schema
+          <span className="ml-2 text-xs font-normal text-gray-400">(JSON)</span>
+        </label>
+        <textarea
+          value={outputSchemaRaw}
+          onChange={(e) => {
+            setOutputSchemaRaw(e.target.value);
+            setOutputSchemaError(null);
+          }}
+          className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm ${
+            outputSchemaError ? 'border-red-400 bg-red-50' : 'border-gray-300'
+          }`}
+          placeholder={`{\n  "type": "object",\n  "properties": {\n    "result": { "type": "string" }\n  }\n}`}
+          rows={8}
+          disabled={loading}
+        />
+        {outputSchemaError && (
+          <p className="text-xs text-red-600 mt-1">{outputSchemaError}</p>
+        )}
+        <p className="text-xs text-gray-500 mt-1">
+          Optional JSON Schema describing the tool&apos;s return values.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           Status
         </label>
         <select
@@ -135,6 +256,24 @@ export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
           <option value="deprecated">Deprecated</option>
           <option value="disabled">Disabled</option>
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Tool Group
+        </label>
+        <select
+          value={formData.group_id || ''}
+          onChange={(e) => setFormData({ ...formData, group_id: e.target.value })}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={loading || loadingGroups}
+        >
+          <option value="">No Group</option>
+          {groups.map(g => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">Group to logically organize this tool</p>
       </div>
 
       <button
@@ -161,3 +300,4 @@ export function StatusBadge({ status }: { status: string }) {
     </span>
   );
 }
+

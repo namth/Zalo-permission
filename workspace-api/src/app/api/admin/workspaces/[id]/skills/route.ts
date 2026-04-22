@@ -29,11 +29,35 @@ export async function GET(
     }
 }
 
+export async function POST(
+    req: NextRequest,
+    { params }: { params: { id: string } }
+): Promise<NextResponse> {
+    try {
+        const workspaceId = params.id;
+        const body = await req.json();
+        const { skill_id } = body;
+
+        if (!skill_id) {
+            return NextResponse.json({ success: false, error: 'skill_id is required' }, { status: 400 });
+        }
+
+        const { neo4jClient } = await import('@/lib/neo4j');
+        await neo4jClient.createSharingRelationship(skill_id, workspaceId);
+
+        return NextResponse.json({ success: true, message: 'Skill linked to workspace' }, { status: 200 });
+    } catch (error) {
+        logger.error(`Error linking skill to workspace: ${error}`);
+        return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+    }
+}
+
 export async function DELETE(
     req: NextRequest,
     { params }: { params: { id: string } }
 ): Promise<NextResponse> {
     try {
+        const workspaceId = params.id;
         const url = new URL(req.url);
         const skill_id = url.searchParams.get('skill_id');
 
@@ -41,10 +65,12 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: 'skill_id is required' }, { status: 400 });
         }
 
-        await deleteSkill(skill_id, undefined); // TODO: replace with actual user_id from session
-        return NextResponse.json({ success: true, message: 'Skill deleted' }, { status: 200 });
+        const { neo4jClient } = await import('@/lib/neo4j');
+        await neo4jClient.removeSharingRelationship(skill_id, workspaceId);
+
+        return NextResponse.json({ success: true, message: 'Skill unlinked from workspace' }, { status: 200 });
     } catch (error) {
-        logger.error(`Error deleting skill: ${error}`);
+        logger.error(`Error unlinking skill: ${error}`);
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
     }
 }

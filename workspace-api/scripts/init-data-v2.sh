@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
   gender VARCHAR(20),
   note TEXT,
   status VARCHAR(50) DEFAULT 'active',
-  embedding vector(1536),
+  embedding vector(1024),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   name VARCHAR(255) NOT NULL,
   status VARCHAR(50) DEFAULT 'active',
   description TEXT,
-  embedding vector(1536),
+  embedding vector(1024),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS tools (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   input_schema JSONB,
-  embedding vector(1536),
+  embedding vector(1024),
   status VARCHAR(50) DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -142,11 +142,11 @@ CREATE TABLE IF NOT EXISTS skills (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(255) NOT NULL,
   description TEXT,
-  logic_config JSONB NOT NULL,
+  detail TEXT,
   owner_id UUID NOT NULL REFERENCES user_profile(id) ON DELETE CASCADE,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   is_shared BOOLEAN DEFAULT FALSE,
-  embedding vector(1536),
+  embedding vector(1024),
   status VARCHAR(50) DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
