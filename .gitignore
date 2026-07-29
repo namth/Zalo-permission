@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+docs/
 .env
 .env.local
 .env.docker
@@ -9,6 +10,8 @@ workspace-api/.env.docker
 .DS_Store
 .vscode/
 .idea/
+*.md
+!README.md
 
 # But allow workflow files
 !.github/workflows/
