@@ -806,3 +806,67 @@ export async function deleteSkill(
 
   await logAuditAction(skill.workspace_id, null, deleted_by || null, 'DELETE_SKILL', { skill_name: skill.name }, null);
 }
+
+/**
+ * Clone workspace
+ * Picks a source workspace, creates a new one, and connects same tools and skills.
+ * Tool group data, users, and zalo groups are NOT copied.
+ */
+export async function cloneWorkspace(
+  source_id: string,
+  new_name: string,
+  created_by?: string
+): Promise<Workspace> {
+  const source = await getWorkspace(source_id);
+  if (!source) {
+    throw new Error(`Source workspace not found: ${source_id}`);
+  }
+
+  // 1. Create new workspace
+  const clonedWorkspace = await createWorkspace(new_name, source.description || undefined, created_by);
+
+  // 2. Clone tool connections (CAN_USE)
+  const sourceTools = await getWorkspaceTools(source_id);
+  for (const tool of sourceTools) {
+    try {
+      await executeQuery(
+        `MATCH (w:Workspace {id: $workspace_id})
+         MATCH (t:Tool {key: $key})
+         MERGE (w)-[:CAN_USE]->(t)
+         RETURN w`,
+        { workspace_id: clonedWorkspace.id, key: tool.key }
+      );
+    } catch (error) {
+      console.error(`Failed to clone tool connection for ${tool.key}:`, error);
+    }
+  }
+
+  // 3. Clone skill connections (SHARED_TO)
+  const sourceSkillsResult = await getWorkspaceSkills(source_id);
+  const sourceSkills = sourceSkillsResult.skills;
+  for (const skill of sourceSkills) {
+    try {
+      await executeQuery(
+        `MATCH (s:Skill {id: $skill_id})
+         MATCH (w:Workspace {id: $workspace_id})
+         MERGE (s)-[:SHARED_TO]->(w)
+         RETURN w`,
+        { skill_id: skill.id, workspace_id: clonedWorkspace.id }
+      );
+    } catch (error) {
+      console.error(`Failed to clone skill connection for ${skill.id}:`, error);
+    }
+  }
+
+  // Log audit for clone
+  await logAuditAction(
+    clonedWorkspace.id,
+    null,
+    created_by || null,
+    'CLONE_WORKSPACE',
+    { source_id, new_name },
+    clonedWorkspace
+  );
+
+  return clonedWorkspace;
+}

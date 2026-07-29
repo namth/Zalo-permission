@@ -132,6 +132,8 @@ export interface LearnSkillRequest {
   description: string;
   detail?: string;
   is_shared?: boolean;
+  tools?: string[];
+  category?: string;
 }
 
 export interface LearnSkillResponse {

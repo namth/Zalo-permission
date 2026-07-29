@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { PencilSimple, Trash, Plus, X } from "@phosphor-icons/react";
+import { PencilSimple, Trash, Plus, X, Copy } from "@phosphor-icons/react";
 
 interface Workspace {
   id: string;
@@ -16,7 +16,10 @@ export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showCloneForm, setShowCloneForm] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
+  const [cloneData, setCloneData] = useState({ source_id: "", new_name: "" });
+  const [cloning, setCloning] = useState(false);
 
   useEffect(() => {
     fetchWorkspaces();
@@ -80,6 +83,36 @@ export default function WorkspacesPage() {
     }
   };
 
+  const handleClone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setCloning(true);
+      const response = await fetch("/api/admin/workspaces/clone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cloneData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCloneData({ source_id: "", new_name: "" });
+        setShowCloneForm(false);
+        fetchWorkspaces();
+      } else {
+        alert("Error cloning workspace: " + data.error);
+      }
+    } catch (error) {
+      console.error("Error cloning workspace:", error);
+    } finally {
+      setCloning(false);
+    }
+  };
+
+  const openCloneForm = (workspace: Workspace) => {
+    setCloneData({ source_id: workspace.id, new_name: `${workspace.name} (Clone)` });
+    setShowCloneForm(true);
+    setShowForm(false);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -137,6 +170,45 @@ export default function WorkspacesPage() {
         </form>
       )}
 
+      {showCloneForm && (
+        <form
+          onSubmit={handleClone}
+          className="bg-blue-50 p-6 rounded-lg border border-blue-200 shadow-sm mb-6"
+        >
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-blue-900">Clone Workspace</h2>
+            <p className="text-sm text-blue-700">This will copy all tools and skills connection to the new workspace.</p>
+            <input
+              type="text"
+              placeholder="New workspace name"
+              value={cloneData.new_name}
+              onChange={(e) =>
+                setCloneData({ ...cloneData, new_name: e.target.value })
+              }
+              className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={cloning}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium disabled:opacity-50"
+              >
+                <Copy size={16} weight="bold" />
+                {cloning ? "Cloning..." : "Confirm Clone"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCloneForm(false)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
       {loading ? (
         <div className="text-center text-gray-600">Loading...</div>
       ) : workspaces.length === 0 ? (
@@ -169,6 +241,14 @@ export default function WorkspacesPage() {
                     Edit
                   </button>
                 </Link>
+                <button
+                  onClick={() => openCloneForm(ws)}
+                  title="Clone workspace"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition"
+                >
+                  <Copy size={15} weight="bold" />
+                  Clone
+                </button>
                 <button
                   onClick={() => handleDelete(ws.id, ws.name)}
                   title="Delete workspace"

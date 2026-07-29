@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight } from '@phosphor-icons/react';
+import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check } from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
 
 interface Workspace {
@@ -801,6 +801,11 @@ function ToolGroupAccordion({
   const [addKey, setAddKey] = useState('');
   const [addValue, setAddValue] = useState('');
   const [addLoading, setAddLoading] = useState(false);
+  
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editKey, setEditKey] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -844,6 +849,32 @@ function ToolGroupAccordion({
       await loadData();
     } catch (err) {
       alert('Failed to delete data');
+    }
+  };
+
+  const startEdit = (item: ToolGroupData) => {
+    setEditingId(item.id);
+    setEditKey(item.key);
+    setEditValue(item.value);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditKey('');
+    setEditValue('');
+  };
+
+  const handleUpdateData = async (dataId: string) => {
+    if (!editKey.trim() || !editValue.trim()) return;
+    try {
+      setEditLoading(true);
+      await updateToolGroupData(group.id, dataId, editKey.trim(), editValue.trim());
+      await loadData();
+      cancelEdit();
+    } catch (err) {
+      alert('Failed to update data');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -946,16 +977,67 @@ function ToolGroupAccordion({
               <tbody className="divide-y divide-gray-100 bg-white">
                 {data.map(item => (
                   <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-mono text-gray-700">{item.key}</td>
-                    <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{item.value}</td>
+                    <td className="px-3 py-2 font-mono text-gray-700">
+                      {editingId === item.id ? (
+                        <input 
+                          className="w-full px-2 py-1 border rounded"
+                          value={editKey}
+                          onChange={e => setEditKey(e.target.value)}
+                          disabled={editLoading}
+                        />
+                      ) : item.key}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">
+                      {editingId === item.id ? (
+                        <input 
+                          className="w-full px-2 py-1 border rounded"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          disabled={editLoading}
+                        />
+                      ) : item.value}
+                    </td>
                     {isAdmin && (
                       <td className="px-3 py-2 text-right">
-                        <button 
-                          onClick={() => handleDeleteData(item.id)}
-                          className="text-red-500 hover:text-red-700 transition"
-                        >
-                          <Trash size={14} />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {editingId === item.id ? (
+                            <>
+                              <button 
+                                onClick={() => handleUpdateData(item.id)}
+                                disabled={editLoading}
+                                className="text-green-600 hover:text-green-800 transition"
+                                title="Save"
+                              >
+                                <Check size={14} weight="bold" />
+                              </button>
+                              <button 
+                                onClick={cancelEdit}
+                                disabled={editLoading}
+                                className="text-gray-400 hover:text-gray-600 transition"
+                                title="Cancel"
+                              >
+                                <X size={14} weight="bold" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button 
+                                onClick={() => startEdit(item)}
+                                className="text-blue-500 hover:text-blue-700 transition"
+                                title="Edit"
+                              >
+                                <PencilSimple size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteData(item.id)}
+                                className="text-red-500 hover:text-red-700 transition"
+                                title="Delete"
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

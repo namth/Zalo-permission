@@ -42,12 +42,34 @@ export class SkillService {
 
       const skill = this.mapRowToSkill(result.rows[0]);
 
+      // Ensure Skill node exists in Neo4j
+      await this.neo4j.syncSkill(skill.id, skill.name);
+
+      // Resolve owner_id to zalo_id for Neo4j relationship creation
+      let ownerZaloId = request.owner_id;
+      if (request.owner_id && request.owner_id.length === 36) {
+        const userRes = await this.db.query('SELECT zalo_id FROM user_profile WHERE id = $1', [request.owner_id]);
+        if (userRes.rows.length > 0) {
+          ownerZaloId = userRes.rows[0].zalo_id;
+        }
+      }
+
       // Create Neo4j relationship: User -[:OWNER_OF]-> Skill
-      await this.neo4j.createOwnershipRelationship(request.owner_id, skill.id);
+      await this.neo4j.createOwnershipRelationship(ownerZaloId, skill.id);
 
       // If shared, create Neo4j relationship: Skill -[:SHARED_TO]-> Workspace
       if (request.is_shared) {
         await this.neo4j.createSharingRelationship(skill.id, request.workspace_id);
+      }
+
+      // Link tools in Neo4j if provided
+      if (request.tools && request.tools.length > 0) {
+        await this.neo4j.linkToolsToSkill(skill.id, request.tools);
+      }
+
+      // Set category in Neo4j if provided
+      if (request.category) {
+        await this.neo4j.setSkillCategory(skill.id, request.category);
       }
 
       logger.info(`Skill created: ${skill.id} by user ${request.owner_id}`);

@@ -15,7 +15,6 @@ export function initNeo4j(): Driver {
   driver = neo4j.driver(uri, neo4j.auth.basic(user, password), {
     disableLosslessIntegers: true,
     connectionAcquisitionTimeout: 10000,
-    encrypted: 'ENCRYPTION_OFF',
   });
   return driver;
 }
