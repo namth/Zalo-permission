@@ -18,7 +18,13 @@ export function initDb(): Pool {
     connectionString,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+  });
+
+  // Handle unexpected errors on idle clients to prevent crashing the Node.js process
+  pool.on('error', (err) => {
+    console.error('Unexpected error on idle PostgreSQL client:', err?.message || err);
   });
 
   return pool;

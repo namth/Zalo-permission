@@ -14,7 +14,8 @@ export function initNeo4j(): Driver {
 
   driver = neo4j.driver(uri, neo4j.auth.basic(user, password), {
     disableLosslessIntegers: true,
-    connectionAcquisitionTimeout: 10000,
+    connectionAcquisitionTimeout: 15000,
+    maxConnectionLifetime: 3 * 60 * 60 * 1000, // 3 hours
   });
   return driver;
 }
