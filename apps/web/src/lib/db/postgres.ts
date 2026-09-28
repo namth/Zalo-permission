@@ -62,6 +62,44 @@ export function initDb(): Pool {
     console.error('Failed to auto-ensure user_profile table:', err.message);
   });
 
+  // Self-heal: ensure workspaces table exists and schema matches requirements
+  pool.query(`
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) UNIQUE,
+      description TEXT,
+      status VARCHAR(50) DEFAULT 'active',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
+    ALTER TABLE workspaces ALTER COLUMN slug DROP NOT NULL;
+    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';
+    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'isActive') THEN
+        ALTER TABLE workspaces RENAME COLUMN "isActive" TO is_active;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'createdAt') THEN
+        ALTER TABLE workspaces RENAME COLUMN "createdAt" TO created_at;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'updatedAt') THEN
+        ALTER TABLE workspaces RENAME COLUMN "updatedAt" TO updated_at;
+      END IF;
+    END $$;
+  `).catch((err) => {
+    console.error('Failed to auto-ensure workspaces table schema:', err.message);
+  });
+
   return pool;
 }
 

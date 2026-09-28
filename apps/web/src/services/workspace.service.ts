@@ -1,4 +1,5 @@
 
+import { randomUUID } from 'crypto';
 import { query } from '@/lib/db';
 import { executeQuery } from '@/lib/db';
 import neo4j from 'neo4j-driver';
@@ -51,11 +52,19 @@ export async function createWorkspace(
   description?: string,
   created_by?: string
 ): Promise<Workspace> {
+  const id = randomUUID();
+  const baseSlug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const slug = baseSlug ? `${baseSlug}-${id.slice(0, 8)}` : id;
+
   const result = await query(
-    `INSERT INTO workspaces (name, description, status, created_at, updated_at)
-     VALUES ($1, $2, 'active', NOW(), NOW())
+    `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
      RETURNING id, name, status, description, created_at, updated_at`,
-    [name, description || null]
+    [id, name, slug, description || null]
   );
 
   if (result.rows.length === 0) {

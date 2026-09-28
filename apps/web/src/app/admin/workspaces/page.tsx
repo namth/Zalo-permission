@@ -19,7 +19,10 @@ export default function WorkspacesPage() {
   const [showCloneForm, setShowCloneForm] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [cloneData, setCloneData] = useState({ source_id: "", new_name: "" });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [cloning, setCloning] = useState(false);
+  const [cloneError, setCloneError] = useState("");
 
   useEffect(() => {
     fetchWorkspaces();
@@ -42,20 +45,32 @@ export default function WorkspacesPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name.trim()) {
+      setCreateError("Vui lòng nhập tên workspace");
+      return;
+    }
+
     try {
+      setCreating(true);
+      setCreateError("");
       const response = await fetch("/api/admin/workspaces", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
       const data = await response.json();
-      if (data.success) {
+      if (response.ok && data.success) {
         setFormData({ name: "", description: "" });
         setShowForm(false);
         fetchWorkspaces();
+      } else {
+        setCreateError(data.error || "Không thể tạo workspace. Vui lòng kiểm tra lại.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating workspace:", error);
+      setCreateError(error.message || "Lỗi kết nối máy chủ");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -76,32 +91,40 @@ export default function WorkspacesPage() {
       if (data.success) {
         fetchWorkspaces();
       } else {
-        console.error("Error deleting workspace:", data.error);
+        alert("Lỗi xóa workspace: " + (data.error || "Unknown error"));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting workspace:", error);
+      alert("Lỗi kết nối khi xóa workspace: " + error.message);
     }
   };
 
   const handleClone = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!cloneData.new_name.trim()) {
+      setCloneError("Vui lòng nhập tên workspace mới");
+      return;
+    }
+
     try {
       setCloning(true);
+      setCloneError("");
       const response = await fetch("/api/admin/workspaces/clone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cloneData),
       });
       const data = await response.json();
-      if (data.success) {
+      if (response.ok && data.success) {
         setCloneData({ source_id: "", new_name: "" });
         setShowCloneForm(false);
         fetchWorkspaces();
       } else {
-        alert("Error cloning workspace: " + data.error);
+        setCloneError(data.error || "Không thể sao chép workspace.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error cloning workspace:", error);
+      setCloneError(error.message || "Lỗi kết nối khi sao chép workspace");
     } finally {
       setCloning(false);
     }
@@ -109,6 +132,7 @@ export default function WorkspacesPage() {
 
   const openCloneForm = (workspace: Workspace) => {
     setCloneData({ source_id: workspace.id, new_name: `${workspace.name} (Clone)` });
+    setCloneError("");
     setShowCloneForm(true);
     setShowForm(false);
   };
@@ -118,18 +142,22 @@ export default function WorkspacesPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Workspaces</h1>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            setShowForm(!showForm);
+            setCreateError("");
+            if (!showForm) setShowCloneForm(false);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
         >
           {showForm ? (
             <>
               <X size={16} weight="bold" />
-              Cancel
+              Hủy
             </>
           ) : (
             <>
               <Plus size={16} weight="bold" />
-              New Workspace
+              Tạo Workspace mới
             </>
           )}
         </button>
@@ -141,9 +169,22 @@ export default function WorkspacesPage() {
           className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm"
         >
           <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Tạo Workspace mới</h2>
+            {createError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center justify-between">
+                <span>{createError}</span>
+                <button
+                  type="button"
+                  onClick={() => setCreateError("")}
+                  className="text-red-400 hover:text-red-600 ml-2"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
             <input
               type="text"
-              placeholder="Workspace name"
+              placeholder="Tên workspace (VD: Sales, Marketing, Customer Support...)"
               value={formData.name}
               onChange={(e) =>
                 setFormData({ ...formData, name: e.target.value })
@@ -152,7 +193,7 @@ export default function WorkspacesPage() {
               required
             />
             <textarea
-              placeholder="Description (optional)"
+              placeholder="Mô tả workspace (tùy chọn)"
               value={formData.description}
               onChange={(e) =>
                 setFormData({ ...formData, description: e.target.value })
@@ -161,10 +202,11 @@ export default function WorkspacesPage() {
             />
             <button
               type="submit"
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+              disabled={creating}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium disabled:opacity-50"
             >
               <Plus size={16} weight="bold" />
-              Create
+              {creating ? "Đang tạo..." : "Tạo Workspace"}
             </button>
           </div>
         </form>
@@ -177,10 +219,22 @@ export default function WorkspacesPage() {
         >
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-blue-900">Clone Workspace</h2>
-            <p className="text-sm text-blue-700">This will copy all tools and skills connection to the new workspace.</p>
+            <p className="text-sm text-blue-700">Sao chép cấu hình công cụ (tools) và kỹ năng (skills) sang workspace mới.</p>
+            {cloneError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center justify-between">
+                <span>{cloneError}</span>
+                <button
+                  type="button"
+                  onClick={() => setCloneError("")}
+                  className="text-red-400 hover:text-red-600 ml-2"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
             <input
               type="text"
-              placeholder="New workspace name"
+              placeholder="Tên workspace mới"
               value={cloneData.new_name}
               onChange={(e) =>
                 setCloneData({ ...cloneData, new_name: e.target.value })
@@ -195,14 +249,14 @@ export default function WorkspacesPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium disabled:opacity-50"
               >
                 <Copy size={16} weight="bold" />
-                {cloning ? "Cloning..." : "Confirm Clone"}
+                {cloning ? "Đang sao chép..." : "Xác nhận sao chép"}
               </button>
               <button
                 type="button"
                 onClick={() => setShowCloneForm(false)}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition text-sm font-medium"
               >
-                Cancel
+                Hủy
               </button>
             </div>
           </div>

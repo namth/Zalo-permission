@@ -87,7 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const workspace = await WorkspaceSyncService.createWorkspace(
       name.trim(),
       description?.trim() || undefined,
-      created_by
+      created_by || user.id
     );
 
     logger.info(`[API] Workspace created with full sync: ${workspace.id}`);

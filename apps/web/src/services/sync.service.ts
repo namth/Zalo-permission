@@ -6,6 +6,7 @@
  */
 
 import { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'crypto';
 import { executeQuery, getNeo4j } from '@/lib/db';
 import { getDb, transaction } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -130,12 +131,20 @@ export class WorkspaceSyncService {
     try {
       await txn.begin();
 
+      const id = randomUUID();
+      const baseSlug = name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const slug = baseSlug ? `${baseSlug}-${id.slice(0, 8)}` : id;
+
       // 1. Create in PostgreSQL
       const pgResult = await txn.pgQuery(
-        `INSERT INTO workspaces (name, description, status, created_at, updated_at)
-         VALUES ($1, $2, 'active', NOW(), NOW())
+        `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
          RETURNING id, name, status, description, created_at, updated_at`,
-        [name, description || null]
+        [id, name, slug, description || null]
       );
 
       if (pgResult.rows.length === 0) {
