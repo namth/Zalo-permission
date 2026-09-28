@@ -40,6 +40,28 @@ export function initDb(): Pool {
     console.error('Unexpected error on idle PostgreSQL client:', err?.message || err);
   });
 
+  // Self-heal: ensure user_profile table exists
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS user_profile (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      zalo_id VARCHAR(255) UNIQUE,
+      username VARCHAR(255) UNIQUE,
+      password_hash TEXT,
+      full_name VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(20),
+      gender VARCHAR(20),
+      note TEXT,
+      role VARCHAR(50) DEFAULT 'user',
+      status VARCHAR(50) DEFAULT 'active',
+      api_token VARCHAR(255),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `).catch((err) => {
+    console.error('Failed to auto-ensure user_profile table:', err.message);
+  });
+
   return pool;
 }
 

@@ -40,6 +40,25 @@ enum AuditStatus {
   REJECTED
 }
 
+model UserProfile {
+  id           String   @id @default(uuid()) @db.Uuid
+  zaloId       String?  @unique @map("zalo_id")
+  username     String?  @unique
+  passwordHash String?  @map("password_hash")
+  fullName     String?  @map("full_name")
+  email        String?
+  phone        String?
+  gender       String?
+  note         String?
+  role         String?  @default("user")
+  status       String   @default("active")
+  apiToken     String?  @map("api_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("user_profile")
+}
+
 model Workspace {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
