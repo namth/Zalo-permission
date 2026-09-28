@@ -146,12 +146,29 @@ export class WorkspaceSyncService {
       const slug = baseSlug ? `${baseSlug}-${id.slice(0, 8)}` : id;
 
       // 1. Create in PostgreSQL
-      const pgResult = await txn.pgQuery(
-        `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
-         RETURNING id, name, status, description, created_at, updated_at`,
-        [id, name, slug, description || null]
-      );
+      let pgResult;
+      try {
+        pgResult = await txn.pgQuery(
+          `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
+           RETURNING id, name, status, description, created_at, updated_at`,
+          [id, name, slug, description || null]
+        );
+      } catch (err: any) {
+        if (err.message && (err.message.includes('updatedAt') || err.message.includes('status'))) {
+          await txn.rollback();
+          await ensureWorkspacesSchema();
+          await txn.begin();
+          pgResult = await txn.pgQuery(
+            `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
+             RETURNING id, name, status, description, created_at, updated_at`,
+            [id, name, slug, description || null]
+          );
+        } else {
+          throw err;
+        }
+      }
 
       if (pgResult.rows.length === 0) {
         throw new Error('Failed to create workspace in PostgreSQL');

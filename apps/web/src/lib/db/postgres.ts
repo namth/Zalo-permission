@@ -62,20 +62,21 @@ export function initDb(): Pool {
     console.error('Failed to auto-ensure user_profile table:', err.message);
   });
 
-  // Self-heal: ensure workspaces table exists and schema matches requirements
+  // Self-heal: ensure all tables and schemas match application requirements
   ensureWorkspacesSchema(pool).catch((err) => {
-    console.error('Failed to auto-ensure workspaces table schema:', err.message);
+    console.error('Failed to auto-ensure database schema:', err.message);
   });
 
   return pool;
 }
 
 /**
- * Ensure workspaces table has all required columns
+ * Ensure all tables have required columns and drop legacy conflicting camelCase constraints
  */
 export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
   const db = dbPool || getDb();
   const steps = [
+    // 1. WORKSPACES
     `CREATE TABLE IF NOT EXISTS workspaces (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name VARCHAR(255) NOT NULL,
@@ -94,17 +95,243 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
     `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
     `DO $$
     BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'isActive') THEN
-        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-        UPDATE workspaces SET is_active = "isActive" WHERE is_active IS NULL;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'updatedAt') THEN
+        ALTER TABLE workspaces ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE workspaces SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE workspaces DROP COLUMN "updatedAt";
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'createdAt') THEN
-        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE workspaces ALTER COLUMN "createdAt" DROP NOT NULL;
         UPDATE workspaces SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE workspaces DROP COLUMN "createdAt";
       END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'updatedAt') THEN
-        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
-        UPDATE workspaces SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'isActive') THEN
+        ALTER TABLE workspaces ALTER COLUMN "isActive" DROP NOT NULL;
+        UPDATE workspaces SET is_active = "isActive" WHERE is_active IS NULL;
+        ALTER TABLE workspaces DROP COLUMN "isActive";
+      END IF;
+    END $$;`,
+
+    // 2. USER_PROFILE
+    `ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS username VARCHAR(255)`,
+    `ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+    `ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'user'`,
+    `ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`,
+    `ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS api_token VARCHAR(255)`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profile' AND column_name = 'updatedAt') THEN
+        ALTER TABLE user_profile ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE user_profile SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE user_profile DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profile' AND column_name = 'createdAt') THEN
+        ALTER TABLE user_profile ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE user_profile SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE user_profile DROP COLUMN "createdAt";
+      END IF;
+    END $$;`,
+
+    // 3. ZALO_GROUPS
+    `CREATE TABLE IF NOT EXISTS zalo_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID,
+      thread_id VARCHAR(255) UNIQUE NOT NULL,
+      name VARCHAR(255),
+      status VARCHAR(50) DEFAULT 'active',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    // 4. WORKSPACE_USER_ROLES
+    `CREATE TABLE IF NOT EXISTS workspace_user_roles (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL,
+      user_id UUID NOT NULL,
+      role VARCHAR(50) NOT NULL,
+      assigned_by UUID,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(workspace_id, user_id)
+    )`,
+
+    // 5. TOOL_GROUPS
+    `CREATE TABLE IF NOT EXISTS tool_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      key VARCHAR(100) UNIQUE NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      base_url VARCHAR(500),
+      status VARCHAR(50) DEFAULT 'active',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`,
+    `ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS base_url VARCHAR(500)`,
+    `ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tool_groups' AND column_name = 'baseUrl') THEN
+        ALTER TABLE tool_groups ALTER COLUMN "baseUrl" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tool_groups' AND column_name = 'updatedAt') THEN
+        ALTER TABLE tool_groups ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE tool_groups SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE tool_groups DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tool_groups' AND column_name = 'createdAt') THEN
+        ALTER TABLE tool_groups ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE tool_groups SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE tool_groups DROP COLUMN "createdAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tool_groups' AND column_name = 'isActive') THEN
+        ALTER TABLE tool_groups ALTER COLUMN "isActive" DROP NOT NULL;
+        UPDATE tool_groups SET is_active = "isActive" WHERE is_active IS NULL;
+        ALTER TABLE tool_groups DROP COLUMN "isActive";
+      END IF;
+    END $$;`,
+
+    // 6. TOOLS
+    `CREATE TABLE IF NOT EXISTS tools (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      key VARCHAR(100) UNIQUE NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      input_schema JSONB,
+      output_schema JSONB,
+      embedding JSONB,
+      status VARCHAR(50) DEFAULT 'active',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS input_schema JSONB`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS output_schema JSONB`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS embedding JSONB`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE tools ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tools' AND column_name = 'toolGroupId') THEN
+        ALTER TABLE tools ALTER COLUMN "toolGroupId" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tools' AND column_name = 'path') THEN
+        ALTER TABLE tools ALTER COLUMN "path" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tools' AND column_name = 'updatedAt') THEN
+        ALTER TABLE tools ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE tools SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE tools DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tools' AND column_name = 'createdAt') THEN
+        ALTER TABLE tools ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE tools SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE tools DROP COLUMN "createdAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tools' AND column_name = 'isActive') THEN
+        ALTER TABLE tools ALTER COLUMN "isActive" DROP NOT NULL;
+        UPDATE tools SET is_active = "isActive" WHERE is_active IS NULL;
+        ALTER TABLE tools DROP COLUMN "isActive";
+      END IF;
+    END $$;`,
+
+    // 7. SKILLS
+    `CREATE TABLE IF NOT EXISTS skills (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      key VARCHAR(100) UNIQUE,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      detail TEXT,
+      is_shared BOOLEAN DEFAULT false,
+      embedding JSONB,
+      status VARCHAR(50) DEFAULT 'active',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS detail TEXT`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS is_shared BOOLEAN DEFAULT false`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS embedding JSONB`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE skills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skills' AND column_name = 'key') THEN
+        ALTER TABLE skills ALTER COLUMN "key" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skills' AND column_name = 'systemPrompt') THEN
+        ALTER TABLE skills ALTER COLUMN "systemPrompt" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skills' AND column_name = 'updatedAt') THEN
+        ALTER TABLE skills ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE skills SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE skills DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skills' AND column_name = 'createdAt') THEN
+        ALTER TABLE skills ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE skills SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE skills DROP COLUMN "createdAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'skills' AND column_name = 'isActive') THEN
+        ALTER TABLE skills ALTER COLUMN "isActive" DROP NOT NULL;
+        UPDATE skills SET is_active = "isActive" WHERE is_active IS NULL;
+        ALTER TABLE skills DROP COLUMN "isActive";
+      END IF;
+    END $$;`,
+
+    // 8. PENDING_TASKS
+    `CREATE TABLE IF NOT EXISTS pending_tasks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL,
+      thread_id VARCHAR(255) NOT NULL,
+      user_id VARCHAR(255),
+      intent VARCHAR(255),
+      full_plan JSONB,
+      missing_parameters JSONB,
+      status VARCHAR(50) DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    // 9. AUDIT_LOGS
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID,
+      thread_id VARCHAR(255),
+      user_id VARCHAR(255),
+      action_type VARCHAR(100),
+      input_data JSONB,
+      output_data JSONB,
+      status VARCHAR(50) DEFAULT 'success',
+      error_message TEXT,
+      metadata JSONB,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS workspace_id UUID`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS thread_id VARCHAR(255)`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(255)`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action_type VARCHAR(100)`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS input_data JSONB`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS output_data JSONB`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS error_message TEXT`,
+    `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS metadata JSONB`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'platform') THEN
+        ALTER TABLE audit_logs ALTER COLUMN "platform" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'senderId') THEN
+        ALTER TABLE audit_logs ALTER COLUMN "senderId" DROP NOT NULL;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'userPrompt') THEN
+        ALTER TABLE audit_logs ALTER COLUMN "userPrompt" DROP NOT NULL;
       END IF;
     END $$;`
   ];
@@ -117,6 +344,8 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
     }
   }
 }
+
+export const ensureAllTablesSchema = ensureWorkspacesSchema;
 
 /**
  * Get database pool instance

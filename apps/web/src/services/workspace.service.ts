@@ -62,12 +62,27 @@ export async function createWorkspace(
     .replace(/^-+|-+$/g, '');
   const slug = baseSlug ? `${baseSlug}-${id.slice(0, 8)}` : id;
 
-  const result = await query(
-    `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
-     RETURNING id, name, status, description, created_at, updated_at`,
-    [id, name, slug, description || null]
-  );
+  let result;
+  try {
+    result = await query(
+      `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
+       RETURNING id, name, status, description, created_at, updated_at`,
+      [id, name, slug, description || null]
+    );
+  } catch (err: any) {
+    if (err.message && (err.message.includes('updatedAt') || err.message.includes('status'))) {
+      await ensureWorkspacesSchema();
+      result = await query(
+        `INSERT INTO workspaces (id, name, slug, description, status, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'active', true, NOW(), NOW())
+         RETURNING id, name, status, description, created_at, updated_at`,
+        [id, name, slug, description || null]
+      );
+    } else {
+      throw err;
+    }
+  }
 
   if (result.rows.length === 0) {
     throw new Error('Failed to create workspace');
