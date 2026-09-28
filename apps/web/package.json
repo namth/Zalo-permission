@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start -p 7140",
     "lint": "next lint",
-    "init-admin": "npx tsx src/scripts/init-admin.ts"
+    "init-admin": "node src/scripts/init-admin.mjs"
   },
   "dependencies": {
     "@omniagent/core": "workspace:*",
