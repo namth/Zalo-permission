@@ -1,17 +1,17 @@
 node_modules/
 dist/
 build/
-docs/
+.next/
+.turbo/
+
+# Environments
 .env
 .env.local
 .env.docker
-workspace-api/.env.docker
+*.env
+
+# Logs and OS
 *.log
 .DS_Store
 .vscode/
 .idea/
-*.md
-!README.md
-
-# But allow workflow files
-!.github/workflows/
