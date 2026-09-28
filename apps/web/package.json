@@ -7,7 +7,8 @@
     "dev": "next dev -p 7140",
     "build": "next build",
     "start": "next start -p 7140",
-    "lint": "next lint"
+    "lint": "next lint",
+    "init-admin": "tsx src/scripts/init-admin.ts"
   },
   "dependencies": {
     "@omniagent/core": "workspace:*",
@@ -36,6 +37,7 @@
     "postcss": "^8.4.32",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.10.5",
     "typescript": "^5.3.3"
   }
 }

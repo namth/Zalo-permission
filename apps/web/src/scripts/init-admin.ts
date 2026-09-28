@@ -3,8 +3,13 @@ import { hashPassword } from '@/lib/auth';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load env
-dotenv.config({ path: '.env.local' });
+// Load env from possible locations
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function initAdmin() {
   const adminUsername = 'admin';
