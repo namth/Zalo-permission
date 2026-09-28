@@ -2,6 +2,7 @@
 import { query, executeQuery } from '@/lib/db';
 import { logAuditAction } from './audit.service';
 import { hashPassword } from '@/lib/auth';
+import { randomUUID } from 'crypto';
 
 /**
  * User Profile Type
@@ -77,12 +78,13 @@ export class UserService {
     const passwordHash = password ? await hashPassword(password) : null;
 
     // 1. Create in PostgreSQL
+    const userId = randomUUID();
     const apiToken = req.api_token || `zp_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
     const result = await query(
-      `INSERT INTO user_profile (zalo_id, username, password_hash, full_name, email, phone, gender, note, role, status, api_token, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, NOW(), NOW())
+      `INSERT INTO user_profile (id, zalo_id, username, password_hash, full_name, email, phone, gender, note, role, status, api_token, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, NOW(), NOW())
        RETURNING *`,
-      [zalo_id || null, username || null, passwordHash, full_name || null, email || null, phone || null, gender || null, note || null, role || 'user', apiToken]
+      [userId, zalo_id || null, username || null, passwordHash, full_name || null, email || null, phone || null, gender || null, note || null, role || 'user', apiToken]
     );
 
     const user = result.rows[0];
