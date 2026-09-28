@@ -9,10 +9,11 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:seed-constraints": "tsx src/seed-constraints.ts",
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:push": "dotenv -e ../../.env -- prisma db push --accept-data-loss",
+    "db:push:reset": "dotenv -e ../../.env -- prisma db push --force-reset",
+    "db:seed-constraints": "dotenv -e ../../.env -- tsx src/seed-constraints.ts",
     "test": "tsx src/__tests__/encryption.test.ts"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "neo4j-driver": "^5.20.0"
   },
   "devDependencies": {
+    "dotenv-cli": "^7.4.2",
     "prisma": "^5.14.0",
     "tsup": "^8.0.2",
     "tsx": "^4.10.5",

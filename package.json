@@ -10,6 +10,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "db:generate": "turbo run db:generate",
     "db:migrate": "turbo run db:migrate",
+    "db:push": "turbo run db:push",
+    "db:seed-constraints": "turbo run db:seed-constraints",
     "db:seed": "turbo run db:seed"
   },
   "devDependencies": {
