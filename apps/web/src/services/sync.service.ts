@@ -8,7 +8,7 @@
 import { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
 import { executeQuery, getNeo4j } from '@/lib/db';
-import { getDb, transaction } from '@/lib/db';
+import { getDb, transaction, ensureWorkspacesSchema } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 /**
@@ -127,6 +127,12 @@ export class WorkspaceSyncService {
     description?: string,
     created_by?: string
   ) {
+    try {
+      await ensureWorkspacesSchema();
+    } catch (e: any) {
+      logger.warn(`ensureWorkspacesSchema failed: ${e.message}`);
+    }
+
     const txn = new SyncTransaction();
     try {
       await txn.begin();

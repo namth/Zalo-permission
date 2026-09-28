@@ -1,6 +1,6 @@
 
 import { randomUUID } from 'crypto';
-import { query } from '@/lib/db';
+import { query, ensureWorkspacesSchema } from '@/lib/db';
 import { executeQuery } from '@/lib/db';
 import neo4j from 'neo4j-driver';
 import { logAuditAction } from './audit.service';
@@ -52,6 +52,8 @@ export async function createWorkspace(
   description?: string,
   created_by?: string
 ): Promise<Workspace> {
+  await ensureWorkspacesSchema().catch(() => {});
+
   const id = randomUUID();
   const baseSlug = name
     .toLowerCase()

@@ -20,4 +20,5 @@ export {
   transaction,
   testDbConnection,
   closeDb,
+  ensureWorkspacesSchema,
 } from './postgres';

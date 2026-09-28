@@ -63,44 +63,59 @@ export function initDb(): Pool {
   });
 
   // Self-heal: ensure workspaces table exists and schema matches requirements
-  pool.query(`
-    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  ensureWorkspacesSchema(pool).catch((err) => {
+    console.error('Failed to auto-ensure workspaces table schema:', err.message);
+  });
 
-    CREATE TABLE IF NOT EXISTS workspaces (
+  return pool;
+}
+
+/**
+ * Ensure workspaces table has all required columns
+ */
+export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
+  const db = dbPool || getDb();
+  const steps = [
+    `CREATE TABLE IF NOT EXISTS workspaces (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name VARCHAR(255) NOT NULL,
-      slug VARCHAR(255) UNIQUE,
+      slug VARCHAR(255),
       description TEXT,
       status VARCHAR(50) DEFAULT 'active',
       is_active BOOLEAN DEFAULT true,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-
-    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS slug VARCHAR(255);
-    ALTER TABLE workspaces ALTER COLUMN slug DROP NOT NULL;
-    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';
-    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
-    ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
-
-    DO $$
+    )`,
+    `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active'`,
+    `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS slug VARCHAR(255)`,
+    `ALTER TABLE workspaces ALTER COLUMN slug DROP NOT NULL`,
+    `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
     BEGIN
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'isActive') THEN
-        ALTER TABLE workspaces RENAME COLUMN "isActive" TO is_active;
+        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+        UPDATE workspaces SET is_active = "isActive" WHERE is_active IS NULL;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'createdAt') THEN
-        ALTER TABLE workspaces RENAME COLUMN "createdAt" TO created_at;
+        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+        UPDATE workspaces SET created_at = "createdAt" WHERE created_at IS NULL;
       END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspaces' AND column_name = 'updatedAt') THEN
-        ALTER TABLE workspaces RENAME COLUMN "updatedAt" TO updated_at;
+        ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+        UPDATE workspaces SET updated_at = "updatedAt" WHERE updated_at IS NULL;
       END IF;
-    END $$;
-  `).catch((err) => {
-    console.error('Failed to auto-ensure workspaces table schema:', err.message);
-  });
+    END $$;`
+  ];
 
-  return pool;
+  for (const queryStr of steps) {
+    try {
+      await db.query(queryStr);
+    } catch (err: any) {
+      console.warn(`[DB Migration Notice]: ${err.message}`);
+    }
+  }
 }
 
 /**
