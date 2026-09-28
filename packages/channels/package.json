@@ -14,10 +14,13 @@
     "@omniagent/core": "workspace:*",
     "@omniagent/database": "workspace:*",
     "dotenv": "^16.4.5",
-    "grammy": "^1.23.0"
+    "grammy": "^1.23.0",
+    "qrcode": "^1.5.4",
+    "zca-js": "^2.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
+    "@types/qrcode": "^1.5.6",
     "tsup": "^8.0.2",
     "typescript": "^5.4.5"
   }
