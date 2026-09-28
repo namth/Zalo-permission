@@ -19,6 +19,12 @@ interface ChannelAccount {
   account_name: string;
   auth_type: string;
   status: 'ACTIVE' | 'DISCONNECTED' | 'EXPIRED';
+  metadata?: {
+    avatar?: string;
+    name?: string;
+    username?: string;
+    zaloId?: string;
+  };
   chat_count: number;
   last_synced_at: string | null;
   created_at: string;
@@ -54,9 +60,12 @@ export default function ChannelsPage() {
   const fetchAccounts = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/channels');
+      const res = await fetch(`/api/channels?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.data)) {
         setAccounts(data.data);
       }
     } catch (err) {
@@ -84,7 +93,10 @@ export default function ChannelsPage() {
     setSelectedAccount(acc);
     setLoadingChats(true);
     try {
-      const res = await fetch(`/api/channels/${acc.id}/chats`);
+      const res = await fetch(`/api/channels/${acc.id}/chats?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
       if (data.success) {
         setChats(data.data);
@@ -252,6 +264,12 @@ export default function ChannelsPage() {
                           <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold">
                             <TelegramLogo size={18} weight="fill" />
                           </div>
+                        ) : acc.metadata?.avatar ? (
+                          <img
+                            src={acc.metadata.avatar}
+                            alt={acc.account_name}
+                            className="w-8 h-8 rounded-full object-cover border border-blue-200"
+                          />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
                             Zalo
