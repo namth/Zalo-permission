@@ -17,7 +17,7 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
     });
 
-    const data = chats.map((c) => ({
+    const data = chats.map((c: any) => ({
       id: c.id,
       platform: c.platform,
       platform_chat_id: c.platformChatId,

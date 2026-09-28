@@ -12,7 +12,7 @@ export async function GET(): Promise<NextResponse> {
       orderBy: { createdAt: 'desc' },
     });
 
-    const data = accounts.map((acc) => ({
+    const data = accounts.map((acc: any) => ({
       id: acc.id,
       platform: acc.platform,
       account_name: acc.accountName,
