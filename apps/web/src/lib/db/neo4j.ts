@@ -1,6 +1,18 @@
 import neo4j, { Driver, Session } from 'neo4j-driver';
+import dotenv from 'dotenv';
+import path from 'path';
 
 let driver: Driver | null = null;
+
+function ensureEnvLoaded() {
+  if (!process.env.NEO4J_URI) {
+    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+    dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+    dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+    dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+    dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+  }
+}
 
 /**
  * Initialize Neo4j driver
@@ -8,6 +20,7 @@ let driver: Driver | null = null;
 export function initNeo4j(): Driver {
   if (driver) return driver;
 
+  ensureEnvLoaded();
   const uri = process.env.NEO4J_URI || 'bolt://localhost:7687';
   const user = process.env.NEO4J_USER || 'neo4j';
   const password = process.env.NEO4J_PASSWORD || 'password';

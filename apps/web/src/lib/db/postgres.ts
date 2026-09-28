@@ -1,6 +1,18 @@
 import { Pool, PoolClient } from 'pg';
+import dotenv from 'dotenv';
+import path from 'path';
 
 let pool: Pool | null = null;
+
+function ensureEnvLoaded() {
+  if (!process.env.DATABASE_URL) {
+    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+    dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+    dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+    dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+    dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+  }
+}
 
 /**
  * Initialize PostgreSQL connection pool
@@ -8,6 +20,7 @@ let pool: Pool | null = null;
 export function initDb(): Pool {
   if (pool) return pool;
 
+  ensureEnvLoaded();
   const connectionString = process.env.DATABASE_URL;
   
   if (!connectionString) {
