@@ -1,0 +1,193 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PlatformType {
+  TELEGRAM
+  ZALO
+}
+
+enum ChannelAccountStatus {
+  ACTIVE
+  DISCONNECTED
+  EXPIRED
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  DELETE
+  PATCH
+}
+
+enum AuthType {
+  NONE
+  BEARER
+  API_KEY
+  BASIC
+  CUSTOM_HEADERS
+}
+
+enum AuditStatus {
+  SUCCESS
+  FAILED
+  REJECTED
+}
+
+model Workspace {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channelChats         ChannelChat[]
+  workspaceToolConfigs WorkspaceToolConfig[]
+  auditLogs            AuditLog[]
+
+  @@map("workspaces")
+}
+
+model ChannelAccount {
+  id                   String               @id @default(uuid()) @db.Uuid
+  platform             PlatformType
+  accountName          String
+  authType             String
+  encryptedCredentials String               @db.Text
+  status               ChannelAccountStatus @default(ACTIVE)
+  metadata             Json?                @default("{}")
+  lastSyncedAt         DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  channelChats ChannelChat[]
+
+  @@map("channel_accounts")
+}
+
+model ChannelChat {
+  id             String       @id @default(uuid()) @db.Uuid
+  accountId      String       @db.Uuid
+  workspaceId    String?      @db.Uuid
+  platform       PlatformType
+  platformChatId String
+  title          String
+  chatType       String       @default("GROUP")
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  account   ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  workspace Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  auditLogs AuditLog[]
+
+  @@unique([platform, platformChatId])
+  @@index([workspaceId])
+  @@map("channel_chats")
+}
+
+model ToolGroup {
+  id                String   @id @default(uuid()) @db.Uuid
+  key               String   @unique
+  name              String
+  description       String?
+  baseUrl           String
+  authType          AuthType @default(NONE)
+  defaultAuthConfig Json?    @default("{}")
+  defaultHeaders    Json?    @default("{}")
+  requiredVariables Json     @default("[]")
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tools                Tool[]
+  workspaceToolConfigs WorkspaceToolConfig[]
+
+  @@map("tool_groups")
+}
+
+model Tool {
+  id               String     @id @default(uuid()) @db.Uuid
+  toolGroupId      String     @db.Uuid
+  key              String     @unique
+  name             String
+  description      String
+  method           HttpMethod @default(GET)
+  path             String
+  parametersSchema Json?      @default("{}")
+  bodySchema       Json?      @default("{}")
+  responseSchema   Json?      @default("{}")
+  isActive         Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  toolGroup ToolGroup @relation(fields: [toolGroupId], references: [id], onDelete: Cascade)
+
+  @@index([toolGroupId])
+  @@map("tools")
+}
+
+model Skill {
+  id             String   @id @default(uuid()) @db.Uuid
+  key            String   @unique
+  name           String
+  description    String
+  systemPrompt   String   @db.Text
+  triggerIntents Json     @default("[]")
+  requiredTools  String[] @default([])
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@map("skills")
+}
+
+model WorkspaceToolConfig {
+  id                    String   @id @default(uuid()) @db.Uuid
+  workspaceId           String   @db.Uuid
+  toolGroupId           String   @db.Uuid
+  isEnabled             Boolean  @default(true)
+  encryptedEnvOverrides String?  @db.Text
+  disabledToolIds       Json     @default("[]")
+  updatedAt             DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  toolGroup ToolGroup @relation(fields: [toolGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, toolGroupId])
+  @@map("workspace_tool_configs")
+}
+
+model AuditLog {
+  id             String      @id @default(uuid()) @db.Uuid
+  workspaceId    String?     @db.Uuid
+  chatId         String?     @db.Uuid
+  platform       PlatformType
+  senderId       String
+  userPrompt     String      @db.Text
+  detectedIntent String?
+  matchedSkillId String?     @db.Uuid
+  executionPlan  Json?       @default("[]")
+  toolCalls      Json?       @default("[]")
+  finalResponse  String?     @db.Text
+  status         AuditStatus @default(SUCCESS)
+  latencyMs      Int?
+  createdAt      DateTime    @default(now())
+
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  channelChat  ChannelChat? @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  matchedSkill Skill?       @relation(fields: [matchedSkillId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_logs")
+}

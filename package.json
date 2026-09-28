@@ -1,0 +1,21 @@
+{
+  "name": "omniagent-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-tenant AI Agent Gateway & Workspace Platform for Zalo and Telegram",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "turbo run db:migrate",
+    "db:seed": "turbo run db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5"
+  },
+  "packageManager": "pnpm@11.22.0"
+}

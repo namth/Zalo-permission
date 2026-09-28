@@ -1,24 +1,57 @@
 services:
-  workspace-api:
-    build:
-      context: ./workspace-api
-      dockerfile: ./Dockerfile
-    container_name: plutus-workspace-api
-    restart: always
+  postgres:
+    image: postgres:16-alpine
+    container_name: omniagent-postgres
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://postgres.kkfwybnsgtvfvxaxjsaz:Matkhaumoi2%40%40@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres
-      NEO4J_URI: neo4j+s://9f328ab7.databases.neo4j.io
-      NEO4J_USER: 9f328ab7
-      NEO4J_PASSWORD: pEhHSlUkMeLqmZ1gs3i59uv40X5dqnKskpkqn93j_iE
-      NODE_ENV: production
-      PORT: 3000
-      VOYAGE_API_KEY: ${VOYAGE_API_KEY}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-omniagent_db}
     ports:
-      - "7140:3000"
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d omniagent_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: omniagent-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-neo4j_password_here}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+    ports:
+      - "7474:7474" # HTTP Browser
+      - "7687:7687" # Bolt Protocol
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: omniagent-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  redis_data:

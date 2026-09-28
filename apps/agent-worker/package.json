@@ -1,0 +1,24 @@
+{
+  "name": "@omniagent/agent-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm"
+  },
+  "dependencies": {
+    "@omniagent/channels": "workspace:*",
+    "@omniagent/core": "workspace:*",
+    "@omniagent/database": "workspace:*",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "tsup": "^8.0.2",
+    "tsx": "^4.10.5",
+    "typescript": "^5.4.5"
+  }
+}
