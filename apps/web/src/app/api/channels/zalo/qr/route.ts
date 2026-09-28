@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZaloChannelAdapter } from '@omniagent/channels';
+import { ensureWorkspacesSchema } from '@/lib/db';
 
 export async function POST(): Promise<NextResponse> {
   try {
+    await ensureWorkspacesSchema().catch((err) => {
+      console.warn('[API /api/channels/zalo/qr] ensureWorkspacesSchema notice:', err?.message);
+    });
+
     const session = await ZaloChannelAdapter.generateQrSession();
     return NextResponse.json({
       success: true,

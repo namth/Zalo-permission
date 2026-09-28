@@ -333,7 +333,129 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'userPrompt') THEN
         ALTER TABLE audit_logs ALTER COLUMN "userPrompt" DROP NOT NULL;
       END IF;
-    END $$;`
+    END $$;`,
+
+    // 10. CHANNEL_ACCOUNTS
+    `CREATE TABLE IF NOT EXISTS channel_accounts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      platform VARCHAR(50) NOT NULL,
+      account_name VARCHAR(255) NOT NULL,
+      auth_type VARCHAR(50) NOT NULL,
+      encrypted_credentials TEXT NOT NULL,
+      status VARCHAR(50) DEFAULT 'ACTIVE',
+      metadata JSONB DEFAULT '{}',
+      last_synced_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS platform VARCHAR(50) DEFAULT 'ZALO'`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS account_name VARCHAR(255)`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS auth_type VARCHAR(50) DEFAULT 'QR_SESSION'`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS encrypted_credentials TEXT`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE'`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP WITH TIME ZONE`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'accountName') THEN
+        ALTER TABLE channel_accounts ALTER COLUMN "accountName" DROP NOT NULL;
+        UPDATE channel_accounts SET account_name = "accountName" WHERE account_name IS NULL;
+        ALTER TABLE channel_accounts DROP COLUMN "accountName";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'authType') THEN
+        ALTER TABLE channel_accounts ALTER COLUMN "authType" DROP NOT NULL;
+        UPDATE channel_accounts SET auth_type = "authType" WHERE auth_type IS NULL;
+        ALTER TABLE channel_accounts DROP COLUMN "authType";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'encryptedCredentials') THEN
+        ALTER TABLE channel_accounts ALTER COLUMN "encryptedCredentials" DROP NOT NULL;
+        UPDATE channel_accounts SET encrypted_credentials = "encryptedCredentials" WHERE encrypted_credentials IS NULL;
+        ALTER TABLE channel_accounts DROP COLUMN "encryptedCredentials";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'lastSyncedAt') THEN
+        ALTER TABLE channel_accounts DROP COLUMN "lastSyncedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'updatedAt') THEN
+        ALTER TABLE channel_accounts ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE channel_accounts SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE channel_accounts DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'createdAt') THEN
+        ALTER TABLE channel_accounts ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE channel_accounts SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE channel_accounts DROP COLUMN "createdAt";
+      END IF;
+    END $$;`,
+
+    // 11. CHANNEL_CHATS
+    `CREATE TABLE IF NOT EXISTS channel_chats (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      account_id UUID NOT NULL,
+      workspace_id UUID,
+      platform VARCHAR(50) NOT NULL,
+      platform_chat_id VARCHAR(255) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      chat_type VARCHAR(50) DEFAULT 'GROUP',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(platform, platform_chat_id)
+    )`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS account_id UUID`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS workspace_id UUID`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS platform VARCHAR(50) DEFAULT 'ZALO'`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS platform_chat_id VARCHAR(255)`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS title VARCHAR(255)`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS chat_type VARCHAR(50) DEFAULT 'GROUP'`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'accountId') THEN
+        ALTER TABLE channel_chats ALTER COLUMN "accountId" DROP NOT NULL;
+        UPDATE channel_chats SET account_id = "accountId" WHERE account_id IS NULL;
+        ALTER TABLE channel_chats DROP COLUMN "accountId";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'workspaceId') THEN
+        ALTER TABLE channel_chats DROP COLUMN "workspaceId";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'platformChatId') THEN
+        ALTER TABLE channel_chats ALTER COLUMN "platformChatId" DROP NOT NULL;
+        UPDATE channel_chats SET platform_chat_id = "platformChatId" WHERE platform_chat_id IS NULL;
+        ALTER TABLE channel_chats DROP COLUMN "platformChatId";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'chatType') THEN
+        ALTER TABLE channel_chats DROP COLUMN "chatType";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'isActive') THEN
+        ALTER TABLE channel_chats DROP COLUMN "isActive";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'updatedAt') THEN
+        ALTER TABLE channel_chats ALTER COLUMN "updatedAt" DROP NOT NULL;
+        UPDATE channel_chats SET updated_at = "updatedAt" WHERE updated_at IS NULL;
+        ALTER TABLE channel_chats DROP COLUMN "updatedAt";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'createdAt') THEN
+        ALTER TABLE channel_chats ALTER COLUMN "createdAt" DROP NOT NULL;
+        UPDATE channel_chats SET created_at = "createdAt" WHERE created_at IS NULL;
+        ALTER TABLE channel_chats DROP COLUMN "createdAt";
+      END IF;
+    END $$;`,
+
+    // 12. WORKSPACE_TOOL_CONFIGS
+    `CREATE TABLE IF NOT EXISTS workspace_tool_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workspace_id UUID NOT NULL,
+      tool_group_id UUID NOT NULL,
+      is_enabled BOOLEAN DEFAULT true,
+      encrypted_env_overrides TEXT,
+      disabled_tool_ids JSONB DEFAULT '[]',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(workspace_id, tool_group_id)
+    )`
   ];
 
   for (const queryStr of steps) {

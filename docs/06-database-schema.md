@@ -168,6 +168,16 @@ enum AuthType {
   CUSTOM_HEADERS
 }
 
+enum ProtocolType {
+  REST
+  MCP
+}
+
+enum McpTransportType {
+  SSE
+  STREAMABLE_HTTP
+}
+
 enum AuditStatus {
   SUCCESS
   FAILED
@@ -229,18 +239,22 @@ model ChannelChat {
 }
 
 model ToolGroup {
-  id                 String   @id @default(uuid()) @db.Uuid
-  key                String   @unique
+  id                 String           @id @default(uuid()) @db.Uuid
+  key                String           @unique
   name               String
   description        String?
-  baseUrl            String
-  authType           AuthType @default(NONE)
-  defaultAuthConfig  Json?    @default("{}")
-  defaultHeaders     Json?    @default("{}")
-  requiredVariables  Json     @default("[]") // Array of string keys: ["API_KEY", "TENANT_ID"]
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  protocolType       ProtocolType     @default(REST) // REST | MCP
+  baseUrl            String           // REST Base URL hoặc MCP Server SSE/HTTP URL
+  mcpTransport       McpTransportType? @default(SSE)
+  mcpRawConfig       Json?            // Lưu JSON mcpServers gốc nếu import từ config
+  timeoutSeconds     Int              @default(15)   // Thời gian timeout thực thi (mặc định 15s)
+  authType           AuthType         @default(NONE)
+  defaultAuthConfig  Json?            @default("{}")
+  defaultHeaders     Json?            @default("{}")
+  requiredVariables  Json             @default("[]") // Array of string keys: ["API_KEY", "TENANT_ID"]
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   tools                Tool[]
   workspaceToolConfigs WorkspaceToolConfig[]
@@ -249,19 +263,19 @@ model ToolGroup {
 }
 
 model Tool {
-  id               String     @id @default(uuid()) @db.Uuid
-  toolGroupId      String     @db.Uuid
-  key              String     @unique
+  id               String      @id @default(uuid()) @db.Uuid
+  toolGroupId      String      @db.Uuid
+  key              String      @unique
   name             String
   description      String
-  method           HttpMethod @default(GET)
-  path             String
-  parametersSchema Json?      @default("{}")
-  bodySchema       Json?      @default("{}")
-  responseSchema   Json?      @default("{}")
-  isActive         Boolean    @default(true)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  method           HttpMethod? @default(GET) // Nullable nếu là MCP tool
+  path             String?     @default("/call") // Nullable nếu là MCP tool
+  parametersSchema Json?       @default("{}") // Lưu JSON Schema inputSchema
+  bodySchema       Json?       @default("{}")
+  responseSchema   Json?       @default("{}")
+  isActive         Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   toolGroup ToolGroup @relation(fields: [toolGroupId], references: [id], onDelete: Cascade)
 

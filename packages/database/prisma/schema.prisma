@@ -7,38 +7,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
-enum PlatformType {
-  TELEGRAM
-  ZALO
-}
 
-enum ChannelAccountStatus {
-  ACTIVE
-  DISCONNECTED
-  EXPIRED
-}
-
-enum HttpMethod {
-  GET
-  POST
-  PUT
-  DELETE
-  PATCH
-}
-
-enum AuthType {
-  NONE
-  BEARER
-  API_KEY
-  BASIC
-  CUSTOM_HEADERS
-}
-
-enum AuditStatus {
-  SUCCESS
-  FAILED
-  REJECTED
-}
 
 model UserProfile {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -77,16 +46,16 @@ model Workspace {
 }
 
 model ChannelAccount {
-  id                   String               @id @default(uuid()) @db.Uuid
-  platform             PlatformType
-  accountName          String               @map("account_name")
-  authType             String               @map("auth_type")
-  encryptedCredentials String               @db.Text @map("encrypted_credentials")
-  status               ChannelAccountStatus @default(ACTIVE)
-  metadata             Json?                @default("{}")
-  lastSyncedAt         DateTime?            @map("last_synced_at")
-  createdAt            DateTime             @default(now()) @map("created_at")
-  updatedAt            DateTime             @updatedAt @map("updated_at")
+  id                   String    @id @default(uuid()) @db.Uuid
+  platform             String    @default("ZALO")
+  accountName          String    @map("account_name")
+  authType             String    @default("QR_SESSION") @map("auth_type")
+  encryptedCredentials String    @db.Text @map("encrypted_credentials")
+  status               String    @default("ACTIVE")
+  metadata             Json?     @default("{}")
+  lastSyncedAt         DateTime? @map("last_synced_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   channelChats ChannelChat[]
 
@@ -94,16 +63,16 @@ model ChannelAccount {
 }
 
 model ChannelChat {
-  id             String       @id @default(uuid()) @db.Uuid
-  accountId      String       @db.Uuid @map("account_id")
-  workspaceId    String?      @db.Uuid @map("workspace_id")
-  platform       PlatformType
-  platformChatId String       @map("platform_chat_id")
+  id             String    @id @default(uuid()) @db.Uuid
+  accountId      String    @db.Uuid @map("account_id")
+  workspaceId    String?   @db.Uuid @map("workspace_id")
+  platform       String    @default("ZALO")
+  platformChatId String    @map("platform_chat_id")
   title          String
-  chatType       String       @default("GROUP") @map("chat_type")
-  isActive       Boolean      @default(true) @map("is_active")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  chatType       String    @default("GROUP") @map("chat_type")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   account   ChannelAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   workspace Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
@@ -121,7 +90,7 @@ model ToolGroup {
   description       String?
   baseUrl           String?  @map("base_url")
   status            String   @default("active")
-  authType          AuthType @default(NONE) @map("auth_type")
+  authType          String   @default("NONE") @map("auth_type")
   defaultAuthConfig Json?    @default("{}") @map("default_auth_config")
   defaultHeaders    Json?    @default("{}") @map("default_headers")
   requiredVariables Json?    @default("[]") @map("required_variables")
@@ -141,7 +110,7 @@ model Tool {
   key              String      @unique
   name             String
   description      String?
-  method           HttpMethod? @default(GET)
+  method           String?     @default("GET")
   path             String?
   inputSchema      Json?       @map("input_schema")
   outputSchema     Json?       @map("output_schema")
@@ -201,7 +170,7 @@ model AuditLog {
   id             String       @id @default(uuid()) @db.Uuid
   workspaceId    String?      @db.Uuid @map("workspace_id")
   chatId         String?      @db.Uuid @map("chat_id")
-  platform       PlatformType?
+  platform       String?
   senderId       String?      @map("sender_id")
   userPrompt     String?      @db.Text @map("user_prompt")
   detectedIntent String?      @map("detected_intent")
@@ -209,7 +178,7 @@ model AuditLog {
   executionPlan  Json?        @default("[]") @map("execution_plan")
   toolCalls      Json?        @default("[]") @map("tool_calls")
   finalResponse  String?      @db.Text @map("final_response")
-  status         AuditStatus  @default(SUCCESS)
+  status         String       @default("SUCCESS")
   latencyMs      Int?         @map("latency_ms")
   createdAt      DateTime     @default(now()) @map("created_at")
 

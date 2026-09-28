@@ -35,14 +35,20 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
 ### Phân hệ 2: Tool & Skill Catalog (Kho Công cụ & Kỹ năng)
 * **Quản lý Tool Groups:**
   * Định danh nhóm công cụ (Key, Tên, Logo, Mô tả hệ thống).
-  * Cấu hình Base URL và loại xác thực mặc định (`NONE`, `BEARER_TOKEN`, `API_KEY`, `BASIC_AUTH`, `CUSTOM_HEADERS`).
+  * Hỗ trợ 2 chuẩn giao thức: **REST API** truyền thống và **Native MCP Server (Model Context Protocol)**.
+  * Cấu hình Base URL / Endpoint SSE và loại xác thực mặc định (`NONE`, `BEARER_TOKEN`, `API_KEY`, `BASIC_AUTH`, `CUSTOM_HEADERS`).
   * Định nghĩa danh sách các biến động (Dynamic Variables) mà hệ thống này yêu cầu, ví dụ: `API_KEY`, `TENANT_ID`, `BRANCH_CODE`.
-* **Quản lý Tools con (APIs cụ thể):**
+* **Cơ chế Import & Đồng bộ MCP Nhanh (MCP Hub):**
+  * Hỗ trợ dán trực tiếp cấu hình JSON chuẩn `mcpServers` (format Claude Desktop / Cursor) hoặc nhập URL endpoint SSE/HTTP.
+  * Tự động handshake và bóc tách danh sách Tool (`tools/list`) cùng inputSchema.
+  * Cho phép xem trước (Preview Table), lọc chọn Tool cần kích hoạt và bấm lưu vào kho Master.
+  * Nút "Đồng bộ từ Server" (On-demand Sync) giúp cập nhật tool mới mà không làm mất phân quyền và cấu hình Scoped Vault của các Workspace.
+* **Quản lý Tools con (APIs & MCP Tools):**
   * Định danh Tool (`tool_key`, `name`, `description`).
-  * Phương thức HTTP (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`).
-  * Đường dẫn tương đối (Path), ví dụ: `/api/v1/orders/{order_id}`.
-  * Schema tham số đầu vào (JSON Schema cho Headers, Query, Path Parameters, Body).
-  * Công cụ Test chạy thử (Interactive API Runner) ngay trên Dashboard.
+  * Phương thức: HTTP (`GET`, `POST`, ...) cho REST hoặc gọi trực tiếp giao thức MCP (`callTool`).
+  * Đường dẫn tương đối (Path cho REST) hoặc Function Name (cho MCP).
+  * Schema tham số đầu vào (JSON Schema cho Headers, Query, Path Parameters, Body hoặc MCP InputSchema).
+  * Công cụ Test chạy thử (Interactive API Runner / MCP Tool Runner) ngay trên Dashboard.
 * **Quản lý Skills:**
   * Định danh Skill (`skill_key`, `name`, `description`).
   * Cấu hình Intent Kích hoạt (Trigger Phrases / Keywords / Semantic Embedding).

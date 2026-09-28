@@ -59,6 +59,14 @@ Kế hoạch được chia nhỏ thành 5 Milestone tuần tự với các Ticke
   * Viết hàm `resolveWorkspaceFromChat(platform, platformChatId)`.
 * **Tiêu chuẩn nghiệm thu (DoD):** Unit test với dữ liệu đồ thị mẫu xác nhận đúng các Tool được phép/bị cấm.
 
+### [TASK-204] Xây dựng Native MCP Client Executor & Auto-Discovery
+* **Mục tiêu:** Kết nối MCP Server qua SSE/HTTP bằng `@modelcontextprotocol/sdk`, bóc tách schema và thực thi tool.
+* **Chi tiết công việc:**
+  * Viết parser bóc tách cấu hình JSON `mcpServers` (format Claude Desktop).
+  * Viết module `mcp-executor.ts` thực thi handshake và gọi `tools/list` để auto-discover tools.
+  * Tích hợp gọi `callTool` trực tiếp với timeout 15s và xử lý lỗi ngắt kết nối an toàn cho Worker Agent.
+* **Tiêu chuẩn nghiệm thu (DoD):** Kết nối thành công tới remote MCP SSE server, lấy đủ danh sách tool schema và chạy `callTool` trả về dữ liệu chuẩn.
+
 ---
 
 ## 🎯 Milestone 3: Channel Gateways & Hàng đợi Redis Streams
@@ -149,3 +157,11 @@ Kế hoạch được chia nhỏ thành 5 Milestone tuần tự với các Ticke
   * Bảng lọc theo Kênh, Workspace, Trạng thái.
   * Drawer hiển thị trực quan sơ đồ luồng: Inbound Msg $\rightarrow$ Router Decision $\rightarrow$ Worker Thought $\rightarrow$ Tool Calls Payload $\rightarrow$ Bot Response.
 * **Tiêu chuẩn nghiệm thu (DoD):** Admin xem được toàn bộ vết thực thi của một tin nhắn chat thực tế trên UI.
+
+### [TASK-505] Xây dựng UI Import Cấu hình MCP & Nút Đồng bộ (Sync Tools)
+* **Mục tiêu:** Giao diện Modal dán cấu hình JSON `mcpServers`, preview danh sách tool và nút đồng bộ thủ công.
+* **Chi tiết công việc:**
+  * Thêm Tab "Import MCP" trong form tạo Tool Group trên trang `/tools`.
+  * Hiển thị bảng Preview Tools nhận diện được (Tên, Mô tả, Schema) kèm Checkbox chọn lọc.
+  * Thêm nút "Sync Tools from Server" trên trang chi tiết ToolGroup `/tools/groups/[id]`.
+* **Tiêu chuẩn nghiệm thu (DoD):** Dán đoạn JSON config của `simplefinance`, fetch danh sách tool thành công và lưu vào CSDL.

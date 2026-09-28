@@ -201,42 +201,135 @@ export class ZaloChannelAdapter {
         try {
           console.log('[ZaloAdapter] loginQR resolved successfully!');
           
-          let accountName = sessionState.user?.name || 'Zalo Account';
-          let avatar = sessionState.user?.avatar || '';
+          let accountName = sessionState.user?.name || apiResult?.userInfo?.name || 'Zalo Account';
+          let avatar = sessionState.user?.avatar || apiResult?.userInfo?.avatar || '';
           let ownId = '';
 
-          if (apiResult && typeof (apiResult as any).getOwnId === 'function') {
-            ownId = (apiResult as any).getOwnId();
+          try {
+            if (apiResult && typeof (apiResult as any).getOwnId === 'function') {
+              ownId = (apiResult as any).getOwnId();
+            } else if (apiResult?.userInfo?.userId) {
+              ownId = String(apiResult.userInfo.userId);
+            } else if (apiResult?.userInfo?.uid) {
+              ownId = String(apiResult.userInfo.uid);
+            } else if (apiResult?.userInfo?.id) {
+              ownId = String(apiResult.userInfo.id);
+            } else if (capturedLoginInfo?.userId || capturedLoginInfo?.uid) {
+              ownId = String(capturedLoginInfo.userId || capturedLoginInfo.uid);
+            }
+          } catch (idErr) {
+            console.warn('[ZaloAdapter] Could not determine ownId:', idErr);
+          }
+
+          // Thử lấy thêm thông tin nếu tên còn chung chung
+          if ((!accountName || accountName === 'Zalo Account' || accountName === 'Zalo User') && ownId && typeof (apiResult as any)?.getUserInfo === 'function') {
+            try {
+              const uInfo = await (apiResult as any).getUserInfo(ownId);
+              const data = (uInfo as any)?.data || uInfo;
+              if (data?.display_name || data?.name) {
+                accountName = data.display_name || data.name;
+              }
+              if (data?.avatar) {
+                avatar = data.avatar;
+              }
+            } catch (uErr) {
+              console.warn('[ZaloAdapter] getUserInfo notice:', uErr);
+            }
           }
 
           // Lấy thông tin credentials
+          const rawCookies = capturedLoginInfo?.cookie 
+            || (apiResult as any)?.cookies 
+            || (apiResult as any)?.ctx?.cookie?.toJSON?.()?.cookies
+            || [];
+          const rawImei = capturedLoginInfo?.imei 
+            || (apiResult as any)?.ctx?.imei 
+            || (apiResult as any)?.imei 
+            || '';
+          const rawUserAgent = capturedLoginInfo?.userAgent 
+            || (apiResult as any)?.ctx?.userAgent 
+            || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0';
+
           const credentials = {
-            cookie: capturedLoginInfo?.cookie || (apiResult as any)?.cookies || [],
-            imei: capturedLoginInfo?.imei || '',
-            userAgent: capturedLoginInfo?.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+            cookie: rawCookies,
+            imei: rawImei,
+            userAgent: rawUserAgent,
           };
 
           const encryptedCredentials = encryptData(JSON.stringify(credentials));
 
-          // Lưu hoặc cập nhật tài khoản vào PostgreSQL
-          const account = await prisma.channelAccount.create({
-            data: {
-              platform: 'ZALO',
-              accountName,
-              authType: 'QR_SESSION',
-              encryptedCredentials,
-              status: 'ACTIVE',
-              metadata: {
-                zaloId: ownId,
-                avatar,
-                name: accountName,
-              },
-            },
+          // Tự động đảm bảo bảng channel_accounts tồn tại
+          try {
+            await prisma.$executeRawUnsafe(`
+              CREATE TABLE IF NOT EXISTS channel_accounts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                platform VARCHAR(50) DEFAULT 'ZALO',
+                account_name VARCHAR(255) NOT NULL,
+                auth_type VARCHAR(50) DEFAULT 'QR_SESSION',
+                encrypted_credentials TEXT NOT NULL,
+                status VARCHAR(50) DEFAULT 'ACTIVE',
+                metadata JSONB DEFAULT '{}',
+                last_synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+              );
+            `);
+          } catch (tableErr: any) {
+            console.warn('[ZaloAdapter] Notice ensuring channel_accounts table:', tableErr?.message);
+          }
+
+          // Kiểm tra xem tài khoản Zalo này đã từng được lưu hay chưa
+          const existingAccounts = await prisma.channelAccount.findMany({
+            where: { platform: 'ZALO' },
           });
+
+          const existing = existingAccounts.find((a: any) => {
+            const meta = a.metadata as any;
+            if (ownId && meta?.zaloId === ownId) return true;
+            if (accountName && a.accountName === accountName) return true;
+            return false;
+          });
+
+          let account;
+          if (existing) {
+            account = await prisma.channelAccount.update({
+              where: { id: existing.id },
+              data: {
+                accountName,
+                authType: 'QR_SESSION',
+                encryptedCredentials,
+                status: 'ACTIVE',
+                lastSyncedAt: new Date(),
+                metadata: {
+                  zaloId: ownId || (existing.metadata as any)?.zaloId || '',
+                  avatar: avatar || (existing.metadata as any)?.avatar || '',
+                  name: accountName,
+                },
+              },
+            });
+            console.log(`[ZaloAdapter] Existing account updated: ${account.id} (${accountName})`);
+          } else {
+            account = await prisma.channelAccount.create({
+              data: {
+                platform: 'ZALO',
+                accountName,
+                authType: 'QR_SESSION',
+                encryptedCredentials,
+                status: 'ACTIVE',
+                lastSyncedAt: new Date(),
+                metadata: {
+                  zaloId: ownId,
+                  avatar,
+                  name: accountName,
+                },
+              },
+            });
+            console.log(`[ZaloAdapter] Account created in PostgreSQL with ID: ${account.id} (${accountName})`);
+          }
 
           sessionState.accountId = account.id;
           sessionState.status = 'COMPLETED';
-          console.log(`[ZaloAdapter] Account created in PostgreSQL with ID: ${account.id} (${accountName})`);
+          console.log(`[ZaloAdapter] QR login finished successfully for account: ${account.id}`);
         } catch (saveErr: any) {
           console.error('[ZaloAdapter] Error saving Zalo account after QR scan:', saveErr);
           sessionState.status = 'ERROR';

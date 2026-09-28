@@ -173,6 +173,89 @@ Tất cả các API quản trị nội bộ đều tuân theo chuẩn RESTful JS
 }
 ```
 
+### 2.4. Bóc tách & Khảo sát Cấu hình MCP (Inspect MCP Config)
+* **Endpoint:** `POST /api/mcp/inspect`
+* **Request Payload:**
+```json
+{
+  "raw_config": {
+    "mcpServers": {
+      "simplefinance": {
+        "command": "npx",
+        "args": ["-y", "mcp-proxy", "https://financemcp.oa.io.vn/mcp.php"]
+      }
+    }
+  },
+  "default_auth_token": "Bearer my_secret_token"
+}
+```
+* **Response Status:** `200 OK`
+* **Response Payload:**
+```json
+{
+  "success": true,
+  "data": {
+    "server_name": "simplefinance",
+    "target_url": "https://financemcp.oa.io.vn/mcp.php",
+    "transport": "SSE",
+    "tools": [
+      {
+        "name": "get_account_balance",
+        "description": "Lấy số dư tài khoản theo mã tiền tệ",
+        "parameters_schema": {
+          "type": "object",
+          "properties": {
+            "currency": { "type": "string" }
+          },
+          "required": ["currency"]
+        }
+      }
+    ]
+  }
+}
+```
+
+### 2.5. Nhập Cấu hình MCP vào Kho Master (Import MCP ToolGroup)
+* **Endpoint:** `POST /api/mcp/import`
+* **Request Payload:**
+```json
+{
+  "key": "simplefinance",
+  "name": "SimpleFinance MCP Server",
+  "description": "Hệ thống quản lý tài chính doanh nghiệp",
+  "target_url": "https://financemcp.oa.io.vn/mcp.php",
+  "transport": "SSE",
+  "timeout_seconds": 15,
+  "default_auth_token": "Bearer my_secret_token",
+  "raw_config": { "mcpServers": { ... } },
+  "selected_tools": [
+    {
+      "key": "simplefinance_get_account_balance",
+      "name": "Lấy số dư tài khoản",
+      "description": "Lấy số dư tài khoản theo mã tiền tệ",
+      "parameters_schema": { ... }
+    }
+  ]
+}
+```
+* **Response Status:** `201 Created`
+
+### 2.6. Đồng bộ lại Tool từ MCP Server (On-Demand Sync)
+* **Endpoint:** `POST /api/tool-groups/{id}/mcp/sync`
+* **Response Status:** `200 OK`
+* **Response Payload:**
+```json
+{
+  "success": true,
+  "message": "MCP tools synced successfully",
+  "data": {
+    "total_tools": 5,
+    "added_tools": 1,
+    "updated_tools": 4
+  }
+}
+```
+
 ---
 
 ## 3. Phân hệ Workspace & Phân quyền (Workspace APIs)
