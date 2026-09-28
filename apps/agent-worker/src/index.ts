@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { getRedisClient, INBOUND_STREAM, CONSUMER_GROUP, initStreamGroup } from './redis.js';
 import { MessageDispatcher } from './dispatcher.js';
+import { ChannelGatewayManager } from './channel-manager.js';
 import type { InboundChatMessage } from '@omniagent/core';
 
 dotenv.config();
@@ -21,7 +22,13 @@ async function startAgentWorker(): Promise<void> {
 
   const dispatcher = new MessageDispatcher();
 
-  console.log(`[Worker] Listening for incoming chat messages...`);
+  // Khởi động các Kênh chat (Telegram Bots & Zalo Accounts) và Outbound Sender
+  const channelManager = new ChannelGatewayManager();
+  await channelManager.startAllChannels().catch((err) => {
+    console.error('[Worker] Error initializing channels:', err);
+  });
+
+  console.log(`[Worker] Listening for incoming chat messages on ${INBOUND_STREAM}...`);
 
   while (true) {
     try {
