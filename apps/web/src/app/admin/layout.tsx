@@ -12,6 +12,8 @@ import {
   SignOut,
   UserCircle,
   Gear,
+  ChatCircleDots,
+  ClockCounterClockwise,
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 
@@ -61,6 +63,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">Management</p>
           </div>
           <Link
+            href="/admin/channels"
+            className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+          >
+            <ChatCircleDots size={18} weight="duotone" />
+            <span>Kênh Liên Lạc</span>
+          </Link>
+          <Link
             href="/admin/workspaces"
             className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
           >
@@ -80,8 +89,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           {/* TASKS & MONITORING */}
           <div className="pt-4 pb-1">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">Tasks & Monitoring</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">Giám sát & Logs</p>
           </div>
+          <Link
+            href="/admin/audit-logs"
+            className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+          >
+            <ClockCounterClockwise size={18} weight="duotone" />
+            <span>Nhật Ký & Tracing</span>
+          </Link>
           <Link
             href="/admin/pending-tasks"
             className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
