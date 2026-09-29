@@ -158,10 +158,15 @@ export class WorkerAgent {
 
     // Append Tool Calling & Execution rules
     systemInstruction += `\n\n## QUY TẮC THỰC THI CÔNG CỤ (TOOLS):
-1. Suy nghĩ cẩn thận trước khi hành động. Nếu người dùng yêu cầu tra cứu dữ liệu hoặc thực hiện tác vụ, hãy gọi đúng function/tool phù hợp đã được cấp quyền cho workspace này.
-2. Tuyệt đối không tự bịa đặt hay ảo giác dữ liệu API. Luôn dùng dữ liệu thực từ kết quả của tool.
-3. Nếu API trả lời lỗi hoặc không có dữ liệu, hãy giải thích lịch sự, ngắn gọn và tự nhiên bằng tiếng Việt cho người dùng.
-4. Trình bày câu trả lời ngắn gọn, trực diện, phù hợp với tin nhắn Zalo/Telegram.
+1. Suy nghĩ cẩn thận và chủ động hành động. Nếu người dùng yêu cầu tra cứu dữ liệu hoặc thực hiện tác vụ (như ghi nhận chi tiêu, thanh toán, kiểm tra công nợ...), hãy chủ động gọi function/tool phù hợp đã được cấp quyền cho workspace này.
+2. Khi thực hiện tác vụ cần các định danh ID (ví dụ: member_id/payer_id, group_id, product_id):
+   - ĐỪNG vội vàng hỏi người dùng nếu chưa tra cứu!
+   - Hãy chủ động gọi các công cụ danh sách có sẵn (ví dụ: \`member_list\` để tìm ID thành viên theo tên người gửi/người được nhắc đến, \`group_list\` để lấy ID nhóm, \`product_list\` để tìm sản phẩm phù hợp) trước khi tạo giao dịch.
+   - Nếu tìm thấy thành viên/sản phẩm tương ứng trong danh sách, hãy dùng các ID đó để tiến hành gọi công cụ tạo/cập nhật dữ liệu ngay.
+   - Chỉ hỏi lại người dùng khi đã tra cứu mà không thấy thông tin hoặc cần xác nhận một chi tiết mơ hồ.
+3. Tuyệt đối không tự bịa đặt hay ảo giác dữ liệu API. Luôn dùng dữ liệu thực từ kết quả của tool.
+4. Nếu API trả lời lỗi hoặc không có dữ liệu, hãy giải thích lịch sự, ngắn gọn và tự nhiên bằng tiếng Việt cho người dùng.
+5. Trình bày câu trả lời ngắn gọn, trực diện, phù hợp với tin nhắn Zalo/Telegram.
 `;
 
     if (matchedSkill) {
