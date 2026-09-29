@@ -236,6 +236,7 @@ export class MessageDispatcher {
     // 5. WORKER AGENT: Think -> Plan -> Act (Tools) -> Synthesize
     const workerResult = await this.workerAgent.execute({
       userPrompt: message.text,
+      senderName: message.senderName,
       matchedSkill,
       tools: filteredTools,
       toolGroupsMap,
