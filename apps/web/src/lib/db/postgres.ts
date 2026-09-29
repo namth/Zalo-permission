@@ -357,44 +357,25 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
     `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP WITH TIME ZONE`,
     `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
-    `DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'accountName') THEN
-        ALTER TABLE channel_accounts ALTER COLUMN "accountName" DROP NOT NULL;
-        UPDATE channel_accounts SET account_name = "accountName" WHERE account_name IS NULL;
-        ALTER TABLE channel_accounts DROP COLUMN "accountName";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'authType') THEN
-        ALTER TABLE channel_accounts ALTER COLUMN "authType" DROP NOT NULL;
-        UPDATE channel_accounts SET auth_type = "authType" WHERE auth_type IS NULL;
-        ALTER TABLE channel_accounts DROP COLUMN "authType";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'encryptedCredentials') THEN
-        ALTER TABLE channel_accounts ALTER COLUMN "encryptedCredentials" DROP NOT NULL;
-        UPDATE channel_accounts SET encrypted_credentials = "encryptedCredentials" WHERE encrypted_credentials IS NULL;
-        ALTER TABLE channel_accounts DROP COLUMN "encryptedCredentials";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'lastSyncedAt') THEN
-        ALTER TABLE channel_accounts DROP COLUMN "lastSyncedAt";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'updatedAt') THEN
-        ALTER TABLE channel_accounts ALTER COLUMN "updatedAt" DROP NOT NULL;
-        UPDATE channel_accounts SET updated_at = "updatedAt" WHERE updated_at IS NULL;
-        ALTER TABLE channel_accounts DROP COLUMN "updatedAt";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_accounts' AND column_name = 'createdAt') THEN
-        ALTER TABLE channel_accounts ALTER COLUMN "createdAt" DROP NOT NULL;
-        UPDATE channel_accounts SET created_at = "createdAt" WHERE created_at IS NULL;
-        ALTER TABLE channel_accounts DROP COLUMN "createdAt";
-      END IF;
-    END $$;`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "accountName" VARCHAR(255)`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "authType" VARCHAR(50) DEFAULT 'QR_SESSION'`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "encryptedCredentials" TEXT`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "lastSyncedAt" TIMESTAMP WITH TIME ZONE`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE channel_accounts ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `UPDATE channel_accounts SET "accountName" = COALESCE("accountName", account_name), account_name = COALESCE(account_name, "accountName")`,
+    `UPDATE channel_accounts SET "authType" = COALESCE("authType", auth_type), auth_type = COALESCE(auth_type, "authType")`,
+    `UPDATE channel_accounts SET "encryptedCredentials" = COALESCE("encryptedCredentials", encrypted_credentials), encrypted_credentials = COALESCE(encrypted_credentials, "encryptedCredentials")`,
+    `UPDATE channel_accounts SET "lastSyncedAt" = COALESCE("lastSyncedAt", last_synced_at), last_synced_at = COALESCE(last_synced_at, "lastSyncedAt")`,
+    `UPDATE channel_accounts SET "createdAt" = COALESCE("createdAt", created_at), created_at = COALESCE(created_at, "createdAt")`,
+    `UPDATE channel_accounts SET "updatedAt" = COALESCE("updatedAt", updated_at), updated_at = COALESCE(updated_at, "updatedAt")`,
 
     // 11. CHANNEL_CHATS
     `CREATE TABLE IF NOT EXISTS channel_chats (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      account_id UUID NOT NULL,
+      account_id UUID,
       workspace_id UUID,
-      platform VARCHAR(50) NOT NULL,
+      platform VARCHAR(50) NOT NULL DEFAULT 'ZALO',
       platform_chat_id VARCHAR(255) NOT NULL,
       title VARCHAR(255) NOT NULL,
       chat_type VARCHAR(50) DEFAULT 'GROUP',
@@ -404,46 +385,28 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
       UNIQUE(platform, platform_chat_id)
     )`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS account_id UUID`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "accountId" UUID`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS workspace_id UUID`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "workspaceId" UUID`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS platform VARCHAR(50) DEFAULT 'ZALO'`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS platform_chat_id VARCHAR(255)`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "platformChatId" VARCHAR(255)`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS title VARCHAR(255)`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS chat_type VARCHAR(50) DEFAULT 'GROUP'`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "chatType" VARCHAR(50) DEFAULT 'GROUP'`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN DEFAULT true`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
     `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
-    `DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'accountId') THEN
-        ALTER TABLE channel_chats ALTER COLUMN "accountId" DROP NOT NULL;
-        UPDATE channel_chats SET account_id = "accountId" WHERE account_id IS NULL;
-        ALTER TABLE channel_chats DROP COLUMN "accountId";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'workspaceId') THEN
-        ALTER TABLE channel_chats DROP COLUMN "workspaceId";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'platformChatId') THEN
-        ALTER TABLE channel_chats ALTER COLUMN "platformChatId" DROP NOT NULL;
-        UPDATE channel_chats SET platform_chat_id = "platformChatId" WHERE platform_chat_id IS NULL;
-        ALTER TABLE channel_chats DROP COLUMN "platformChatId";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'chatType') THEN
-        ALTER TABLE channel_chats DROP COLUMN "chatType";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'isActive') THEN
-        ALTER TABLE channel_chats DROP COLUMN "isActive";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'updatedAt') THEN
-        ALTER TABLE channel_chats ALTER COLUMN "updatedAt" DROP NOT NULL;
-        UPDATE channel_chats SET updated_at = "updatedAt" WHERE updated_at IS NULL;
-        ALTER TABLE channel_chats DROP COLUMN "updatedAt";
-      END IF;
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'channel_chats' AND column_name = 'createdAt') THEN
-        ALTER TABLE channel_chats ALTER COLUMN "createdAt" DROP NOT NULL;
-        UPDATE channel_chats SET created_at = "createdAt" WHERE created_at IS NULL;
-        ALTER TABLE channel_chats DROP COLUMN "createdAt";
-      END IF;
-    END $$;`,
+    `ALTER TABLE channel_chats ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`,
+    `UPDATE channel_chats SET "accountId" = COALESCE("accountId", account_id), account_id = COALESCE(account_id, "accountId")`,
+    `UPDATE channel_chats SET "workspaceId" = COALESCE("workspaceId", workspace_id), workspace_id = COALESCE(workspace_id, "workspaceId")`,
+    `UPDATE channel_chats SET "platformChatId" = COALESCE("platformChatId", platform_chat_id), platform_chat_id = COALESCE(platform_chat_id, "platformChatId")`,
+    `UPDATE channel_chats SET "chatType" = COALESCE("chatType", chat_type), chat_type = COALESCE(chat_type, "chatType")`,
+    `UPDATE channel_chats SET "isActive" = COALESCE("isActive", is_active), is_active = COALESCE(is_active, "isActive")`,
+    `UPDATE channel_chats SET "createdAt" = COALESCE("createdAt", created_at), created_at = COALESCE(created_at, "createdAt")`,
+    `UPDATE channel_chats SET "updatedAt" = COALESCE("updatedAt", updated_at), updated_at = COALESCE(updated_at, "updatedAt")`,
 
     // 12. WORKSPACE_TOOL_CONFIGS
     `CREATE TABLE IF NOT EXISTS workspace_tool_configs (
