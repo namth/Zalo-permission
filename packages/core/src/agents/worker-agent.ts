@@ -101,8 +101,9 @@ export interface WorkerExecutionResult {
 export class WorkerAgent {
   private openai: OpenAI;
   private modelId: string;
+  private synthesizerModelId?: string;
 
-  constructor(apiKey?: string, modelId?: string) {
+  constructor(apiKey?: string, modelId?: string, synthesizerModelId?: string) {
     const key = apiKey || process.env.OPENROUTER_API_KEY || 'dummy_key';
     const baseURL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 
@@ -115,7 +116,8 @@ export class WorkerAgent {
       },
     });
 
-    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'anthropic/claude-3.5-sonnet';
+    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'google/gemini-2.0-flash';
+    this.synthesizerModelId = synthesizerModelId || process.env.SYNTHESIZER_MODEL_ID;
   }
 
   /**
@@ -278,10 +280,85 @@ export class WorkerAgent {
       finalAnswer = 'Đã hoàn tất gọi công cụ nhưng chưa có phản hồi tổng hợp.';
     }
 
+    // 2-Phase Agent Pipeline: Nếu có SYNTHESIZER_MODEL_ID (ví dụ: deepseek/deepseek-chat)
+    // Chuyển kết quả thô sang Persona Synthesizer Agent để gọt giũa văn phong tiếng Việt cảm xúc
+    if (this.synthesizerModelId && (toolExecutions.length > 0 || finalAnswer)) {
+      try {
+        const polished = await this.synthesizeWithPersona({
+          userPrompt,
+          senderName,
+          toolExecutions,
+          rawDraft: finalAnswer,
+        });
+
+        if (polished) {
+          finalAnswer = polished;
+          plan.push({
+            step: currentStep + 1,
+            action: 'PERSONA_SYNTHESIZE',
+            description: `Polished emotional Vietnamese response with Synthesizer Agent (${this.synthesizerModelId}).`,
+            output: finalAnswer,
+          });
+        }
+      } catch (synthErr) {
+        console.warn('[WorkerAgent] Synthesizer Agent encountered error, falling back to raw output:', synthErr);
+      }
+    }
+
     return {
       finalResponse: finalAnswer,
       plan,
       toolCalls: toolExecutions,
     };
+  }
+
+  /**
+   * Persona Synthesizer Agent: Chuyên trách gọt giũa văn phong, tạo câu trả lời tiếng Việt cảm xúc
+   * theo Persona Thảo Chi INOVA (xưng em, gọi anh/chị theo tên thật).
+   */
+  private async synthesizeWithPersona(options: {
+    userPrompt: string;
+    senderName?: string;
+    toolExecutions: ToolExecutionResult[];
+    rawDraft: string;
+  }): Promise<string> {
+    const { userPrompt, senderName, toolExecutions, rawDraft } = options;
+
+    const toolSummaries = toolExecutions.map((t) => ({
+      tool: t.toolKey,
+      status: t.statusCode,
+      result: t.responseBody,
+    }));
+
+    const systemInstruction = `${DEFAULT_AGENT_PERSONA}
+
+## NHIỆM VỤ ĐẶC BIỆT CỦA BẠN:
+Bạn là Thảo Chi, trợ lý ảo thông minh, nhanh nhẹn và tâm lý của công ty Công Nghệ INOVA.
+Nhiệm vụ của bạn là đọc kết quả thô từ các công cụ (Tools) đã thực thi ở bước trước và câu hỏi của người dùng để biên soạn câu trả lời gửi đến người dùng:
+1. Luôn giao tiếp bằng tiếng Việt tự nhiên, ấm áp, ngắn gọn, lịch sự, linh hoạt.
+2. TUYỆT ĐỐI tuân thủ quy tắc xưng hô: Luôn tự xưng "em" và gọi người dùng là "anh" (nếu là nam hoặc không rõ) hoặc "chị" kèm tên thật của họ (ví dụ: "anh ${senderName || 'Nam'}").
+3. Tóm lược rõ ràng các số liệu, kết quả (số tiền, công nợ, ai trả, ai chia...) một cách dễ hiểu, trực diện, không nói vòng vo.
+4. Trình bày thoáng, định dạng tin nhắn đẹp mắt, điểm xuyết một vài emoji phù hợp cho khung chat Zalo/Telegram.`;
+
+    const userContent = `Tên người gửi: ${senderName || 'Người dùng'}
+Tin nhắn yêu cầu gốc: "${userPrompt}"
+Kết quả thực thi từ hệ thống/công cụ:
+${JSON.stringify(toolSummaries, null, 2)}
+
+Bản nháp tóm tắt ban đầu:
+${rawDraft || 'Không có'}
+
+Hãy viết lại câu trả lời hoàn chỉnh, tràn đầy cảm xúc và chuẩn mực theo phong cách trợ lý Thảo Chi:`;
+
+    const completion = await this.openai.chat.completions.create({
+      model: this.synthesizerModelId!,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: userContent },
+      ],
+      temperature: 0.3,
+    });
+
+    return completion.choices[0]?.message?.content?.trim() || rawDraft;
   }
 }

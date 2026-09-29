@@ -94,7 +94,7 @@ export interface ToolExecutionResult {
 
 export interface ExecutionPlanStep {
   step: number;
-  action: 'THINK' | 'CALL_TOOL' | 'SYNTHESIZE';
+  action: 'THINK' | 'CALL_TOOL' | 'SYNTHESIZE' | 'PERSONA_SYNTHESIZE';
   description: string;
   toolKey?: string;
   input?: Record<string, unknown>;

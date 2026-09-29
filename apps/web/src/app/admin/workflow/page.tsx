@@ -38,6 +38,7 @@ interface WorkflowStats {
     company: string;
     routerModel: string;
     workerModel: string;
+    synthesizerModel?: string;
     inboundStream: string;
     outboundStream: string;
     personaSummary: string;
@@ -80,16 +81,16 @@ export default function WorkflowPage() {
   const runSimulation = async () => {
     setSimulating(true);
     setSimStep(1);
-    setSimLogs(['[Bước 1] Nhận tin nhắn từ Zalo Thread ID 3853225907523031713...']);
+    setSimLogs(['[Bước 1] Kênh Zalo/Telegram nhận tin nhắn: "' + simPrompt + '"']);
 
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 500));
     setSimStep(2);
     setSimLogs((prev) => [
       ...prev,
       `[Bước 2] ChannelGatewayManager xác thực gói tin: Sender "${simSender}" -> Đẩy vào Redis Stream "${data?.agent.inboundStream || 'stream:inbound_messages'}"`,
     ]);
 
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 600));
     setSimStep(3);
     setSimLogs((prev) => [
       ...prev,
@@ -97,29 +98,41 @@ export default function WorkflowPage() {
       `[Bước 3] Phân quyền 2 tầng: Nạp 20 tools thuộc nhóm "SimpleFinance MCP Service", biến môi trường đã giải mã an toàn.`,
     ]);
 
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 600));
     setSimStep(4);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 4] Router Agent (${data?.agent.routerModel || 'gemini-2.0-flash'}): Phân loại intent = "finance_query" (độ tin cậy: 98%), đề xuất nhóm Finance.`,
-      `[Bước 4] Worker Agent (${data?.agent.workerModel || 'claude-3.5-sonnet'}): Áp dụng Persona Thảo Chi (Xưng "em", gọi "anh ${simSender}").`,
+      `[Bước 4 - AI 1: ROUTER] Router Agent (${data?.agent.routerModel || 'gemini-2.0-flash'}): Phân loại intent = "simplefinance_transaction_create" (~180ms), đề xuất nhóm công cụ SimpleFinance.`,
     ]);
 
-    await new Promise((r) => setTimeout(r, 900));
+    await new Promise((r) => setTimeout(r, 700));
     setSimStep(5);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 5] Worker gọi Tool "check_balance(month: 9, year: 2026)" -> Trả về kết quả: Số dư 425.000.000 VND.`,
-      `[Bước 5] Tổng hợp câu trả lời theo đúng phong cách tự nhiên, ngắn gọn.`,
+      `[Bước 5 - AI 2: TOOL WORKER] Tool Worker Agent (${data?.agent.workerModel || 'openai/gpt-4o-mini'}): Lập kế hoạch ReAct, phát hiện thiếu ID thành viên -> Chủ động sinh lệnh gọi Function Calling: member_list, group_list.`,
     ]);
 
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 700));
     setSimStep(6);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 6] Đẩy phản hồi ra Redis Stream "${data?.agent.outboundStream || 'stream:outbound_messages'}" -> ZaloAdapter gửi lại nhóm Zalo!`,
-      `[Bước 6] Ghi nhật ký Audit Log vào PostgreSQL (Thời gian xử lý: ~850ms, Trạng thái: SUCCESS).`,
-      `✨ Thảo Chi phản hồi: "Dạ số dư quỹ tháng này của bên mình hiện là 425 triệu anh ${simSender} nhé ạ!"`,
+      `[Bước 6 - HỆ THỐNG: EXECUTION ENGINE] HTTP REST / Native MCP Server: Thực thi tools/call đến MCP Server -> Trả về kết quả: Nam (ID: 1), Trung (ID: 2). Tool Worker tiếp tục gọi transaction_create(payer: 1, amount: 60k).`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 700));
+    setSimStep(7);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 7 - AI 3: PERSONA SYNTHESIZER] Persona Synthesizer Agent (${data?.agent.synthesizerModel || 'deepseek/deepseek-chat'}): Đọc dữ liệu thô từ Step 6 + Persona Thảo Chi INOVA -> Thổi hồn cảm xúc tiếng Việt, xưng "em", gọi "anh ${simSender}", tính nợ chia đôi 30k.`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 500));
+    setSimStep(8);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 8 - GIAO VẬN & AUDIT] Đẩy câu trả lời ra Redis Stream "${data?.agent.outboundStream || 'stream:outbound_messages'}" -> ZaloAdapter gửi lại nhóm Zalo!`,
+      `[Bước 8] Ghi nhật ký Audit Log vào PostgreSQL (Tổng thời gian xử lý: ~720ms, Trạng thái: SUCCESS).`,
+      `✨ Thảo Chi phản hồi: "Dạ xong rồi anh ${simSender} ơi! Em đã ghi nhận khoản trà 60k cho 2 anh rồi nhé, hiện anh Trung đang nợ anh 30k ạ! 😊"`,
     ]);
 
     setSimulating(false);
@@ -129,7 +142,7 @@ export default function WorkflowPage() {
     'inbound': {
       title: '1. Kênh Nhắn Tin (Inbound Channels)',
       subtitle: 'Tiếp nhận sự kiện từ Zalo Group / Telegram Bot',
-      tag: 'Channel Layer',
+      tag: 'Hạ Tầng Kênh',
       tech: 'zca-js (Zalo QR Session / OA Secret) & grammy (Telegram)',
       desc: 'Lắng nghe các tin nhắn từ nhóm chat hoặc chat cá nhân. Khi có tin nhắn, adapter bóc tách GroupMessage/UserMessage, lấy senderId, senderName, platformChatId và nội dung text.',
       inputs: ['Sự kiện WebSocket từ Zalo Web API', 'Webhook / Long-polling từ Telegram Bot API'],
@@ -139,7 +152,7 @@ export default function WorkflowPage() {
     'queue': {
       title: '2. Hàng Đợi & Điều Phối (Gateway & Redis Streams)',
       subtitle: 'Đệm tin nhắn phi đồng bộ, chịu tải cao',
-      tag: 'Message Broker',
+      tag: 'Hàng Đợi Thông Điệp',
       tech: 'Redis Streams (stream:inbound_messages) & Consumer Groups',
       desc: 'Tin nhắn sau khi chuẩn hoá được ChannelGatewayManager đẩy vào Redis Stream. Nhóm worker agent_workers sẽ phân phối cho các tiến trình nền xử lý phi đồng bộ, đảm bảo không nghẽn tin nhắn kể cả khi chat liên tục trong nhiều nhóm.',
       inputs: ['InboundChatMessage từ Channel Gateway'],
@@ -149,47 +162,57 @@ export default function WorkflowPage() {
     'memory': {
       title: '3. Bộ Nhớ Đồ Thị & Phân Quyền (Neo4j & Postgres)',
       subtitle: 'Phân giải không gian làm việc & kiểm soát quyền 2 tầng',
-      tag: 'Memory & RBAC',
+      tag: 'Đồ Thị & RBAC',
       tech: 'Neo4j Cypher Graph & PostgreSQL Relational DB',
       desc: 'Từ ID nhóm chat, hệ thống truy vấn đồ thị quan hệ để xác định Workspace tương ứng. Sau đó trích xuất toàn bộ Kỹ Năng (Skill SOPs), Nhóm Công Cụ (Tool Groups) và Tool được cấp quyền, đồng thời giải mã các biến môi trường cấu hình (API Key, Bearer token) cho workspace.',
       inputs: ['platformChatId, platform, workspaceId'],
       outputs: ['accessibleSkills[], accessibleTools[], scopedVariablesMap (Decrypted)'],
       codeRef: 'apps/agent-worker/src/dispatcher.ts & packages/database',
     },
-    'router': {
-      title: '4. Router Agent (Bộ Định Tuyến Ý Định)',
-      subtitle: 'Nhận diện nhanh ý định và gán Skill / Tool Group phù hợp',
-      tag: 'Fast Classification',
-      tech: 'Google Gemini 2.0 Flash (Tốc độ phản hồi cực nhanh ~200ms)',
-      desc: 'Đọc prompt của người dùng cùng danh sách mô tả Skills và Tool Groups của Workspace. Phân loại ý định (chitchat, nghiệp vụ, tra cứu...) và chỉ kích hoạt đúng các công cụ liên quan để tối ưu token và độ chính xác.',
-      inputs: ['userPrompt, accessibleSkills, accessibleToolGroups'],
+    'router-agent': {
+      title: '4. [AI Agent 1] Router Agent (Định Tuyến Ý Định)',
+      subtitle: 'Phân loại nhanh ý định & chọn đúng Tool Groups / Skills',
+      tag: 'AI Agent #1 (Classifier)',
+      tech: 'Google Gemini 2.0 Flash (Tốc độ phản hồi ~180ms, chi phí siêu rẻ)',
+      desc: 'Agent thứ nhất trong quy trình. Đọc câu hỏi của người dùng cùng tóm tắt danh mục Tool Groups và Skills của Workspace. Phân loại chuẩn xác ý định (ghi chi tiêu, tra cứu nợ, quản lý thành viên, hay chitchat) và lọc đúng nhóm công cụ cần thiết, tiết kiệm token cho các bước sau.',
+      inputs: ['userPrompt, accessibleSkills, accessibleToolGroups kèm danh sách tools'],
       outputs: ['RouterDecision { intent, isSkillMatched, matchedSkillId, recommendedToolGroups, confidence }'],
       codeRef: 'packages/core/src/agents/router-agent.ts',
     },
-    'agent-worker': {
-      title: '5. Worker Agent (Bộ Não AI Thảo Chi)',
-      subtitle: 'Vòng lặp ReAct Think-Plan-Act & Persona Thảo Chi INOVA',
-      tag: 'Agent Core',
-      tech: 'Claude 3.5 Sonnet / OpenRouter + Persona Thảo Chi Tiếng Việt',
-      desc: 'Bộ não chính của trợ lý Thảo Chi (công ty Công Nghệ INOVA). Tự động xưng "em" và gọi người dùng "anh/chị" theo tên. Thực hiện vòng lặp suy luận: Phân tích ➜ Lập kế hoạch (Plan) ➜ Gọi Tools (Act) ➜ Đọc kết quả ➜ Tổng hợp câu trả lời tự nhiên, ngắn gọn.',
-      inputs: ['userPrompt, senderName context, matchedSkill SOP, accessibleTools, scopedVariables'],
-      outputs: ['finalResponse (tiếng Việt tự nhiên), plan[], toolCalls[]'],
+    'tool-worker': {
+      title: '5. [AI Agent 2] Action / Tool Worker Agent (Lập Kế Hoạch & Gọi Hàm)',
+      subtitle: 'Vòng lặp ReAct, tự động suy luận tham số & phát sinh Function Calling',
+      tag: 'AI Agent #2 (Function Caller)',
+      tech: 'OpenAI GPT-4o Mini / Gemini 2.0 Flash (Độ chuẩn xác Schema tuyệt đối)',
+      desc: 'Agent thứ hai trong quy trình. Chuyên trách về logic kỹ thuật và Function Calling. Thực hiện vòng lặp suy luận ReAct: phân tích tham số cần thiết, tự động tra cứu danh sách ID thành viên/sản phẩm nếu thiếu, và phát sinh các lệnh gọi công cụ có cấu trúc chuẩn xác.',
+      inputs: ['userPrompt, senderName context, matchedSkill SOP, filteredTools, scopedVariables'],
+      outputs: ['toolCalls[] (Danh sách lệnh gọi hàm có tham số JSON)'],
       codeRef: 'packages/core/src/agents/worker-agent.ts',
     },
-    'tools': {
-      title: '6. Tầng Thực Thi Công Cụ (Tools & MCP Layer)',
-      subtitle: 'Gọi API dịch vụ ngoài & Thực thi Model Context Protocol',
-      tag: 'Execution Engine',
-      tech: 'Axios REST Client & Model Context Protocol (MCP Client)',
-      desc: 'Thực thi các lệnh gọi công cụ được Agent yêu cầu. Tự động tiêm các biến bảo mật (API keys, scoped tokens) đã mã hoá, thực hiện HTTP REST hoặc MCP Tool, bảo đảm an toàn dữ liệu và mask các header nhạy cảm trong nhật ký kiểm toán.',
-      inputs: ['ToolKey, Arguments, BaseUrl, ScopedHeaders'],
-      outputs: ['ToolExecutionResult { toolKey, status, executionTimeMs, responseData }'],
+    'tool-engine': {
+      title: '6. [Hệ Thống] Tầng Thực Thi Công Cụ (Execution Engine)',
+      subtitle: 'Thực thi mã máy gọi REST API & Model Context Protocol (MCP)',
+      tag: 'Execution Engine (Non-AI)',
+      tech: 'Axios HTTP REST & JSON-RPC Model Context Protocol (MCP Client)',
+      desc: 'Không phải AI suy đoán mà là engine phần mềm thực thi thực tế. Nhận lệnh từ Agent 2, tiêm biến môi trường bảo mật đã giải mã (Bearer token, API key), gọi đến máy chủ API ngoài hoặc MCP Server nội bộ (https://financemcp.oa.io.vn/mcp.php), trả về kết quả dữ liệu thô (raw JSON).',
+      inputs: ['ToolKey, InputArguments, TargetUrl, ScopedHeaders'],
+      outputs: ['ToolExecutionResult { toolKey, statusCode, responseBody, latencyMs }'],
       codeRef: 'packages/core/src/tools/executor.ts & mcp-executor.ts',
     },
+    'persona-synthesizer': {
+      title: '7. [AI Agent 3] Persona Synthesizer Agent (Biên Soạn & Cảm Xúc)',
+      subtitle: 'Thổi hồn cảm xúc tiếng Việt & Persona Trợ Lý Thảo Chi INOVA',
+      tag: 'AI Agent #3 (Communicator)',
+      tech: 'DeepSeek-V3 (deepseek/deepseek-chat) - Văn phong tiếng Việt đỉnh cao',
+      desc: 'Agent thứ ba trong quy trình. Nhận dữ liệu kết quả thô từ Step 6 kết hợp với Persona Thảo Chi INOVA để biên soạn câu trả lời hoàn chỉnh: luôn tự xưng "em", gọi "anh/chị" theo tên thật, giải thích số liệu rành mạch, tính toán công nợ rõ ràng và diễn đạt ấm áp, tự nhiên như người Việt.',
+      inputs: ['userPrompt, senderName, rawToolResults[], rawDraft, DEFAULT_AGENT_PERSONA'],
+      outputs: ['finalResponse (Câu trả lời tiếng Việt hoàn chỉnh, lịch sự, chuẩn mực)'],
+      codeRef: 'packages/core/src/agents/worker-agent.ts (synthesizeWithPersona)',
+    },
     'outbound': {
-      title: '7. Trả Lời & Kiểm Toán (Outbound Sender & Audit)',
-      subtitle: 'Gửi kết quả ngược về nhóm chat & ghi log kiểm toán',
-      tag: 'Delivery & Audit',
+      title: '8. Giao Vận & Kiểm Toán (Outbound Sender & Audit Trail)',
+      subtitle: 'Gửi kết quả về nhóm Zalo/Telegram & lưu trữ Audit Log',
+      tag: 'Giao Vận & Kiểm Toán',
       tech: 'Redis Stream (stream:outbound_messages) & PostgreSQL audit_logs',
       desc: 'Câu trả lời cuối cùng được đẩy vào stream:outbound_messages. Tiến trình Outbound Sender sử dụng đúng tài khoản kênh (Zalo/Telegram) để gửi lại vào nhóm chat. Đồng thời một bản ghi Audit Log được tạo với đầy đủ kế hoạch thực thi, latency và công cụ đã gọi.',
       inputs: ['finalResponse, platformChatId, accountId, toolCalls, latencyMs'],
@@ -198,7 +221,7 @@ export default function WorkflowPage() {
     },
   };
 
-  const selected = nodeDetails[selectedNode] || nodeDetails['agent-worker'];
+  const selected = nodeDetails[selectedNode] || nodeDetails['tool-worker'];
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
@@ -231,6 +254,10 @@ export default function WorkflowPage() {
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
             <span className="w-2 h-2 rounded-full bg-purple-500"></span>
             Agent: Thảo Chi (INOVA)
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+            <Sparkle size={14} className="text-amber-600" weight="fill" />
+            3 AI Agents: Router + Tool Worker + Synthesizer
           </span>
           <button
             onClick={fetchStats}
@@ -379,27 +406,27 @@ export default function WorkflowPage() {
                 <ArrowRight size={20} className="animate-pulse text-indigo-400" />
               </div>
 
-              {/* NODE 4: AI Agent Brain (Thảo Chi) */}
+              {/* NODE 4: [AI AGENT 1] Router Agent */}
               <div
-                onClick={() => setSelectedNode('agent-worker')}
-                className={`cursor-pointer min-w-[220px] flex-1 rounded-xl p-4 border transition-all ${
-                  selectedNode === 'agent-worker'
-                    ? 'bg-indigo-950/90 border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/20'
+                onClick={() => setSelectedNode('router-agent')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'router-agent'
+                    ? 'bg-cyan-950/90 border-cyan-400 ring-2 ring-cyan-500/50 shadow-lg shadow-cyan-500/20'
                     : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400">
-                    <Cpu size={22} weight="duotone" />
+                  <div className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400">
+                    <Lightning size={22} weight="duotone" />
                   </div>
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-                    Step 4 (Core)
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                    Step 4 (AI #1)
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-indigo-200">Trợ Lý Thảo Chi (AI)</h3>
-                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Router Agent ➜ Worker Agent (ReAct Loop)</p>
-                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-indigo-300">
-                  <span className="font-medium">Claude 3.5 + Gemini</span>
+                <h3 className="font-semibold text-sm text-cyan-200">Router Agent</h3>
+                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Định tuyến & Lọc Tool Group (~180ms)</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-cyan-300">
+                  <span className="font-medium">{data?.agent?.routerModel || 'Gemini 2.0 Flash'}</span>
                   <CaretRight size={12} />
                 </div>
               </div>
@@ -409,11 +436,41 @@ export default function WorkflowPage() {
                 <ArrowRight size={20} className="animate-pulse text-indigo-400" />
               </div>
 
-              {/* NODE 5: Tools & MCP Execution */}
+              {/* NODE 5: [AI AGENT 2] Tool Worker Agent */}
               <div
-                onClick={() => setSelectedNode('tools')}
+                onClick={() => setSelectedNode('tool-worker')}
                 className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
-                  selectedNode === 'tools'
+                  selectedNode === 'tool-worker'
+                    ? 'bg-indigo-950/90 border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400">
+                    <Cpu size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                    Step 5 (AI #2)
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-indigo-200">Tool Worker Agent</h3>
+                <p className="text-xs text-slate-300 mt-1 line-clamp-2">ReAct Loop & Function Calling (JSON)</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-indigo-300">
+                  <span className="font-medium">{data?.agent?.workerModel || 'GPT-4o Mini'}</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 6: [HỆ THỐNG] Execution Engine */}
+              <div
+                onClick={() => setSelectedNode('tool-engine')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'tool-engine'
                     ? 'bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/50 shadow-lg shadow-emerald-500/20'
                     : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
                 }`}
@@ -423,11 +480,11 @@ export default function WorkflowPage() {
                     <Wrench size={22} weight="duotone" />
                   </div>
                   <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                    Step 5
+                    Step 6 (Engine)
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-slate-100">Thực Thi Công Cụ</h3>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">REST API & Native MCP Service</p>
+                <h3 className="font-semibold text-sm text-slate-100">Thực Thi Tools (REST/MCP)</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Gọi máy chủ API & trả Raw JSON</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-emerald-300">
                   <span>{data?.metrics?.totalTools || 20} Tools</span>
                   <CaretRight size={12} />
@@ -439,26 +496,56 @@ export default function WorkflowPage() {
                 <ArrowRight size={20} className="animate-pulse text-indigo-400" />
               </div>
 
-              {/* NODE 6: Outbound Delivery & Audit */}
+              {/* NODE 7: [AI AGENT 3] Persona Synthesizer */}
               <div
-                onClick={() => setSelectedNode('outbound')}
-                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
-                  selectedNode === 'outbound'
-                    ? 'bg-rose-950/80 border-rose-400 ring-2 ring-rose-500/50 shadow-lg shadow-rose-500/20'
+                onClick={() => setSelectedNode('persona-synthesizer')}
+                className={`cursor-pointer min-w-[210px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'persona-synthesizer'
+                    ? 'bg-rose-950/90 border-rose-400 ring-2 ring-rose-500/50 shadow-lg shadow-rose-500/20'
                     : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
-                    <PaperPlaneTilt size={22} weight="duotone" />
+                    <Sparkle size={22} weight="duotone" />
                   </div>
                   <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30">
-                    Step 6
+                    Step 7 (AI #3)
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-slate-100">Trả Lời & Audit Log</h3>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Gửi về Zalo & ghi nhận PostgreSQL</p>
+                <h3 className="font-semibold text-sm text-rose-200">Persona Synthesizer</h3>
+                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Thổi hồn cảm xúc tiếng Việt Thảo Chi</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-rose-300">
+                  <span className="font-medium">{data?.agent?.synthesizerModel || 'DeepSeek-V3'}</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 8: Outbound Delivery & Audit */}
+              <div
+                onClick={() => setSelectedNode('outbound')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'outbound'
+                    ? 'bg-slate-900 border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-slate-700 text-slate-300">
+                    <PaperPlaneTilt size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-700/60 text-slate-300 border border-slate-600">
+                    Step 8
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Giao Vận & Audit Log</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Gửi về Zalo & lưu PostgreSQL</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-indigo-300">
                   <span>Audit Tracing</span>
                   <CaretRight size={12} />
                 </div>
