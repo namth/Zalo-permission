@@ -1,0 +1,810 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import {
+  ChatCircleDots,
+  Queue,
+  TreeStructure,
+  Cpu,
+  Wrench,
+  PaperPlaneTilt,
+  ClockCounterClockwise,
+  CheckCircle,
+  ArrowRight,
+  ArrowsClockwise,
+  Sparkle,
+  ShieldCheck,
+  Database,
+  Lightning,
+  Play,
+  Info,
+  CaretRight,
+  Code,
+  Check,
+} from '@phosphor-icons/react';
+
+interface WorkflowStats {
+  channels: any[];
+  workspaces: any[];
+  metrics: {
+    totalToolGroups: number;
+    totalTools: number;
+    activeChannels: number;
+    totalWorkspaces: number;
+  };
+  agent: {
+    name: string;
+    company: string;
+    routerModel: string;
+    workerModel: string;
+    inboundStream: string;
+    outboundStream: string;
+    personaSummary: string;
+  };
+  recentLogs: any[];
+}
+
+export default function WorkflowPage() {
+  const [data, setData] = useState<WorkflowStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedNode, setSelectedNode] = useState<string>('agent-worker');
+  const [activeTab, setActiveTab] = useState<'diagram' | 'simulator' | 'traces'>('diagram');
+
+  // Simulator state
+  const [simPrompt, setSimPrompt] = useState('Chi ơi, kiểm tra số dư quỹ tháng này giúp anh với');
+  const [simSender, setSimSender] = useState('Nam Trần');
+  const [simulating, setSimulating] = useState(false);
+  const [simStep, setSimStep] = useState<number>(0);
+  const [simLogs, setSimLogs] = useState<string[]>([]);
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/admin/workflow/stats');
+      const json = await res.json();
+      if (json.success) {
+        setData(json.data);
+      }
+    } catch (e) {
+      console.error('Failed to load workflow stats:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const runSimulation = async () => {
+    setSimulating(true);
+    setSimStep(1);
+    setSimLogs(['[Bước 1] Nhận tin nhắn từ Zalo Thread ID 3853225907523031713...']);
+
+    await new Promise((r) => setTimeout(r, 600));
+    setSimStep(2);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 2] ChannelGatewayManager xác thực gói tin: Sender "${simSender}" -> Đẩy vào Redis Stream "${data?.agent.inboundStream || 'stream:inbound_messages'}"`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 700));
+    setSimStep(3);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 3] Neo4j Graph Query: Match (ZaloGroup {thread_id}) -> Tìm thấy Workspace "INOVA Technology Workspace".`,
+      `[Bước 3] Phân quyền 2 tầng: Nạp 20 tools thuộc nhóm "SimpleFinance MCP Service", biến môi trường đã giải mã an toàn.`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 800));
+    setSimStep(4);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 4] Router Agent (${data?.agent.routerModel || 'gemini-2.0-flash'}): Phân loại intent = "finance_query" (độ tin cậy: 98%), đề xuất nhóm Finance.`,
+      `[Bước 4] Worker Agent (${data?.agent.workerModel || 'claude-3.5-sonnet'}): Áp dụng Persona Thảo Chi (Xưng "em", gọi "anh ${simSender}").`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 900));
+    setSimStep(5);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 5] Worker gọi Tool "check_balance(month: 9, year: 2026)" -> Trả về kết quả: Số dư 425.000.000 VND.`,
+      `[Bước 5] Tổng hợp câu trả lời theo đúng phong cách tự nhiên, ngắn gọn.`,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 600));
+    setSimStep(6);
+    setSimLogs((prev) => [
+      ...prev,
+      `[Bước 6] Đẩy phản hồi ra Redis Stream "${data?.agent.outboundStream || 'stream:outbound_messages'}" -> ZaloAdapter gửi lại nhóm Zalo!`,
+      `[Bước 6] Ghi nhật ký Audit Log vào PostgreSQL (Thời gian xử lý: ~850ms, Trạng thái: SUCCESS).`,
+      `✨ Thảo Chi phản hồi: "Dạ số dư quỹ tháng này của bên mình hiện là 425 triệu anh ${simSender} nhé ạ!"`,
+    ]);
+
+    setSimulating(false);
+  };
+
+  const nodeDetails: Record<string, { title: string; subtitle: string; tag: string; tech: string; desc: string; inputs: string[]; outputs: string[]; codeRef: string }> = {
+    'inbound': {
+      title: '1. Kênh Nhắn Tin (Inbound Channels)',
+      subtitle: 'Tiếp nhận sự kiện từ Zalo Group / Telegram Bot',
+      tag: 'Channel Layer',
+      tech: 'zca-js (Zalo QR Session / OA Secret) & grammy (Telegram)',
+      desc: 'Lắng nghe các tin nhắn từ nhóm chat hoặc chat cá nhân. Khi có tin nhắn, adapter bóc tách GroupMessage/UserMessage, lấy senderId, senderName, platformChatId và nội dung text.',
+      inputs: ['Sự kiện WebSocket từ Zalo Web API', 'Webhook / Long-polling từ Telegram Bot API'],
+      outputs: ['InboundChatMessage { platform, accountId, platformChatId, senderId, senderName, text }'],
+      codeRef: 'packages/channels/src/zalo/index.ts',
+    },
+    'queue': {
+      title: '2. Hàng Đợi & Điều Phối (Gateway & Redis Streams)',
+      subtitle: 'Đệm tin nhắn phi đồng bộ, chịu tải cao',
+      tag: 'Message Broker',
+      tech: 'Redis Streams (stream:inbound_messages) & Consumer Groups',
+      desc: 'Tin nhắn sau khi chuẩn hoá được ChannelGatewayManager đẩy vào Redis Stream. Nhóm worker agent_workers sẽ phân phối cho các tiến trình nền xử lý phi đồng bộ, đảm bảo không nghẽn tin nhắn kể cả khi chat liên tục trong nhiều nhóm.',
+      inputs: ['InboundChatMessage từ Channel Gateway'],
+      outputs: ['Redis Stream Message ID & Consumer ACK sau khi hoàn tất'],
+      codeRef: 'apps/agent-worker/src/channel-manager.ts & redis.ts',
+    },
+    'memory': {
+      title: '3. Bộ Nhớ Đồ Thị & Phân Quyền (Neo4j & Postgres)',
+      subtitle: 'Phân giải không gian làm việc & kiểm soát quyền 2 tầng',
+      tag: 'Memory & RBAC',
+      tech: 'Neo4j Cypher Graph & PostgreSQL Relational DB',
+      desc: 'Từ ID nhóm chat, hệ thống truy vấn đồ thị quan hệ để xác định Workspace tương ứng. Sau đó trích xuất toàn bộ Kỹ Năng (Skill SOPs), Nhóm Công Cụ (Tool Groups) và Tool được cấp quyền, đồng thời giải mã các biến môi trường cấu hình (API Key, Bearer token) cho workspace.',
+      inputs: ['platformChatId, platform, workspaceId'],
+      outputs: ['accessibleSkills[], accessibleTools[], scopedVariablesMap (Decrypted)'],
+      codeRef: 'apps/agent-worker/src/dispatcher.ts & packages/database',
+    },
+    'router': {
+      title: '4. Router Agent (Bộ Định Tuyến Ý Định)',
+      subtitle: 'Nhận diện nhanh ý định và gán Skill / Tool Group phù hợp',
+      tag: 'Fast Classification',
+      tech: 'Google Gemini 2.0 Flash (Tốc độ phản hồi cực nhanh ~200ms)',
+      desc: 'Đọc prompt của người dùng cùng danh sách mô tả Skills và Tool Groups của Workspace. Phân loại ý định (chitchat, nghiệp vụ, tra cứu...) và chỉ kích hoạt đúng các công cụ liên quan để tối ưu token và độ chính xác.',
+      inputs: ['userPrompt, accessibleSkills, accessibleToolGroups'],
+      outputs: ['RouterDecision { intent, isSkillMatched, matchedSkillId, recommendedToolGroups, confidence }'],
+      codeRef: 'packages/core/src/agents/router-agent.ts',
+    },
+    'agent-worker': {
+      title: '5. Worker Agent (Bộ Não AI Thảo Chi)',
+      subtitle: 'Vòng lặp ReAct Think-Plan-Act & Persona Thảo Chi INOVA',
+      tag: 'Agent Core',
+      tech: 'Claude 3.5 Sonnet / OpenRouter + Persona Thảo Chi Tiếng Việt',
+      desc: 'Bộ não chính của trợ lý Thảo Chi (công ty Công Nghệ INOVA). Tự động xưng "em" và gọi người dùng "anh/chị" theo tên. Thực hiện vòng lặp suy luận: Phân tích ➜ Lập kế hoạch (Plan) ➜ Gọi Tools (Act) ➜ Đọc kết quả ➜ Tổng hợp câu trả lời tự nhiên, ngắn gọn.',
+      inputs: ['userPrompt, senderName context, matchedSkill SOP, accessibleTools, scopedVariables'],
+      outputs: ['finalResponse (tiếng Việt tự nhiên), plan[], toolCalls[]'],
+      codeRef: 'packages/core/src/agents/worker-agent.ts',
+    },
+    'tools': {
+      title: '6. Tầng Thực Thi Công Cụ (Tools & MCP Layer)',
+      subtitle: 'Gọi API dịch vụ ngoài & Thực thi Model Context Protocol',
+      tag: 'Execution Engine',
+      tech: 'Axios REST Client & Model Context Protocol (MCP Client)',
+      desc: 'Thực thi các lệnh gọi công cụ được Agent yêu cầu. Tự động tiêm các biến bảo mật (API keys, scoped tokens) đã mã hoá, thực hiện HTTP REST hoặc MCP Tool, bảo đảm an toàn dữ liệu và mask các header nhạy cảm trong nhật ký kiểm toán.',
+      inputs: ['ToolKey, Arguments, BaseUrl, ScopedHeaders'],
+      outputs: ['ToolExecutionResult { toolKey, status, executionTimeMs, responseData }'],
+      codeRef: 'packages/core/src/tools/executor.ts & mcp-executor.ts',
+    },
+    'outbound': {
+      title: '7. Trả Lời & Kiểm Toán (Outbound Sender & Audit)',
+      subtitle: 'Gửi kết quả ngược về nhóm chat & ghi log kiểm toán',
+      tag: 'Delivery & Audit',
+      tech: 'Redis Stream (stream:outbound_messages) & PostgreSQL audit_logs',
+      desc: 'Câu trả lời cuối cùng được đẩy vào stream:outbound_messages. Tiến trình Outbound Sender sử dụng đúng tài khoản kênh (Zalo/Telegram) để gửi lại vào nhóm chat. Đồng thời một bản ghi Audit Log được tạo với đầy đủ kế hoạch thực thi, latency và công cụ đã gọi.',
+      inputs: ['finalResponse, platformChatId, accountId, toolCalls, latencyMs'],
+      outputs: ['Tin nhắn Zalo/Telegram đến người dùng + Bản ghi Audit Log'],
+      codeRef: 'apps/agent-worker/src/channel-manager.ts & dispatcher.ts',
+    },
+  };
+
+  const selected = nodeDetails[selectedNode] || nodeDetails['agent-worker'];
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      {/* Top Banner & Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-6">
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+              <TreeStructure size={24} weight="duotone" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Sơ Đồ Luồng Hoạt Động (WorkFlow)</h1>
+              <p className="text-sm text-gray-500">
+                Kiến trúc xử lý tin nhắn đa kênh từ Chat Nhóm ➜ Bộ Nhớ ➜ AI Agent Thảo Chi ➜ Phản Hồi
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Status Indicators */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Zalo: Online
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+            Telegram: Active
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+            <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+            Agent: Thảo Chi (INOVA)
+          </span>
+          <button
+            onClick={fetchStats}
+            className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+            title="Làm mới trạng thái"
+          >
+            <ArrowsClockwise size={18} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 gap-6">
+        <button
+          onClick={() => setActiveTab('diagram')}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'diagram'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <TreeStructure size={18} />
+          Sơ Đồ Tương Tác End-to-End
+        </button>
+        <button
+          onClick={() => setActiveTab('simulator')}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'simulator'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <Play size={18} />
+          Chạy Thử Nghiệm Mô Phỏng Luồng
+        </button>
+        <button
+          onClick={() => setActiveTab('traces')}
+          className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'traces'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <ClockCounterClockwise size={18} />
+          Tin Nhắn Vừa Xử Lý ({data?.recentLogs?.length || 0})
+        </button>
+      </div>
+
+      {/* TAB 1: INTERACTIVE WORKFLOW DIAGRAM */}
+      {activeTab === 'diagram' && (
+        <div className="space-y-6">
+          {/* Visual Interactive Pipeline Canvas */}
+          <div className="bg-slate-900 text-white rounded-2xl p-6 sm:p-8 shadow-xl border border-slate-800 relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mt-10 -mr-10 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="relative z-10 flex flex-col lg:flex-row items-stretch justify-between gap-4 overflow-x-auto pb-4 pt-2">
+              
+              {/* NODE 1: Inbound Channels */}
+              <div
+                onClick={() => setSelectedNode('inbound')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'inbound'
+                    ? 'bg-blue-950/80 border-blue-400 ring-2 ring-blue-500/50 shadow-lg shadow-blue-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                    <ChatCircleDots size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30">
+                    Step 1
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Kênh Nhắn Tin</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Zalo Groups (zca-js) & Telegram Bots (grammy)</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-blue-300">
+                  <span>{data?.metrics?.activeChannels || 2} Kênh Active</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 2: Queue & Ingestion */}
+              <div
+                onClick={() => setSelectedNode('queue')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'queue'
+                    ? 'bg-amber-950/80 border-amber-400 ring-2 ring-amber-500/50 shadow-lg shadow-amber-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                    <Queue size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                    Step 2
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Redis Queue</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">stream:inbound_messages đệm phi đồng bộ</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-amber-300">
+                  <span>Consumer Group</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 3: Memory & RBAC Graph */}
+              <div
+                onClick={() => setSelectedNode('memory')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'memory'
+                    ? 'bg-purple-950/80 border-purple-400 ring-2 ring-purple-500/50 shadow-lg shadow-purple-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400">
+                    <Database size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                    Step 3
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Bộ Nhớ & Đồ Thị Quyền</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Neo4j Dual Lookup + PostgreSQL Vault</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-purple-300">
+                  <span>{data?.metrics?.totalWorkspaces || 1} Workspaces</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 4: AI Agent Brain (Thảo Chi) */}
+              <div
+                onClick={() => setSelectedNode('agent-worker')}
+                className={`cursor-pointer min-w-[220px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'agent-worker'
+                    ? 'bg-indigo-950/90 border-indigo-400 ring-2 ring-indigo-500/50 shadow-lg shadow-indigo-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400">
+                    <Cpu size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                    Step 4 (Core)
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-indigo-200">Trợ Lý Thảo Chi (AI)</h3>
+                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Router Agent ➜ Worker Agent (ReAct Loop)</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-indigo-300">
+                  <span className="font-medium">Claude 3.5 + Gemini</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 5: Tools & MCP Execution */}
+              <div
+                onClick={() => setSelectedNode('tools')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'tools'
+                    ? 'bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/50 shadow-lg shadow-emerald-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+                    <Wrench size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                    Step 5
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Thực Thi Công Cụ</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">REST API & Native MCP Service</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-emerald-300">
+                  <span>{data?.metrics?.totalTools || 20} Tools</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+              {/* Arrow Connector */}
+              <div className="hidden lg:flex items-center justify-center text-slate-600">
+                <ArrowRight size={20} className="animate-pulse text-indigo-400" />
+              </div>
+
+              {/* NODE 6: Outbound Delivery & Audit */}
+              <div
+                onClick={() => setSelectedNode('outbound')}
+                className={`cursor-pointer min-w-[200px] flex-1 rounded-xl p-4 border transition-all ${
+                  selectedNode === 'outbound'
+                    ? 'bg-rose-950/80 border-rose-400 ring-2 ring-rose-500/50 shadow-lg shadow-rose-500/20'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                    <PaperPlaneTilt size={22} weight="duotone" />
+                  </div>
+                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30">
+                    Step 6
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-100">Trả Lời & Audit Log</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Gửi về Zalo & ghi nhận PostgreSQL</p>
+                <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-rose-300">
+                  <span>Audit Tracing</span>
+                  <CaretRight size={12} />
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <Info size={14} className="text-indigo-400" />
+                Bấm vào từng khối bên trên để xem thông số kỹ thuật và luồng dữ liệu tương ứng.
+              </span>
+              <span className="font-mono text-slate-500">OmniAgent Event-Driven Core Architecture</span>
+            </div>
+          </div>
+
+          {/* Node Detail Inspector Box */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+              <div>
+                <span className="inline-block px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded bg-indigo-50 text-indigo-700 mb-1">
+                  {selected.tag}
+                </span>
+                <h2 className="text-xl font-bold text-gray-900">{selected.title}</h2>
+                <p className="text-sm text-gray-600 mt-0.5">{selected.subtitle}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
+                  📁 {selected.codeRef}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+              {/* Left Column: Description & Tech */}
+              <div className="md:col-span-2 space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Mô Tả Luồng Xử Lý</h4>
+                  <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    {selected.desc}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl border border-gray-200 bg-white">
+                    <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <CaretRight size={14} className="text-indigo-600" />
+                      Dữ Liệu Đầu Vào (Inputs)
+                    </h5>
+                    <ul className="space-y-1.5 text-xs text-gray-700">
+                      {selected.inputs.map((inp, idx) => (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-indigo-500 font-bold">•</span>
+                          <span>{inp}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-gray-200 bg-white">
+                    <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <CheckCircle size={14} className="text-emerald-600" />
+                      Dữ Liệu Đầu Ra (Outputs)
+                    </h5>
+                    <ul className="space-y-1.5 text-xs text-gray-700">
+                      {selected.outputs.map((out, idx) => (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-emerald-500 font-bold">•</span>
+                          <span>{out}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Persona & Technical Metadata */}
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50">
+                  <h4 className="text-xs font-semibold text-indigo-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Sparkle size={16} className="text-indigo-600" />
+                    Cấu Hình Persona Thảo Chi
+                  </h4>
+                  <div className="space-y-2 text-xs text-indigo-950">
+                    <p><strong>Tên trợ lý:</strong> Thảo Chi (INOVA)</p>
+                    <p><strong>Xưng hô:</strong> Em - Gọi người dùng Anh/Chị</p>
+                    <p><strong>Phong cách:</strong> Tự nhiên, ngắn gọn, lịch sự, đi thẳng trọng tâm.</p>
+                    <p><strong>Router LLM:</strong> <code className="bg-indigo-100 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'gemini-2.0-flash'}</code></p>
+                    <p><strong>Worker LLM:</strong> <code className="bg-indigo-100 px-1 py-0.5 rounded text-[11px]">{data?.agent.workerModel || 'claude-3.5-sonnet'}</code></p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl border border-gray-200 bg-white">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <ShieldCheck size={16} className="text-emerald-600" />
+                    Bảo Mật & Phân Quyền
+                  </h4>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Hệ thống kiểm soát 2 tầng (2-Tier RBAC) thông qua Neo4j Graph. Chỉ những Tool được cấp phép tường minh cho Workspace mới được Agent nạp vào prompt. Mọi API Key đều được mã hoá AES-256.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: INTERACTIVE SIMULATOR */}
+      {activeTab === 'simulator' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8">
+            <div className="max-w-3xl">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Play size={22} className="text-indigo-600" weight="fill" />
+                Mô Phỏng Trực Quan Hành Trình Một Tin Nhắn
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Nhập tin nhắn bất kỳ từ nhóm Zalo để theo dõi các bước bóc tách, tra cứu đồ thị quyền, phân loại ý định và cách Thảo Chi trả lời.
+              </p>
+
+              {/* Simulation Input Form */}
+              <div className="mt-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                      Tên Người Gửi (Sender)
+                    </label>
+                    <input
+                      type="text"
+                      value={simSender}
+                      onChange={(e) => setSimSender(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                      Tin Nhắn Của Người Dùng (Zalo Prompt)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={simPrompt}
+                        onChange={(e) => setSimPrompt(e.target.value)}
+                        className="flex-1 px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <button
+                        onClick={runSimulation}
+                        disabled={simulating || !simPrompt.trim()}
+                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition flex items-center gap-2 shrink-0 shadow-sm shadow-indigo-100"
+                      >
+                        {simulating ? <ArrowsClockwise size={18} className="animate-spin" /> : <Play size={18} />}
+                        <span>Chạy Mô Phỏng</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preset Suggestions */}
+                <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 pt-1">
+                  <span className="font-semibold text-gray-700">Mẫu thử nhanh:</span>
+                  <button
+                    onClick={() => setSimPrompt('Chi ơi, hôm nay trời thế nào?')}
+                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition"
+                  >
+                    "Chi ơi, hôm nay trời thế nào?"
+                  </button>
+                  <button
+                    onClick={() => setSimPrompt('Kiểm tra giúp anh số dư tài khoản INOVA')}
+                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition"
+                  >
+                    "Kiểm tra giúp anh số dư tài khoản INOVA"
+                  </button>
+                  <button
+                    onClick={() => setSimPrompt('Cách nấu phở bò ngon chuẩn vị?')}
+                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition"
+                  >
+                    "Cách nấu phở bò ngon chuẩn vị?"
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Stepper Progress Visualizer */}
+            {simStep > 0 && (
+              <div className="mt-8 pt-8 border-t border-gray-100 space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                  {[
+                    { step: 1, label: 'Zalo Nhận Tin' },
+                    { step: 2, label: 'Redis Stream' },
+                    { step: 3, label: 'Neo4j Quyền' },
+                    { step: 4, label: 'Thảo Chi Suy Luận' },
+                    { step: 5, label: 'Thực Thi Tools' },
+                    { step: 6, label: 'Gửi Phản Hồi' },
+                  ].map((s) => (
+                    <div
+                      key={s.step}
+                      className={`p-3 rounded-xl border text-center transition-all ${
+                        simStep >= s.step
+                          ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-sm'
+                          : 'bg-gray-50 border-gray-200 text-gray-400'
+                      }`}
+                    >
+                      <div className="w-6 h-6 mx-auto mb-1 rounded-full flex items-center justify-center text-xs font-bold text-white bg-indigo-600">
+                        {simStep > s.step ? <Check size={12} weight="bold" /> : s.step}
+                      </div>
+                      <span className="text-xs font-semibold block">{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Live Console Logs of Simulation */}
+                <div className="bg-slate-950 text-slate-100 p-5 rounded-xl font-mono text-xs space-y-2 border border-slate-800 shadow-inner">
+                  <div className="flex items-center justify-between text-slate-500 pb-2 border-b border-slate-800 text-[11px]">
+                    <span>OMNIAGENT DISPATCHER TRACE LOG</span>
+                    <span className="text-emerald-400">● LIVE RUNNER</span>
+                  </div>
+                  {simLogs.map((log, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <span className="text-indigo-400 select-none">➜</span>
+                      <span className={idx === simLogs.length - 1 && simStep === 6 ? 'text-emerald-300 font-semibold text-sm' : ''}>
+                        {log}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: RECENT TRACES (Nhật ký thực tế) */}
+      {activeTab === 'traces' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Các Tin Nhắn Thực Tế Vừa Chạy Qua Hệ Thống</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Dữ liệu thời gian thực được trích xuất từ bảng audit_logs</p>
+              </div>
+              <Link
+                href="/admin/audit-logs"
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1"
+              >
+                <span>Xem toàn bộ nhật ký chi tiết</span>
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                  <tr>
+                    <th className="py-3 px-4">Thời gian</th>
+                    <th className="py-3 px-4">Kênh</th>
+                    <th className="py-3 px-4">Người gửi & Nội dung</th>
+                    <th className="py-3 px-4">Ý định (Intent)</th>
+                    <th className="py-3 px-4">Phản hồi của Thảo Chi</th>
+                    <th className="py-3 px-4 text-right">Độ trễ</th>
+                    <th className="py-3 px-4 text-center">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data?.recentLogs && data.recentLogs.length > 0 ? (
+                    data.recentLogs.map((log: any) => (
+                      <tr key={log.id} className="hover:bg-gray-50/80 transition">
+                        <td className="py-3 px-4 whitespace-nowrap text-xs text-gray-400 font-mono">
+                          {new Date(log.created_at).toLocaleTimeString('vi-VN')}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded text-xs font-semibold ${
+                            log.platform === 'ZALO' ? 'bg-blue-50 text-blue-700' : 'bg-sky-50 text-sky-700'
+                          }`}>
+                            {log.platform}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 max-w-xs">
+                          <div className="font-medium text-gray-900 text-xs truncate">{log.user_prompt}</div>
+                          <div className="text-[11px] text-gray-400 font-mono truncate">Sender: {log.sender_id}</div>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-mono">
+                            {log.detected_intent || 'chitchat'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 max-w-sm truncate text-xs text-gray-700">
+                          {log.final_response || 'Chưa có nội dung'}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-right text-xs font-mono text-gray-500">
+                          {log.latency_ms ? `${log.latency_ms}ms` : '-'}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            log.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {log.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-sm text-gray-400">
+                        Chưa có bản ghi tin nhắn nào trong nhật ký. Hãy nhắn tin trong nhóm Zalo để thấy tin nhắn xuất hiện tại đây!
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Architecture Deep Dive Highlights */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+        <div className="p-6 rounded-2xl border border-gray-200 bg-white shadow-sm space-y-2">
+          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
+            <ChatCircleDots size={20} weight="duotone" />
+          </div>
+          <h3 className="font-bold text-gray-900 text-base">Đa Kênh Tự Động Phục Hồi</h3>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            Hỗ trợ Zalo Web (`zca-js`) và Telegram (`grammy`). Tích hợp vòng lặp retry tự kết nối lại nếu mất mạng, đảm bảo không bị bỏ sót tin nhắn.
+          </p>
+        </div>
+
+        <div className="p-6 rounded-2xl border border-gray-200 bg-white shadow-sm space-y-2">
+          <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center mb-3">
+            <TreeStructure size={20} weight="duotone" />
+          </div>
+          <h3 className="font-bold text-gray-900 text-base">Bộ Nhớ Đồ Thị 2 Tầng</h3>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            Ánh xạ nhóm chat vào Workspace qua Neo4j. Kiểm soát quyền gọi công cụ chi tiết đến từng API endpoint mà không cần sửa code.
+          </p>
+        </div>
+
+        <div className="p-6 rounded-2xl border border-gray-200 bg-white shadow-sm space-y-2">
+          <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-3">
+            <Sparkle size={20} weight="duotone" />
+          </div>
+          <h3 className="font-bold text-gray-900 text-base">Persona Thảo Chi INOVA</h3>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            AI Agent được huấn luyện với phong cách tiếng Việt tự nhiên: Xưng "em" - gọi "anh/chị" theo tên thật, trả lời ngắn gọn và trung thực với dữ liệu tools.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -14,6 +14,7 @@ import {
   Gear,
   ChatCircleDots,
   ClockCounterClockwise,
+  TreeStructure,
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { CopilotDrawer } from '@/components/admin/copilot-drawer';
@@ -90,8 +91,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           {/* TASKS & MONITORING */}
           <div className="pt-4 pb-1">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">Giám sát & Logs</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4">Giám sát & Luồng</p>
           </div>
+          <Link
+            href="/admin/workflow"
+            className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+          >
+            <TreeStructure size={18} weight="duotone" className="text-indigo-600" />
+            <span className="font-medium text-gray-900">WorkFlow</span>
+          </Link>
           <Link
             href="/admin/audit-logs"
             className="flex items-center gap-3 px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition"
