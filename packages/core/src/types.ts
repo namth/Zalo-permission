@@ -59,6 +59,12 @@ export interface WorkspaceScopedConfig {
   disabledToolIds: string[];
 }
 
+export interface ConversationHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  senderName?: string;
+}
+
 export interface InboundChatMessage {
   platform: PlatformType;
   accountId: string;

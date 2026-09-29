@@ -173,9 +173,9 @@ export default function WorkflowPage() {
       title: '4. [AI Agent 1] Router Agent (Định Tuyến Ý Định)',
       subtitle: 'Phân loại nhanh ý định & chọn đúng Tool Groups / Skills',
       tag: 'AI Agent #1 (Classifier)',
-      tech: 'Google Gemini 2.0 Flash (Tốc độ phản hồi ~180ms, chi phí siêu rẻ)',
-      desc: 'Agent thứ nhất trong quy trình. Đọc câu hỏi của người dùng cùng tóm tắt danh mục Tool Groups và Skills của Workspace. Phân loại chuẩn xác ý định (ghi chi tiêu, tra cứu nợ, quản lý thành viên, hay chitchat) và lọc đúng nhóm công cụ cần thiết, tiết kiệm token cho các bước sau.',
-      inputs: ['userPrompt, accessibleSkills, accessibleToolGroups kèm danh sách tools'],
+      tech: 'Google Gemini 2.0 Flash (google/gemini-2.0-flash | ~$0.0001 / request | ~180ms)',
+      desc: 'Agent thứ nhất trong quy trình. Đọc câu hỏi người dùng cùng tóm tắt danh mục Tool Groups và Skills. Sử dụng 3 - 5 tin nhắn lịch sử gần nhất để phân loại chuẩn xác ý định (ghi chi tiêu, tra cứu nợ, quản lý thành viên, hay chitchat) và lọc đúng nhóm công cụ cần thiết, tiết kiệm token cho các bước sau.',
+      inputs: ['userPrompt, recentHistory (3-5 tin), accessibleSkills, accessibleToolGroups kèm danh sách tools'],
       outputs: ['RouterDecision { intent, isSkillMatched, matchedSkillId, recommendedToolGroups, confidence }'],
       codeRef: 'packages/core/src/agents/router-agent.ts',
     },
@@ -183,9 +183,9 @@ export default function WorkflowPage() {
       title: '5. [AI Agent 2] Action / Tool Worker Agent (Lập Kế Hoạch & Gọi Hàm)',
       subtitle: 'Vòng lặp ReAct, tự động suy luận tham số & phát sinh Function Calling',
       tag: 'AI Agent #2 (Function Caller)',
-      tech: 'OpenAI GPT-4o Mini / Gemini 2.0 Flash (Độ chuẩn xác Schema tuyệt đối)',
-      desc: 'Agent thứ hai trong quy trình. Chuyên trách về logic kỹ thuật và Function Calling. Thực hiện vòng lặp suy luận ReAct: phân tích tham số cần thiết, tự động tra cứu danh sách ID thành viên/sản phẩm nếu thiếu, và phát sinh các lệnh gọi công cụ có cấu trúc chuẩn xác.',
-      inputs: ['userPrompt, senderName context, matchedSkill SOP, filteredTools, scopedVariables'],
+      tech: 'OpenAI GPT-4o Mini (openai/gpt-4o-mini | ~$0.0004 / request | Chuẩn Schema JSON)',
+      desc: 'Agent thứ hai trong quy trình. Chuyên trách về logic kỹ thuật và Function Calling. Nạp 6 - 10 tin nhắn lịch sử gần nhất vào mảng messages để hiểu toàn bộ ngữ cảnh các giao dịch trước, tự động tra cứu ID thành viên/sản phẩm nếu thiếu, và phát sinh các lệnh gọi công cụ có cấu trúc chuẩn xác.',
+      inputs: ['userPrompt, recentHistory (6-10 tin), senderName context, matchedSkill SOP, filteredTools, scopedVariables'],
       outputs: ['toolCalls[] (Danh sách lệnh gọi hàm có tham số JSON)'],
       codeRef: 'packages/core/src/agents/worker-agent.ts',
     },
@@ -203,9 +203,9 @@ export default function WorkflowPage() {
       title: '7. [AI Agent 3] Persona Synthesizer Agent (Biên Soạn & Cảm Xúc)',
       subtitle: 'Thổi hồn cảm xúc tiếng Việt & Persona Trợ Lý Thảo Chi INOVA',
       tag: 'AI Agent #3 (Communicator)',
-      tech: 'DeepSeek-V3 (deepseek/deepseek-chat) - Văn phong tiếng Việt đỉnh cao',
-      desc: 'Agent thứ ba trong quy trình. Nhận dữ liệu kết quả thô từ Step 6 kết hợp với Persona Thảo Chi INOVA để biên soạn câu trả lời hoàn chỉnh: luôn tự xưng "em", gọi "anh/chị" theo tên thật, giải thích số liệu rành mạch, tính toán công nợ rõ ràng và diễn đạt ấm áp, tự nhiên như người Việt.',
-      inputs: ['userPrompt, senderName, rawToolResults[], rawDraft, DEFAULT_AGENT_PERSONA'],
+      tech: 'DeepSeek-V3 (deepseek/deepseek-chat | ~$0.0003 / request | Tiếng Việt cảm xúc)',
+      desc: 'Agent thứ ba trong quy trình. Nhận dữ liệu kết quả thô từ Step 6 kết hợp với Persona Thảo Chi INOVA và 3 - 5 tin nhắn lịch sử gần nhất để biên soạn câu trả lời hoàn chỉnh: luôn tự xưng "em", gọi "anh/chị" theo tên thật, tránh lặp lại lời chào, giải thích số liệu rành mạch, tính toán công nợ rõ ràng và diễn đạt ấm áp.',
+      inputs: ['userPrompt, recentHistory (3-5 tin), senderName, rawToolResults[], rawDraft, DEFAULT_AGENT_PERSONA'],
       outputs: ['finalResponse (Câu trả lời tiếng Việt hoàn chỉnh, lịch sự, chuẩn mực)'],
       codeRef: 'packages/core/src/agents/worker-agent.ts (synthesizeWithPersona)',
     },
@@ -627,26 +627,177 @@ export default function WorkflowPage() {
                 <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50">
                   <h4 className="text-xs font-semibold text-indigo-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <Sparkle size={16} className="text-indigo-600" />
-                    Cấu Hình Persona Thảo Chi
+                    Cấu Hình Persona Thảo Chi INOVA
                   </h4>
                   <div className="space-y-2 text-xs text-indigo-950">
-                    <p><strong>Tên trợ lý:</strong> Thảo Chi (INOVA)</p>
-                    <p><strong>Xưng hô:</strong> Em - Gọi người dùng Anh/Chị</p>
-                    <p><strong>Phong cách:</strong> Tự nhiên, ngắn gọn, lịch sự, đi thẳng trọng tâm.</p>
-                    <p><strong>Router LLM:</strong> <code className="bg-indigo-100 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'gemini-2.0-flash'}</code></p>
-                    <p><strong>Worker LLM:</strong> <code className="bg-indigo-100 px-1 py-0.5 rounded text-[11px]">{data?.agent.workerModel || 'claude-3.5-sonnet'}</code></p>
+                    <p><strong>Tên trợ lý:</strong> Thảo Chi (Công Ty Công Nghệ INOVA)</p>
+                    <p><strong>Xưng hô:</strong> Em - Gọi người dùng Anh/Chị theo tên thật</p>
+                    <p><strong>Phong cách:</strong> Tự nhiên, ngắn gọn, lịch sự, chuẩn mực văn phong người Việt.</p>
+                    <div className="pt-2 border-t border-indigo-100 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">🟣 Router LLM:</span>
+                        <div className="text-right">
+                          <code className="bg-cyan-100 text-cyan-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'google/gemini-2.0-flash'}</code>
+                          <span className="text-gray-500 text-[10px] ml-1">(~$0.0001)</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">🔵 Worker LLM:</span>
+                        <div className="text-right">
+                          <code className="bg-indigo-100 text-indigo-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.workerModel || 'openai/gpt-4o-mini'}</code>
+                          <span className="text-gray-500 text-[10px] ml-1">(~$0.0004)</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">🟢 Synthesizer LLM:</span>
+                        <div className="text-right">
+                          <code className="bg-rose-100 text-rose-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.synthesizerModel || 'deepseek/deepseek-chat'}</code>
+                          <span className="text-gray-500 text-[10px] ml-1">(~$0.0003)</span>
+                        </div>
+                      </div>
+                      <div className="pt-1.5 flex items-center justify-between font-semibold text-emerald-700 border-t border-indigo-100/60">
+                        <span>Tổng chi phí 3 Agent:</span>
+                        <span>~$0.0008 / req (~20 - 25 VNĐ)</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 <div className="p-4 rounded-xl border border-gray-200 bg-white">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <ShieldCheck size={16} className="text-emerald-600" />
-                    Bảo Mật & Phân Quyền
+                    Bảo Mật & Phân Quyền 2 Tầng
                   </h4>
                   <p className="text-xs text-gray-600 leading-relaxed">
                     Hệ thống kiểm soát 2 tầng (2-Tier RBAC) thông qua Neo4j Graph. Chỉ những Tool được cấp phép tường minh cho Workspace mới được Agent nạp vào prompt. Mọi API Key đều được mã hoá AES-256.
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Conversation History Context Window Architecture Section */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider rounded bg-purple-50 text-purple-700">
+                    Context Window & Multi-turn Memory
+                  </span>
+                  <span className="px-2.5 py-0.5 text-xs font-semibold rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Auto Injected from PostgreSQL audit_logs
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mt-2 flex items-center gap-2">
+                  <ClockCounterClockwise size={22} className="text-purple-600" />
+                  Chiến Lược Nạp Lịch Sử Hội Thoại (Conversation History Context Window)
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Quy định chính xác Agent nào được nạp lịch sử, số lượng tin nhắn (turns) được nạp vào context, và vai trò thực thi trong toàn bộ pipeline.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 bg-purple-50/70 border border-purple-100 rounded-xl px-4 py-2.5">
+                <Database size={24} className="text-purple-600 shrink-0" />
+                <div className="text-xs">
+                  <div className="font-semibold text-purple-900">Bảng Nguồn: audit_logs</div>
+                  <div className="text-purple-700 font-mono text-[11px]">ORDER BY created_at DESC LIMIT 10</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Grid of 3 Agents History Configuration */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              {/* Card 1: Router Agent */}
+              <div className="rounded-xl border border-cyan-200 bg-gradient-to-b from-cyan-50/60 to-white p-5 flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 text-[11px] font-bold uppercase rounded bg-cyan-100 text-cyan-800 border border-cyan-300">
+                      AI Agent #1: Router
+                    </span>
+                    <span className="text-xs font-semibold text-cyan-700 font-mono">
+                      ~$0.0001 / req
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-base mt-2.5">Google Gemini 2.0 Flash</h3>
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-100/80 text-cyan-900 font-semibold text-xs">
+                    <span>⚡ Số lượng nạp:</span>
+                    <span className="underline decoration-cyan-500 font-bold">3 - 5 tin nhắn gần nhất</span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed mt-3">
+                    <strong>Mục đích:</strong> Xử lý các câu hỏi phụ thuộc đại từ thay thế (anaphora) hoặc câu trả lời tiếp nối, ví dụ: <em>"ừ ghi lại đi"</em>, <em>"bao nhiêu thế em"</em>, <em>"hủy giao dịch vừa rồi nhé"</em>.
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-cyan-100 text-[11px] text-gray-500 space-y-1">
+                  <div><strong>Vị trí tiêm:</strong> <code>&lt;recent_conversation_history&gt;</code> trong User Content</div>
+                  <div><strong>Chi phí Token:</strong> Siêu nhẹ (~150 tokens), bảo toàn độ trễ cực thấp (~180ms).</div>
+                </div>
+              </div>
+
+              {/* Card 2: Tool Worker Agent */}
+              <div className="rounded-xl border border-indigo-200 bg-gradient-to-b from-indigo-50/60 to-white p-5 flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 text-[11px] font-bold uppercase rounded bg-indigo-100 text-indigo-800 border border-indigo-300">
+                      AI Agent #2: Tool Worker
+                    </span>
+                    <span className="text-xs font-semibold text-indigo-700 font-mono">
+                      ~$0.0004 / req
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-base mt-2.5">OpenAI GPT-4o Mini</h3>
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-100/80 text-indigo-900 font-semibold text-xs">
+                    <span>⚡ Số lượng nạp:</span>
+                    <span className="underline decoration-indigo-500 font-bold">6 - 10 tin nhắn gần nhất</span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed mt-3">
+                    <strong>Mục đích:</strong> Nạp đầy đủ ngữ cảnh nghiệp vụ để ReAct suy luận tham số Function Calling (VD: biết người vừa nợ là ai, số tiền giao dịch trước đó, thông tin bổ sung) mà không cần hỏi lại người dùng.
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-indigo-100 text-[11px] text-gray-500 space-y-1">
+                  <div><strong>Vị trí tiêm:</strong> Mảng <code>messages[]</code> (lượt role user & assistant chuẩn)</div>
+                  <div><strong>Chi phí Token:</strong> Vừa phải (~500 tokens), chuẩn Schema JSON tuyệt đối.</div>
+                </div>
+              </div>
+
+              {/* Card 3: Persona Synthesizer Agent */}
+              <div className="rounded-xl border border-rose-200 bg-gradient-to-b from-rose-50/60 to-white p-5 flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 text-[11px] font-bold uppercase rounded bg-rose-100 text-rose-800 border border-rose-300">
+                      AI Agent #3: Synthesizer
+                    </span>
+                    <span className="text-xs font-semibold text-rose-700 font-mono">
+                      ~$0.0003 / req
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-base mt-2.5">DeepSeek-V3 (deepseek-chat)</h3>
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-100/80 text-rose-900 font-semibold text-xs">
+                    <span>⚡ Số lượng nạp:</span>
+                    <span className="underline decoration-rose-500 font-bold">3 - 5 tin nhắn gần nhất</span>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed mt-3">
+                    <strong>Mục đích:</strong> Giữ mạch xưng hô liền mạch, tránh lặp lại lời chào hỏi máy móc ("Dạ em chào anh Nam..."), bắt đúng cảm xúc người dùng (vội vã, than thở hay hài hước) để phản hồi ấm áp, tự nhiên.
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-rose-100 text-[11px] text-gray-500 space-y-1">
+                  <div><strong>Vị trí tiêm:</strong> Khối <code>Lịch sử các câu thoại gần nhất</code> trong User Content</div>
+                  <div><strong>Chi phí Token:</strong> Tiết kiệm (~300 tokens), tối ưu hoá chất lượng cảm xúc.</div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Data Pipeline Technical Details Box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="font-semibold text-slate-900">Quy trình nạp lịch sử tự động:</span>
+                <span>PostgreSQL `audit_logs` ➜ Filter theo `workspace_id` & `chat_id` ➜ Reverse chronological order ➜ Inject vào 3 AI Agents</span>
+              </div>
+              <div className="font-mono text-emerald-700 font-semibold bg-emerald-100/60 px-2.5 py-1 rounded-md border border-emerald-200 text-[11px]">
+                Tổng chi phí cả 3 Agent: ~$0.0008 / tin nhắn (~20 - 25 VNĐ)
               </div>
             </div>
           </div>
@@ -731,27 +882,29 @@ export default function WorkflowPage() {
             {/* Stepper Progress Visualizer */}
             {simStep > 0 && (
               <div className="mt-8 pt-8 border-t border-gray-100 space-y-6">
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
                   {[
-                    { step: 1, label: 'Zalo Nhận Tin' },
-                    { step: 2, label: 'Redis Stream' },
-                    { step: 3, label: 'Neo4j Quyền' },
-                    { step: 4, label: 'Thảo Chi Suy Luận' },
-                    { step: 5, label: 'Thực Thi Tools' },
-                    { step: 6, label: 'Gửi Phản Hồi' },
+                    { step: 1, label: '1. Kênh Nhắn' },
+                    { step: 2, label: '2. Redis Queue' },
+                    { step: 3, label: '3. Neo4j & RBAC' },
+                    { step: 4, label: '4. AI 1 Router' },
+                    { step: 5, label: '5. AI 2 Worker' },
+                    { step: 6, label: '6. Gọi Tools' },
+                    { step: 7, label: '7. AI 3 Synthesizer' },
+                    { step: 8, label: '8. Giao Vận & Audit' },
                   ].map((s) => (
                     <div
                       key={s.step}
-                      className={`p-3 rounded-xl border text-center transition-all ${
+                      className={`p-2.5 rounded-xl border text-center transition-all ${
                         simStep >= s.step
                           ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-sm'
                           : 'bg-gray-50 border-gray-200 text-gray-400'
                       }`}
                     >
-                      <div className="w-6 h-6 mx-auto mb-1 rounded-full flex items-center justify-center text-xs font-bold text-white bg-indigo-600">
-                        {simStep > s.step ? <Check size={12} weight="bold" /> : s.step}
+                      <div className="w-5 h-5 mx-auto mb-1 rounded-full flex items-center justify-center text-[10px] font-bold text-white bg-indigo-600">
+                        {simStep > s.step ? <Check size={11} weight="bold" /> : s.step}
                       </div>
-                      <span className="text-xs font-semibold block">{s.label}</span>
+                      <span className="text-[11px] font-semibold block truncate">{s.label}</span>
                     </div>
                   ))}
                 </div>
@@ -765,7 +918,7 @@ export default function WorkflowPage() {
                   {simLogs.map((log, idx) => (
                     <div key={idx} className="flex items-start gap-2">
                       <span className="text-indigo-400 select-none">➜</span>
-                      <span className={idx === simLogs.length - 1 && simStep === 6 ? 'text-emerald-300 font-semibold text-sm' : ''}>
+                      <span className={idx === simLogs.length - 1 && simStep === 8 ? 'text-emerald-300 font-semibold text-sm' : ''}>
                         {log}
                       </span>
                     </div>

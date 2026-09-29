@@ -5,6 +5,7 @@ import type {
   SkillDefinition,
   ToolExecutionResult,
   ExecutionPlanStep,
+  ConversationHistoryMessage,
 } from '../types.js';
 import { ToolExecutor } from '../tools/executor.js';
 
@@ -87,6 +88,7 @@ export interface WorkerExecuteOptions {
   tools: ToolDefinition[];
   toolGroupsMap: Map<string, ToolGroupDefinition>; // toolGroupId -> ToolGroupDefinition
   scopedVariablesMap: Map<string, Record<string, string>>; // toolGroupId -> scopedVariables
+  conversationHistory?: ConversationHistoryMessage[];
   maxSteps?: number;
   openRouterApiKey?: string;
   modelId?: string;
@@ -116,8 +118,8 @@ export class WorkerAgent {
       },
     });
 
-    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'google/gemini-2.0-flash';
-    this.synthesizerModelId = synthesizerModelId || process.env.SYNTHESIZER_MODEL_ID;
+    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'openai/gpt-4o-mini';
+    this.synthesizerModelId = synthesizerModelId || process.env.SYNTHESIZER_MODEL_ID || 'deepseek/deepseek-chat';
   }
 
   /**
@@ -132,6 +134,7 @@ export class WorkerAgent {
       tools,
       toolGroupsMap,
       scopedVariablesMap,
+      conversationHistory,
       maxSteps = 5,
     } = options;
 
@@ -181,8 +184,22 @@ export class WorkerAgent {
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemInstruction },
-      { role: 'user', content: userMessageContent },
     ];
+
+    // Load 6 - 10 recent conversation turns for context in Tool Worker
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentHistory = conversationHistory.slice(-10);
+      for (const turn of recentHistory) {
+        messages.push({
+          role: turn.role === 'user' ? 'user' : 'assistant',
+          content: turn.role === 'user' && turn.senderName
+            ? `<user_info name="${turn.senderName}" />\n<user_query>${turn.content}</user_query>`
+            : turn.content,
+        });
+      }
+    }
+
+    messages.push({ role: 'user', content: userMessageContent });
 
     let currentStep = 0;
     let finalAnswer = '';
@@ -289,6 +306,7 @@ export class WorkerAgent {
           senderName,
           toolExecutions,
           rawDraft: finalAnswer,
+          conversationHistory,
         });
 
         if (polished) {
@@ -315,14 +333,16 @@ export class WorkerAgent {
   /**
    * Persona Synthesizer Agent: Chuyên trách gọt giũa văn phong, tạo câu trả lời tiếng Việt cảm xúc
    * theo Persona Thảo Chi INOVA (xưng em, gọi anh/chị theo tên thật).
+   * Sử dụng 3 - 5 lượt tin nhắn gần nhất để giữ nhịp hội thoại và tránh lặp từ.
    */
   private async synthesizeWithPersona(options: {
     userPrompt: string;
     senderName?: string;
     toolExecutions: ToolExecutionResult[];
     rawDraft: string;
+    conversationHistory?: ConversationHistoryMessage[];
   }): Promise<string> {
-    const { userPrompt, senderName, toolExecutions, rawDraft } = options;
+    const { userPrompt, senderName, toolExecutions, rawDraft, conversationHistory } = options;
 
     const toolSummaries = toolExecutions.map((t) => ({
       tool: t.toolKey,
@@ -340,8 +360,17 @@ Nhiệm vụ của bạn là đọc kết quả thô từ các công cụ (Tools
 3. Tóm lược rõ ràng các số liệu, kết quả (số tiền, công nợ, ai trả, ai chia...) một cách dễ hiểu, trực diện, không nói vòng vo.
 4. Trình bày thoáng, định dạng tin nhắn đẹp mắt, điểm xuyết một vài emoji phù hợp cho khung chat Zalo/Telegram.`;
 
+    let recentHistoryContext = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentTurns = conversationHistory.slice(-4);
+      recentHistoryContext = `\nLịch sử các câu thoại gần nhất:\n${recentTurns
+        .map((t) => `${t.role === 'user' ? (senderName || 'Người dùng') : 'Thảo Chi'}: ${t.content}`)
+        .join('\n')}\n`;
+    }
+
     const userContent = `Tên người gửi: ${senderName || 'Người dùng'}
-Tin nhắn yêu cầu gốc: "${userPrompt}"
+${recentHistoryContext}
+Tin nhắn yêu cầu hiện tại: "${userPrompt}"
 Kết quả thực thi từ hệ thống/công cụ:
 ${JSON.stringify(toolSummaries, null, 2)}
 

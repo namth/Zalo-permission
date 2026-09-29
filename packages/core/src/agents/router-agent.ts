@@ -1,11 +1,18 @@
 import OpenAI from 'openai';
-import type { SkillDefinition, ToolGroupDefinition, ToolDefinition, RouterDecision } from '../types.js';
+import type {
+  SkillDefinition,
+  ToolGroupDefinition,
+  ToolDefinition,
+  RouterDecision,
+  ConversationHistoryMessage,
+} from '../types.js';
 
 export interface RouterAgentOptions {
   userPrompt: string;
   accessibleSkills: SkillDefinition[];
   accessibleToolGroups: ToolGroupDefinition[];
   accessibleTools?: ToolDefinition[];
+  conversationHistory?: ConversationHistoryMessage[];
   openRouterApiKey?: string;
   modelId?: string;
 }
@@ -35,7 +42,7 @@ export class RouterAgent {
    * Nếu không, trả về danh mục Tool Groups liên quan.
    */
   async classify(options: RouterAgentOptions): Promise<RouterDecision> {
-    const { userPrompt, accessibleSkills, accessibleToolGroups, accessibleTools } = options;
+    const { userPrompt, accessibleSkills, accessibleToolGroups, accessibleTools, conversationHistory } = options;
 
     const skillsSummary = accessibleSkills.map((s) => ({
       id: s.id,
@@ -84,12 +91,22 @@ RULES:
   "extracted_parameters": {}
 }`;
 
+    // Load 3 - 5 most recent history turns to resolve anaphora / follow-up intents
+    let userQueryWithContext = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recentHistory = conversationHistory.slice(-4);
+      userQueryWithContext += `<recent_conversation_history>\n${recentHistory
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n')}\n</recent_conversation_history>\n`;
+    }
+    userQueryWithContext += `<current_user_query>${userPrompt}</current_user_query>`;
+
     try {
       const response = await this.openai.chat.completions.create({
         model: this.modelId,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `<user_query>${userPrompt}</user_query>` },
+          { role: 'user', content: userQueryWithContext },
         ],
         temperature: 0.1,
         response_format: { type: 'json_object' },

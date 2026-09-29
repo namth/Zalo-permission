@@ -8,6 +8,7 @@ import {
   type ToolDefinition,
   type ToolExecutionResult,
   type ExecutionPlanStep,
+  type ConversationHistoryMessage,
 } from '@omniagent/core';
 import {
   prisma,
@@ -277,12 +278,30 @@ export class MessageDispatcher {
       isActive: t.isActive,
     }));
 
+    // 3.1 Fetch Recent Conversation History from PostgreSQL audit_logs (up to 10 recent messages)
+    const recentAuditLogs = await prisma.auditLog.findMany({
+      where: {
+        workspaceId,
+        userPrompt: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    }).catch(() => []);
+
+    const conversationHistory: ConversationHistoryMessage[] = recentAuditLogs
+      .reverse()
+      .flatMap((log) => [
+        ...(log.userPrompt ? [{ role: 'user' as const, content: log.userPrompt }] : []),
+        ...(log.finalResponse ? [{ role: 'assistant' as const, content: log.finalResponse }] : []),
+      ]);
+
     // 4. ROUTER AGENT: Classify user intent & match Skill/Tool Categories
     const routerDecision = await this.routerAgent.classify({
       userPrompt: message.text,
       accessibleSkills,
       accessibleToolGroups: Array.from(toolGroupsMap.values()),
       accessibleTools,
+      conversationHistory,
     });
 
     console.log(`[Dispatcher] Router Decision:`, routerDecision);
@@ -315,6 +334,7 @@ export class MessageDispatcher {
       tools: filteredTools,
       toolGroupsMap,
       scopedVariablesMap,
+      conversationHistory,
     });
 
     const latencyMs = Date.now() - startTime;
