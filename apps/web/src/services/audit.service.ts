@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { randomUUID } from "crypto";
 
 /**
  * Helper to safely convert data to JSON-serializable format
@@ -69,12 +70,15 @@ export async function logAuditAction(
   const rawStatus = (status || 'SUCCESS').toUpperCase();
   const normalizedStatus = (rawStatus === 'FAILED' || rawStatus === 'REJECTED') ? rawStatus : 'SUCCESS';
 
+  const auditId = randomUUID();
+
   const result = await query(
     `INSERT INTO audit_logs 
-       (workspace_id, thread_id, user_id, action_type, input_data, output_data, status, error_message, metadata, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       (id, workspace_id, thread_id, user_id, action_type, input_data, output_data, status, error_message, metadata, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING id, workspace_id, thread_id, user_id, action_type, input_data, output_data, status, error_message, metadata, created_at`,
     [
+      auditId,
       workspace_id,
       thread_id,
       user_id,

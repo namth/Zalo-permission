@@ -40,7 +40,7 @@ const QUICK_PROMPTS = [
 ];
 
 export function CopilotDrawer() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<CopilotMessageItem[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,6 +48,29 @@ export function CopilotDrawer() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load open state preference from localStorage (default to true unless explicitly closed)
+  useEffect(() => {
+    try {
+      const savedOpen = localStorage.getItem('omniagent_copilot_open');
+      if (savedOpen === 'false') {
+        setIsOpen(false);
+      } else {
+        setIsOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleToggleOpen = (open: boolean) => {
+    setIsOpen(open);
+    try {
+      localStorage.setItem('omniagent_copilot_open', open ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  };
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -231,7 +254,7 @@ export function CopilotDrawer() {
       {/* 1. FLOATING TRIGGER BUTTON (RIGHT EDGE) */}
       {!isOpen && (
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={() => handleToggleOpen(true)}
           className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white rounded-full shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 group border border-indigo-400/30"
           title="Mở Admin AI Copilot"
         >
@@ -246,17 +269,9 @@ export function CopilotDrawer() {
         </button>
       )}
 
-      {/* 2. BACKDROP OVERLAY */}
-      {isOpen && (
-        <div
-          onClick={() => setIsOpen(false)}
-          className="fixed inset-0 bg-slate-900/30 backdrop-blur-[2px] z-40 transition-opacity"
-        />
-      )}
-
-      {/* 3. SLIDE-OVER RIGHT SIDEBAR DRAWER */}
+      {/* 2. SLIDE-OVER RIGHT SIDEBAR DRAWER (NO BACKDROP BLUR) */}
       <div
-        className={`fixed top-0 right-0 h-full w-[430px] max-w-[92vw] bg-white z-50 shadow-2xl border-l border-gray-200 flex flex-col transition-transform duration-300 ease-in-out transform ${
+        className={`fixed top-0 right-0 h-full w-[430px] max-w-[92vw] bg-white z-40 shadow-2xl border-l border-gray-200 flex flex-col transition-transform duration-300 ease-in-out transform ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -287,7 +302,7 @@ export function CopilotDrawer() {
               <ArrowsClockwise size={16} weight="bold" />
             </button>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={() => handleToggleOpen(false)}
               title="Đóng Drawer"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
             >

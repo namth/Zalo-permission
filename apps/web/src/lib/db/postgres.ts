@@ -333,6 +333,9 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
     `ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS metadata JSONB`,
     `DO $$
     BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'id') THEN
+        ALTER TABLE audit_logs ALTER COLUMN id SET DEFAULT gen_random_uuid();
+      END IF;
       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'platform') THEN
         ALTER TABLE audit_logs ALTER COLUMN "platform" DROP NOT NULL;
       END IF;

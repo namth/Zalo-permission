@@ -6,6 +6,7 @@
 import { Pool } from 'pg';
 import { AuditLog, AuditLogRequest } from '../types';
 import { logger } from '../lib/logger';
+import { randomUUID } from 'crypto';
 
 export class AuditLogService {
   constructor(private db: Pool) { }
@@ -15,12 +16,13 @@ export class AuditLogService {
    */
   async createAuditLog(request: AuditLogRequest): Promise<AuditLog> {
     try {
+      const auditId = (request as any).id || randomUUID();
       const query = `
         INSERT INTO audit_logs (
-          workspace_id, thread_id, user_id, action_type,
+          id, workspace_id, thread_id, user_id, action_type,
           input_data, output_data, status, error_message, metadata, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
         RETURNING *
       `;
 
@@ -28,6 +30,7 @@ export class AuditLogService {
       const status = (rawStatus === 'FAILED' || rawStatus === 'REJECTED') ? rawStatus : 'SUCCESS';
 
       const result = await this.db.query(query, [
+        auditId,
         request.workspace_id,
         request.thread_id || null,
         request.user_id || null,
