@@ -96,14 +96,7 @@ export async function POST(
 
     const workspaceId = params.id;
     const body = await req.json();
-    const { chat_id } = body;
-
-    if (!chat_id) {
-      return NextResponse.json(
-        { success: false, error: 'chat_id is required' },
-        { status: 400 }
-      );
-    }
+    const { chat_id, account_id, chats } = body;
 
     // Check workspace
     const ws = await prisma.workspace.findUnique({
@@ -113,6 +106,85 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Workspace not found' },
         { status: 404 }
+      );
+    }
+
+    // Trường hợp 1: Batch thêm các nhóm mới quét được từ một kênh
+    if (account_id && Array.isArray(chats) && chats.length > 0) {
+      const account = await prisma.channelAccount.findUnique({
+        where: { id: account_id },
+      });
+      if (!account) {
+        return NextResponse.json(
+          { success: false, error: 'Tài khoản kênh không tồn tại' },
+          { status: 404 }
+        );
+      }
+
+      const createdChats = [];
+      for (const item of chats) {
+        if (!item.platform_chat_id || !item.title) continue;
+
+        const chat = await prisma.channelChat.upsert({
+          where: {
+            platform_platformChatId: {
+              platform: account.platform,
+              platformChatId: String(item.platform_chat_id).trim(),
+            },
+          },
+          update: {
+            title: String(item.title).trim(),
+            workspaceId,
+            isActive: true,
+          },
+          create: {
+            accountId: account.id,
+            platform: account.platform,
+            platformChatId: String(item.platform_chat_id).trim(),
+            title: String(item.title).trim(),
+            chatType: item.chat_type || 'GROUP',
+            workspaceId,
+            isActive: true,
+          },
+        });
+
+        // Sync Neo4j
+        const cypher = `
+          MERGE (c:ChannelChat { id: $id })
+          SET c.platform = $platform,
+              c.platform_chat_id = $platform_chat_id,
+              c.title = $title
+          WITH c
+          OPTIONAL MATCH (c)-[r:BELONGS_TO]->(:Workspace)
+          DELETE r
+          WITH c
+          MATCH (w:Workspace { id: $workspace_id })
+          MERGE (c)-[:BELONGS_TO]->(w)
+          RETURN c.id AS id
+        `;
+        await runCypher(cypher, {
+          id: chat.id,
+          platform: account.platform,
+          platform_chat_id: String(item.platform_chat_id).trim(),
+          title: String(item.title).trim(),
+          workspace_id: workspaceId,
+        }).catch((e) => console.warn('[Neo4j batch sync warning]:', e));
+
+        createdChats.push(chat);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Đã thêm thành công ${createdChats.length} nhóm chat vào Workspace`,
+        data: createdChats,
+      });
+    }
+
+    // Trường hợp 2: Gán một nhóm chat đã có sẵn ID vào Workspace
+    if (!chat_id) {
+      return NextResponse.json(
+        { success: false, error: 'chat_id hoặc (account_id và danh sách chats) là bắt buộc' },
+        { status: 400 }
       );
     }
 

@@ -338,14 +338,14 @@ export default function ChannelsPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-medium shadow-sm transition"
           >
             <TelegramLogo size={20} weight="fill" />
-            <span>+ Kết nối Telegram Bot</span>
+            <span>Kết nối Telegram Bot</span>
           </button>
           <button
             onClick={handleOpenZaloQr}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm transition"
           >
             <QrCode size={20} weight="fill" />
-            <span>+ Quét QR Zalo</span>
+            <span>Quét QR Zalo</span>
           </button>
         </div>
       </div>
@@ -462,7 +462,7 @@ export default function ChannelsPage() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-sm transition"
                 >
                   <Plus size={16} weight="bold" />
-                  <span>+ Thêm Nhóm Chat</span>
+                  <span>Thêm Nhóm Chat</span>
                 </button>
               </div>
             )}

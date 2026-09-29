@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check, TelegramLogo, ChatCircleDots } from '@phosphor-icons/react';
+import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check, TelegramLogo, ChatCircleDots, ArrowClockwise, Users, CheckCircle } from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
 
 interface Workspace {
@@ -13,6 +13,21 @@ interface Workspace {
   description?: string;
   created_at: string;
   updated_at: string;
+}
+
+interface ChannelAccountOption {
+  id: string;
+  platform: 'TELEGRAM' | 'ZALO';
+  account_name: string;
+  status: string;
+}
+
+interface DiscoveredGroupItem {
+  id: string;
+  title: string;
+  avatar?: string | null;
+  members_count: number;
+  platform: 'ZALO' | 'TELEGRAM';
 }
 
 interface WorkspaceChannelChat {
@@ -114,6 +129,19 @@ export default function WorkspaceDetailPage() {
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUser, setNewUser] = useState({ zalo_id: '', full_name: '', email: '', phone: '' });
 
+  // Add Chat Modal (Discover Zalo / Telegram)
+  const [channelAccounts, setChannelAccounts] = useState<ChannelAccountOption[]>([]);
+  const [isAddChatModalOpen, setIsAddChatModalOpen] = useState(false);
+  const [selectedModalAccountId, setSelectedModalAccountId] = useState('');
+  const [scanningGroups, setScanningGroups] = useState(false);
+  const [hasScanned, setHasScanned] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [discoveredGroups, setDiscoveredGroups] = useState<DiscoveredGroupItem[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [addingGroups, setAddingGroups] = useState(false);
+  const [telegramTitle, setTelegramTitle] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
@@ -137,7 +165,12 @@ export default function WorkspaceDetailPage() {
     try {
       if (activeTab === 'info') await fetchWorkspace();
       if (activeTab === 'groups') {
-        await Promise.all([fetchChannelChats(), fetchAvailableChats(), fetchZaloGroups()]);
+        await Promise.all([
+          fetchChannelChats(),
+          fetchAvailableChats(),
+          fetchChannelAccounts(),
+          fetchZaloGroups(),
+        ]);
       }
       if (activeTab === 'tools' || activeTab === 'data') {
         await fetchTools();
@@ -185,6 +218,21 @@ export default function WorkspaceDetailPage() {
       if (data.success) setAvailableChats(data.data || []);
     } catch (err) {
       console.error('Error fetching available chats:', err);
+    }
+  };
+
+  const fetchChannelAccounts = async () => {
+    try {
+      const res = await fetch('/api/channels');
+      const data = await res.json();
+      if (data.success) {
+        setChannelAccounts(data.data || []);
+        if (data.data && data.data.length > 0 && !selectedModalAccountId) {
+          setSelectedModalAccountId(data.data[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching channel accounts:', err);
     }
   };
 
@@ -284,6 +332,128 @@ export default function WorkspaceDetailPage() {
       }
     } catch (err: any) {
       alert('Lỗi kết nối: ' + err.message);
+    }
+  };
+
+  const handleOpenAddChatModal = () => {
+    setIsAddChatModalOpen(true);
+    setScanError('');
+    setHasScanned(false);
+    setDiscoveredGroups([]);
+    setSelectedGroupIds([]);
+    setTelegramTitle('');
+    setTelegramChatId('');
+    if (channelAccounts.length > 0 && !selectedModalAccountId) {
+      setSelectedModalAccountId(channelAccounts[0].id);
+    }
+  };
+
+  const handleScanGroups = async () => {
+    if (!selectedModalAccountId) return;
+    setScanningGroups(true);
+    setScanError('');
+    setHasScanned(false);
+    setDiscoveredGroups([]);
+    setSelectedGroupIds([]);
+    try {
+      const res = await fetch(`/api/channels/${selectedModalAccountId}/discover-groups`);
+      const data = await res.json();
+      if (data.success) {
+        setDiscoveredGroups(data.data || []);
+        setHasScanned(true);
+      } else {
+        setScanError(data.error || 'Quét nhóm chat thất bại');
+      }
+    } catch (err: any) {
+      setScanError(err.message || 'Lỗi kết nối khi quét nhóm chat');
+    } finally {
+      setScanningGroups(false);
+    }
+  };
+
+  const handleToggleGroup = (groupId: string) => {
+    setSelectedGroupIds((prev) =>
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedGroupIds.length === discoveredGroups.length) {
+      setSelectedGroupIds([]);
+    } else {
+      setSelectedGroupIds(discoveredGroups.map((g) => g.id));
+    }
+  };
+
+  const handleAddDiscoveredGroups = async () => {
+    const selectedAccount = channelAccounts.find((a) => a.id === selectedModalAccountId);
+    if (!selectedAccount) return;
+
+    let chatsToAdd: Array<{ platform_chat_id: string; title: string; chat_type: string }> = [];
+
+    if (selectedAccount.platform === 'ZALO') {
+      if (selectedGroupIds.length === 0) {
+        alert('Vui lòng chọn ít nhất một nhóm chat để thêm');
+        return;
+      }
+      const selectedGroups = discoveredGroups.filter((g) => selectedGroupIds.includes(g.id));
+      chatsToAdd = selectedGroups.map((g) => ({
+        platform_chat_id: g.id,
+        title: g.title,
+        chat_type: 'GROUP',
+      }));
+    } else if (selectedAccount.platform === 'TELEGRAM') {
+      if (telegramChatId.trim() && telegramTitle.trim()) {
+        chatsToAdd.push({
+          platform_chat_id: telegramChatId.trim(),
+          title: telegramTitle.trim(),
+          chat_type: 'GROUP',
+        });
+      }
+      if (selectedGroupIds.length > 0) {
+        const selectedGroups = discoveredGroups.filter((g) => selectedGroupIds.includes(g.id));
+        for (const g of selectedGroups) {
+          if (!chatsToAdd.find((c) => c.platform_chat_id === g.id)) {
+            chatsToAdd.push({
+              platform_chat_id: g.id,
+              title: g.title,
+              chat_type: 'GROUP',
+            });
+          }
+        }
+      }
+      if (chatsToAdd.length === 0) {
+        alert('Vui lòng nhập ID nhóm Telegram hoặc chọn nhóm từ danh sách');
+        return;
+      }
+    }
+
+    setAddingGroups(true);
+    try {
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: selectedAccount.id,
+          chats: chatsToAdd,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsAddChatModalOpen(false);
+        setSelectedGroupIds([]);
+        setDiscoveredGroups([]);
+        setHasScanned(false);
+        setTelegramTitle('');
+        setTelegramChatId('');
+        await Promise.all([fetchChannelChats(), fetchAvailableChats()]);
+      } else {
+        alert(data.error || 'Không thể thêm nhóm chat vào workspace');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối: ' + err.message);
+    } finally {
+      setAddingGroups(false);
     }
   };
 
@@ -510,22 +680,34 @@ export default function WorkspaceDetailPage() {
                       Các nhóm chat thuộc Telegram Bot hoặc Zalo được định tuyến trực tiếp vào Workspace này.
                     </p>
                   </div>
-                  <Link
-                    href="/admin/channels"
-                    className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                  >
-                    Quản lý tài khoản tại Kênh Liên Lạc →
-                  </Link>
+                  <div className="flex items-center gap-2.5">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleOpenAddChatModal}
+                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
+                      >
+                        <Plus size={16} weight="bold" />
+                        <span>Thêm Nhóm Chat</span>
+                      </button>
+                    )}
+                    <Link
+                      href="/admin/channels"
+                      className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                    >
+                      Kênh Liên Lạc →
+                    </Link>
+                  </div>
                 </div>
 
-                {isAdmin && (
-                  <form onSubmit={handleAssignChannelChat} className="flex flex-col sm:flex-row gap-2 p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                {isAdmin && availableChats.filter((c) => !c.is_assigned_to_current).length > 0 && (
+                  <form onSubmit={handleAssignChannelChat} className="flex flex-col sm:flex-row gap-2 p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl">
                     <select
-                      className="border border-indigo-200 px-3 py-2 rounded-lg text-sm flex-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="border border-indigo-200 px-3 py-2 rounded-lg text-xs flex-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       value={chatIdToAssign}
                       onChange={(e) => setChatIdToAssign(e.target.value)}
                     >
-                      <option value="">-- Chọn nhóm chat từ các kênh kết nối để gán vào Workspace này --</option>
+                      <option value="">-- Hoặc chọn nhóm chat có sẵn từ kênh liên lạc để gán vào Workspace --</option>
                       {availableChats
                         .filter((c) => !c.is_assigned_to_current)
                         .map((c) => (
@@ -538,10 +720,10 @@ export default function WorkspaceDetailPage() {
                     <button
                       type="submit"
                       disabled={!chatIdToAssign || assigningChat}
-                      className="flex items-center justify-center gap-1.5 bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition"
+                      className="flex items-center justify-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 transition"
                     >
-                      <Plus size={16} weight="bold" />
-                      {assigningChat ? 'Đang gán...' : 'Gán vào Workspace'}
+                      <Plus size={15} weight="bold" />
+                      <span>{assigningChat ? 'Đang gán...' : 'Gán vào Workspace'}</span>
                     </button>
                   </form>
                 )}
@@ -871,6 +1053,300 @@ export default function WorkspaceDetailPage() {
                 <button onClick={() => setShowCreateUser(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
                 <button onClick={handleCreateUser} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create & Link</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Thêm Nhóm Chat vào Workspace (Zalo / Telegram) */}
+      {isAddChatModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-xl shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <ChatCircleDots size={24} weight="bold" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">Thêm Nhóm Chat vào Workspace</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Quét hoặc liên kết nhóm chat từ kênh Zalo / Telegram vào Workspace hiện tại
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddChatModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="py-4 space-y-4 overflow-y-auto flex-1 pr-1">
+              {/* Select Channel Account */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+                  1. Chọn Kênh Liên Lạc Đã Kết Nối
+                </label>
+                <select
+                  value={selectedModalAccountId}
+                  onChange={(e) => {
+                    setSelectedModalAccountId(e.target.value);
+                    setHasScanned(false);
+                    setDiscoveredGroups([]);
+                    setSelectedGroupIds([]);
+                    setScanError('');
+                  }}
+                  className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
+                >
+                  <option value="">-- Chọn tài khoản kết nối --</option>
+                  {channelAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      [{acc.platform}] {acc.account_name} ({acc.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Account details & Action depending on platform */}
+              {(() => {
+                const currentAccount = channelAccounts.find((a) => a.id === selectedModalAccountId);
+                if (!currentAccount) {
+                  return (
+                    <div className="text-center py-8 text-gray-400 text-xs border border-dashed rounded-xl">
+                      Vui lòng chọn một kênh liên lạc ở trên để tiếp tục.
+                    </div>
+                  );
+                }
+
+                if (currentAccount.platform === 'ZALO') {
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50/70 border border-blue-200/70 rounded-xl p-3.5 text-xs text-blue-900 space-y-1.5">
+                        <div className="font-semibold flex items-center gap-1.5 text-blue-800">
+                          <CheckCircle size={15} weight="fill" className="text-blue-600" />
+                          Tài khoản Zalo: {currentAccount.account_name}
+                        </div>
+                        <p className="text-blue-700 leading-relaxed">
+                          Bấm nút quét bên dưới để truy xuất toàn bộ các nhóm chat Zalo mà tài khoản đang tham gia. Hệ thống sẽ tự động lọc bỏ các nhóm chat đã có sẵn.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={handleScanGroups}
+                          disabled={scanningGroups}
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                        >
+                          <ArrowClockwise size={16} className={scanningGroups ? 'animate-spin' : ''} />
+                          <span>{scanningGroups ? 'Đang quét nhóm Zalo...' : 'Quét Nhóm Chat từ Zalo'}</span>
+                        </button>
+
+                        {hasScanned && discoveredGroups.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleToggleSelectAll}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium underline"
+                          >
+                            {selectedGroupIds.length === discoveredGroups.length
+                              ? 'Bỏ chọn tất cả'
+                              : 'Chọn tất cả'}
+                          </button>
+                        )}
+                      </div>
+
+                      {scanError && (
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl">
+                          {scanError}
+                        </div>
+                      )}
+
+                      {/* Scanned groups list */}
+                      {hasScanned && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs text-gray-500 font-medium px-1">
+                            <span>Tìm thấy {discoveredGroups.length} nhóm mới chưa có trong hệ thống</span>
+                            <span>Đã chọn: {selectedGroupIds.length}</span>
+                          </div>
+
+                          {discoveredGroups.length === 0 ? (
+                            <div className="text-center py-6 text-gray-400 text-xs border border-dashed rounded-xl">
+                              Không tìm thấy nhóm mới nào. Tất cả các nhóm Zalo của tài khoản này đã được thêm vào hệ thống trước đó!
+                            </div>
+                          ) : (
+                            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100 bg-gray-50/30">
+                              {discoveredGroups.map((g) => {
+                                const isChecked = selectedGroupIds.includes(g.id);
+                                return (
+                                  <div
+                                    key={g.id}
+                                    onClick={() => handleToggleGroup(g.id)}
+                                    className={`p-3 flex items-center justify-between cursor-pointer transition hover:bg-white ${
+                                      isChecked ? 'bg-indigo-50/60' : ''
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {}}
+                                        className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                                      />
+                                      {g.avatar ? (
+                                        <img
+                                          src={g.avatar}
+                                          alt={g.title}
+                                          className="w-9 h-9 rounded-full object-cover border border-gray-200 shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                                          Zalo
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-semibold text-xs text-gray-900 truncate">
+                                          {g.title}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                                          <span className="font-mono text-[10px] text-gray-400">ID: {g.id}</span>
+                                          <span>•</span>
+                                          <span className="flex items-center gap-0.5">
+                                            <Users size={12} /> {g.members_count} TV
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Telegram platform
+                return (
+                  <div className="space-y-4">
+                    <div className="bg-sky-50/70 border border-sky-200/70 rounded-xl p-3.5 text-xs text-sky-900 space-y-1.5">
+                      <div className="font-semibold flex items-center gap-1.5 text-sky-800">
+                        <TelegramLogo size={16} weight="fill" className="text-sky-600" />
+                        Tài khoản Bot: {currentAccount.account_name}
+                      </div>
+                      <p className="text-sky-700 leading-relaxed">
+                        Nhập ID nhóm chat Telegram (bắt đầu bằng dấu trừ, ví dụ: <code>-1001234567890</code>) hoặc quét các nhóm bot đã nhận diện được nhưng chưa gán workspace.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 p-3.5 border border-gray-200 rounded-xl bg-gray-50/50">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Tên nhóm chat Telegram
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ví dụ: Nhóm CSKH Miền Bắc"
+                          value={telegramTitle}
+                          onChange={(e) => setTelegramTitle(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Telegram Chat ID
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ví dụ: -100192837465"
+                          value={telegramChatId}
+                          onChange={(e) => setTelegramChatId(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handleScanGroups}
+                        disabled={scanningGroups}
+                        className="flex items-center gap-1.5 text-xs text-sky-700 hover:text-sky-900 font-medium"
+                      >
+                        <ArrowClockwise size={14} className={scanningGroups ? 'animate-spin' : ''} />
+                        <span>Kiểm tra nhóm Telegram chưa gán ({discoveredGroups.length})</span>
+                      </button>
+                    </div>
+
+                    {hasScanned && discoveredGroups.length > 0 && (
+                      <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white">
+                        {discoveredGroups.map((g) => {
+                          const isChecked = selectedGroupIds.includes(g.id);
+                          return (
+                            <div
+                              key={g.id}
+                              onClick={() => handleToggleGroup(g.id)}
+                              className={`p-2.5 flex items-center justify-between cursor-pointer text-xs ${
+                                isChecked ? 'bg-sky-50' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                  className="h-3.5 w-3.5 text-sky-600 rounded"
+                                />
+                                <div>
+                                  <div className="font-semibold text-gray-800">{g.title}</div>
+                                  <div className="text-[10px] text-gray-400 font-mono">ID: {g.id}</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsAddChatModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleAddDiscoveredGroups}
+                disabled={
+                  addingGroups ||
+                  !selectedModalAccountId ||
+                  (channelAccounts.find((a) => a.id === selectedModalAccountId)?.platform === 'ZALO'
+                    ? selectedGroupIds.length === 0
+                    : !telegramChatId.trim() && selectedGroupIds.length === 0)
+                }
+                className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-sm transition"
+              >
+                <FloppyDisk size={16} weight="bold" />
+                <span>
+                  {addingGroups
+                    ? 'Đang thêm...'
+                    : selectedGroupIds.length > 0
+                    ? `Thêm vào Workspace (${selectedGroupIds.length})`
+                    : 'Thêm vào Workspace'}
+                </span>
+              </button>
             </div>
           </div>
         </div>

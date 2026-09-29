@@ -1,5 +1,5 @@
 import { Zalo, ThreadType, LoginQRCallbackEventType, type API, type Credentials } from 'zca-js';
-import { prisma, encryptData } from '@omniagent/database';
+import { prisma, encryptData, decryptData } from '@omniagent/database';
 import type { InboundChatMessage } from '@omniagent/core';
 
 export type QrSessionStatus = 'INITIALIZING' | 'GENERATED' | 'SCANNED' | 'EXPIRED' | 'DECLINED' | 'COMPLETED' | 'ERROR';
@@ -359,3 +359,72 @@ export class ZaloChannelAdapter {
     return activeQrSessions.get(sessionId) || null;
   }
 }
+
+export interface DiscoveredZaloGroup {
+  groupId: string;
+  name: string;
+  avatar?: string;
+  totalMember?: number;
+}
+
+/**
+ * Đăng nhập bằng credentials đã lưu và quét toàn bộ danh bạ nhóm chat Zalo của tài khoản
+ */
+export async function discoverZaloGroups(encryptedCredentials: string): Promise<DiscoveredZaloGroup[]> {
+  let credentials: Credentials;
+  try {
+    const decryptedStr = decryptData(encryptedCredentials);
+    credentials = JSON.parse(decryptedStr);
+  } catch (err: any) {
+    throw new Error('Không thể giải mã thông tin đăng nhập Zalo: ' + err.message);
+  }
+
+  if (!credentials || !credentials.cookie || !credentials.imei) {
+    throw new Error('Thông tin đăng nhập Zalo không hợp lệ hoặc thiếu cookie/imei');
+  }
+
+  const zalo = new Zalo({
+    selfListen: false,
+    checkUpdate: false,
+    logging: false,
+  });
+
+  const api = await zalo.login(credentials);
+  const groupsRes = await api.getAllGroups();
+  const groupIds = Object.keys(groupsRes.gridVerMap || {});
+
+  if (groupIds.length === 0) {
+    return [];
+  }
+
+  const results: DiscoveredZaloGroup[] = [];
+  const chunkSize = 50;
+  for (let i = 0; i < groupIds.length; i += chunkSize) {
+    const chunk = groupIds.slice(i, i + chunkSize);
+    try {
+      const infoRes = await api.getGroupInfo(chunk);
+      if (infoRes && infoRes.gridInfoMap) {
+        for (const [gid, ginfo] of Object.entries(infoRes.gridInfoMap)) {
+          results.push({
+            groupId: gid,
+            name: (ginfo as any).name || `Nhóm Zalo (${gid})`,
+            avatar: (ginfo as any).avt || undefined,
+            totalMember: (ginfo as any).totalMember || (Array.isArray((ginfo as any).memberIds) ? (ginfo as any).memberIds.length : 0),
+          });
+        }
+      } else {
+        for (const gid of chunk) {
+          results.push({ groupId: gid, name: `Nhóm Zalo (${gid})` });
+        }
+      }
+    } catch (e) {
+      console.warn('[Zalo discoverGroups] error fetching chunk info:', e);
+      for (const gid of chunk) {
+        results.push({ groupId: gid, name: `Nhóm Zalo (${gid})` });
+      }
+    }
+  }
+
+  return results;
+}
+
