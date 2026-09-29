@@ -1,10 +1,11 @@
 import OpenAI from 'openai';
-import type { SkillDefinition, ToolGroupDefinition, RouterDecision } from '../types.js';
+import type { SkillDefinition, ToolGroupDefinition, ToolDefinition, RouterDecision } from '../types.js';
 
 export interface RouterAgentOptions {
   userPrompt: string;
   accessibleSkills: SkillDefinition[];
   accessibleToolGroups: ToolGroupDefinition[];
+  accessibleTools?: ToolDefinition[];
   openRouterApiKey?: string;
   modelId?: string;
 }
@@ -34,7 +35,7 @@ export class RouterAgent {
    * Nếu không, trả về danh mục Tool Groups liên quan.
    */
   async classify(options: RouterAgentOptions): Promise<RouterDecision> {
-    const { userPrompt, accessibleSkills, accessibleToolGroups } = options;
+    const { userPrompt, accessibleSkills, accessibleToolGroups, accessibleTools } = options;
 
     const skillsSummary = accessibleSkills.map((s) => ({
       id: s.id,
@@ -44,12 +45,20 @@ export class RouterAgent {
       trigger_intents: s.triggerIntents,
     }));
 
-    const toolGroupsSummary = accessibleToolGroups.map((tg) => ({
-      id: tg.id,
-      key: tg.key,
-      name: tg.name,
-      description: tg.description,
-    }));
+    const toolGroupsSummary = accessibleToolGroups.map((tg) => {
+      const groupTools = accessibleTools
+        ? accessibleTools
+            .filter((t) => t.toolGroupId === tg.id)
+            .map((t) => ({ key: t.key, name: t.name, description: t.description }))
+        : [];
+      return {
+        id: tg.id,
+        key: tg.key,
+        name: tg.name,
+        description: tg.description,
+        ...(groupTools.length > 0 ? { tools: groupTools } : {}),
+      };
+    });
 
     const systemPrompt = `You are a high-speed Intent Classifier & Router for an Enterprise AI Agent platform.
 Your task is to analyze the user's prompt and make a routing decision.
@@ -57,13 +66,13 @@ Your task is to analyze the user's prompt and make a routing decision.
 AVAILABLE SKILLS in this Workspace:
 ${JSON.stringify(skillsSummary, null, 2)}
 
-AVAILABLE TOOL GROUPS in this Workspace:
+AVAILABLE TOOL GROUPS & TOOLS in this Workspace:
 ${JSON.stringify(toolGroupsSummary, null, 2)}
 
 RULES:
 1. If the user's request matches the purpose or trigger intents of any available Skill, set "is_skill_matched": true, and provide "matched_skill_id" and "matched_skill_key".
-2. If NO skill matches, set "is_skill_matched": false, and select 1 to 3 "recommended_tool_groups" (by group key) that can fulfill the request.
-3. If the request is generic small talk or greetings, set "intent": "chitchat", "is_skill_matched": false, "recommended_tool_groups": [].
+2. If NO skill matches, check if the user's request requires executing any available Tools or Tool Groups (such as recording an expense, creating a transaction, checking balance or debts, managing members/groups/products, etc.). If so, specify the exact intent and select 1 to 3 "recommended_tool_groups" (by group key) that contain those tools.
+3. If the request is purely generic small talk or greetings without any actionable task or data request, set "intent": "chitchat", "is_skill_matched": false, "recommended_tool_groups": [].
 4. Output STRICT JSON only conforming to the schema:
 {
   "intent": "string",

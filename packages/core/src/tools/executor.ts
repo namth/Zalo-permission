@@ -50,7 +50,7 @@ export class ToolExecutor {
     const startTime = Date.now();
 
     // 0. Nếu là MCP ToolGroup, chuyển tiếp cho McpToolExecutor
-    if (group.protocolType === 'MCP') {
+    if (group.protocolType === 'MCP' || (group.baseUrl && (group.baseUrl.includes('/mcp.php') || group.baseUrl.includes('/mcp')))) {
       const rawBaseUrl = VariableInjector.injectString(group.baseUrl, scopedVariables);
       const authHeaders: Record<string, string> = {};
 
@@ -69,7 +69,7 @@ export class ToolExecutor {
         Object.assign(authHeaders, group.defaultHeaders);
       }
 
-      const mcpToolName = tool.mcpToolName || tool.key;
+      const mcpToolName = tool.mcpToolName || tool.name || tool.key;
       const timeout = (group.timeoutSeconds || 15) * 1000;
 
       return McpToolExecutor.execute({

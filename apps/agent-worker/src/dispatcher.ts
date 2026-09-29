@@ -130,47 +130,118 @@ export class MessageDispatcher {
       id: s.id,
       key: s.key || s.name,
       name: s.name,
-      description: s.description,
-      systemPrompt: s.systemPrompt,
+      description: s.description || '',
+      systemPrompt: s.systemPrompt || '',
       triggerIntents: (s.triggerIntents as string[]) || [],
       requiredTools: s.requiredTools,
       isActive: s.isActive,
     }));
 
-    // 3. Fetch accessible Tool Groups & Tools from Neo4j (2-tier permission)
+    // 3. Fetch accessible Tool Groups & Tools from Neo4j (resilient 2-tier permission)
     const toolsQuery = `
-      MATCH (w:Workspace { id: $workspace_id })-[:CAN_USE]->(tg:ToolGroup)<-[:PART_OF]-(t:Tool)
-      WHERE NOT (w)-[:DISABLED]->(t) AND tg.is_active = true AND t.is_active = true
-      RETURN tg.id AS group_id, t.id AS tool_id
-      UNION
-      MATCH (w:Workspace { id: $workspace_id })-[:CAN_USE]->(t:Tool)-[:PART_OF]->(tg:ToolGroup)
-      WHERE tg.is_active = true AND t.is_active = true
-      RETURN tg.id AS group_id, t.id AS tool_id
+      MATCH (w:Workspace { id: $workspace_id })
+      OPTIONAL MATCH (w)-[:CAN_USE]->(dt:Tool)
+      OPTIONAL MATCH (w)-[:CAN_USE]->(tg:ToolGroup)
+      OPTIONAL MATCH (w)-[:CAN_USE]->(tgGroup:ToolGroup)<-[:BELONGS_TO_GROUP|PART_OF|CONTAINS]-(groupTool:Tool)
+      OPTIONAL MATCH (w)-[:DISABLED]->(disabledTool:Tool)
+      RETURN 
+        collect(DISTINCT coalesce(dt.id, dt.key)) AS direct_tool_refs,
+        collect(DISTINCT coalesce(tg.id, tg.key)) AS explicit_group_refs,
+        collect(DISTINCT coalesce(groupTool.id, groupTool.key)) AS group_tool_refs,
+        collect(DISTINCT coalesce(disabledTool.id, disabledTool.key)) AS disabled_tool_refs
     `;
-    const toolRows = await runCypher<{ group_id: string; tool_id: string }>(toolsQuery, {
-      workspace_id: workspaceId,
-    });
+    const neoRows = await runCypher<{
+      direct_tool_refs: string[];
+      explicit_group_refs: string[];
+      group_tool_refs: string[];
+      disabled_tool_refs: string[];
+    }>(toolsQuery, { workspace_id: workspaceId });
 
-    const toolGroupIds = Array.from(new Set(toolRows.map((r) => r.group_id)));
-    const toolIds = Array.from(new Set(toolRows.map((r) => r.tool_id)));
+    const neoResult = neoRows[0] || {
+      direct_tool_refs: [],
+      explicit_group_refs: [],
+      group_tool_refs: [],
+      disabled_tool_refs: [],
+    };
 
-    // Fetch tool groups and tools from Postgres
-    const [groupsFromDb, toolsFromDb, scopedConfigsFromDb] = await Promise.all([
-      prisma.toolGroup.findMany({ where: { id: { in: toolGroupIds } } }),
-      prisma.tool.findMany({ where: { id: { in: toolIds } } }),
+    const directToolRefs = (neoResult.direct_tool_refs || []).filter(Boolean);
+    const explicitGroupRefs = (neoResult.explicit_group_refs || []).filter(Boolean);
+    const groupToolRefs = (neoResult.group_tool_refs || []).filter(Boolean);
+    const disabledToolRefs = new Set((neoResult.disabled_tool_refs || []).filter(Boolean));
+
+    const combinedToolRefs = Array.from(new Set([...directToolRefs, ...groupToolRefs]));
+
+    // Query explicit ToolGroups if any
+    let explicitGroupsFromDb: any[] = [];
+    if (explicitGroupRefs.length > 0) {
+      explicitGroupsFromDb = await prisma.toolGroup.findMany({
+        where: {
+          OR: [
+            { id: { in: explicitGroupRefs } },
+            { key: { in: explicitGroupRefs } },
+          ],
+          isActive: true,
+        },
+      });
+    }
+
+    const explicitGroupIds = explicitGroupsFromDb.map((g) => g.id);
+
+    // Fetch accessible tools from Postgres
+    const toolOrConditions: any[] = [];
+    if (combinedToolRefs.length > 0) {
+      toolOrConditions.push({ id: { in: combinedToolRefs } });
+      toolOrConditions.push({ key: { in: combinedToolRefs } });
+    }
+    if (explicitGroupIds.length > 0) {
+      toolOrConditions.push({ toolGroupId: { in: explicitGroupIds } });
+    }
+
+    let toolsFromDb: any[] = [];
+    if (toolOrConditions.length > 0) {
+      const candidateTools = await prisma.tool.findMany({
+        where: {
+          OR: toolOrConditions,
+          isActive: true,
+        },
+      });
+
+      // Filter out disabled tools
+      toolsFromDb = candidateTools.filter(
+        (t) => !disabledToolRefs.has(t.id) && !disabledToolRefs.has(t.key)
+      );
+    }
+
+    // Collect all unique toolGroupIds needed by the accessible tools + explicit groups
+    const allToolGroupIds = Array.from(
+      new Set([
+        ...explicitGroupIds,
+        ...toolsFromDb.map((t) => t.toolGroupId).filter((id): id is string => Boolean(id)),
+      ])
+    );
+
+    // Fetch tool groups and workspace configs from Postgres
+    const [groupsFromDb, scopedConfigsFromDb] = await Promise.all([
+      prisma.toolGroup.findMany({
+        where: { id: { in: allToolGroupIds }, isActive: true },
+      }),
       prisma.workspaceToolConfig.findMany({
-        where: { workspaceId, toolGroupId: { in: toolGroupIds }, isEnabled: true },
+        where: { workspaceId, toolGroupId: { in: allToolGroupIds } },
       }),
     ]);
 
     const toolGroupsMap = new Map<string, ToolGroupDefinition>();
-    groupsFromDb.forEach((g) => {
+    groupsFromDb.forEach((g: any) => {
       toolGroupsMap.set(g.id, {
         id: g.id,
         key: g.key,
         name: g.name,
         description: g.description,
+        protocolType: g.protocolType || 'REST',
         baseUrl: g.baseUrl || '',
+        mcpTransport: g.mcpTransport || 'SSE',
+        mcpRawConfig: (g.mcpRawConfig as Record<string, unknown>) || null,
+        timeoutSeconds: g.timeoutSeconds || 15,
         authType: g.authType,
         defaultAuthConfig: (g.defaultAuthConfig as Record<string, unknown>) || {},
         defaultHeaders: (g.defaultHeaders as Record<string, string>) || {},
@@ -211,6 +282,7 @@ export class MessageDispatcher {
       userPrompt: message.text,
       accessibleSkills,
       accessibleToolGroups: Array.from(toolGroupsMap.values()),
+      accessibleTools,
     });
 
     console.log(`[Dispatcher] Router Decision:`, routerDecision);
@@ -231,6 +303,8 @@ export class MessageDispatcher {
       if (allowedGroupIds.length > 0) {
         filteredTools = accessibleTools.filter((t) => allowedGroupIds.includes(t.toolGroupId));
       }
+    } else if (routerDecision.intent === 'chitchat') {
+      filteredTools = [];
     }
 
     // 5. WORKER AGENT: Think -> Plan -> Act (Tools) -> Synthesize

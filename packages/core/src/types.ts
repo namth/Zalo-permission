@@ -13,9 +13,9 @@ export interface ToolGroupDefinition {
   key: string;
   name: string;
   description?: string | null;
-  protocolType?: ProtocolType;
+  protocolType?: ProtocolType | string;
   baseUrl: string;
-  mcpTransport?: McpTransportType;
+  mcpTransport?: McpTransportType | string;
   mcpRawConfig?: Record<string, unknown> | null;
   timeoutSeconds?: number;
   authType: AuthType;
