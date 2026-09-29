@@ -125,28 +125,37 @@ export async function POST(
       for (const item of chats) {
         if (!item.platform_chat_id || !item.title) continue;
 
-        const chat = await prisma.channelChat.upsert({
+        const existingChat = await prisma.channelChat.findFirst({
           where: {
-            platform_platformChatId: {
-              platform: account.platform,
-              platformChatId: String(item.platform_chat_id).trim(),
-            },
-          },
-          update: {
-            title: String(item.title).trim(),
-            workspaceId,
-            isActive: true,
-          },
-          create: {
-            accountId: account.id,
             platform: account.platform,
             platformChatId: String(item.platform_chat_id).trim(),
-            title: String(item.title).trim(),
-            chatType: item.chat_type || 'GROUP',
-            workspaceId,
-            isActive: true,
           },
         });
+
+        let chat;
+        if (existingChat) {
+          chat = await prisma.channelChat.update({
+            where: { id: existingChat.id },
+            data: {
+              accountId: account.id,
+              title: String(item.title).trim(),
+              workspaceId,
+              isActive: true,
+            },
+          });
+        } else {
+          chat = await prisma.channelChat.create({
+            data: {
+              accountId: account.id,
+              platform: account.platform,
+              platformChatId: String(item.platform_chat_id).trim(),
+              title: String(item.title).trim(),
+              chatType: item.chat_type || 'GROUP',
+              workspaceId,
+              isActive: true,
+            },
+          });
+        }
 
         // Sync Neo4j
         const cypher = `
