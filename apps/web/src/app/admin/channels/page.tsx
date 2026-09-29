@@ -11,6 +11,8 @@ import {
   WarningCircle,
   ArrowClockwise,
   Users,
+  Trash,
+  FolderSimple,
 } from '@phosphor-icons/react';
 
 interface ChannelAccount {
@@ -32,10 +34,19 @@ interface ChannelAccount {
 
 interface ChannelChat {
   id: string;
+  platform: 'TELEGRAM' | 'ZALO';
   platform_chat_id: string;
   title: string;
   chat_type: string;
+  is_active: boolean;
+  workspace_id: string | null;
   workspace_name: string | null;
+  created_at?: string;
+}
+
+interface Workspace {
+  id: string;
+  name: string;
 }
 
 export default function ChannelsPage() {
@@ -44,6 +55,7 @@ export default function ChannelsPage() {
   const [selectedAccount, setSelectedAccount] = useState<ChannelAccount | null>(null);
   const [chats, setChats] = useState<ChannelChat[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
 
   // Modals
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
@@ -56,6 +68,16 @@ export default function ChannelsPage() {
   const [zaloScannedUser, setZaloScannedUser] = useState<{ name: string; avatar: string } | null>(null);
   const [zaloError, setZaloError] = useState('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Add Chat Modal
+  const [isAddChatModalOpen, setIsAddChatModalOpen] = useState(false);
+  const [newChatTitle, setNewChatTitle] = useState('');
+  const [newChatPlatformId, setNewChatPlatformId] = useState('');
+  const [newChatType, setNewChatType] = useState('GROUP');
+  const [newChatWorkspaceId, setNewChatWorkspaceId] = useState('');
+  const [savingChat, setSavingChat] = useState(false);
+  const [addChatError, setAddChatError] = useState('');
+  const [updatingChatId, setUpdatingChatId] = useState<string | null>(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -75,8 +97,21 @@ export default function ChannelsPage() {
     }
   };
 
+  const fetchWorkspaces = async () => {
+    try {
+      const res = await fetch('/api/admin/workspaces?limit=100');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setWorkspaces(data.data.map((w: any) => ({ id: w.id, name: w.name })));
+      }
+    } catch (err) {
+      console.error('Error fetching workspaces:', err);
+    }
+  };
+
   useEffect(() => {
     fetchAccounts();
+    fetchWorkspaces();
     return () => {
       stopZaloPolling();
     };
@@ -105,6 +140,101 @@ export default function ChannelsPage() {
       console.error('Error fetching chats:', err);
     } finally {
       setLoadingChats(false);
+    }
+  };
+
+  const handleAssignWorkspace = async (chatId: string, newWorkspaceId: string) => {
+    if (!selectedAccount) return;
+    setUpdatingChatId(chatId);
+    try {
+      const res = await fetch(`/api/channels/${selectedAccount.id}/chats`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          workspace_id: newWorkspaceId || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === chatId
+              ? {
+                  ...c,
+                  workspace_id: newWorkspaceId || null,
+                  workspace_name:
+                    workspaces.find((w) => w.id === newWorkspaceId)?.name || null,
+                }
+              : c
+          )
+        );
+      } else {
+        alert(data.error || 'Không thể cập nhật workspace cho nhóm chat');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối khi cập nhật workspace: ' + err.message);
+    } finally {
+      setUpdatingChatId(null);
+    }
+  };
+
+  const handleCreateChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccount) return;
+    if (!newChatPlatformId.trim() || !newChatTitle.trim()) {
+      setAddChatError('Vui lòng nhập đầy đủ ID kênh chat và tên nhóm');
+      return;
+    }
+
+    setSavingChat(true);
+    setAddChatError('');
+    try {
+      const res = await fetch(`/api/channels/${selectedAccount.id}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform_chat_id: newChatPlatformId.trim(),
+          title: newChatTitle.trim(),
+          chat_type: newChatType,
+          workspace_id: newChatWorkspaceId || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsAddChatModalOpen(false);
+        setNewChatTitle('');
+        setNewChatPlatformId('');
+        setNewChatWorkspaceId('');
+        await handleSelectAccount(selectedAccount);
+        await fetchAccounts();
+      } else {
+        setAddChatError(data.error || 'Không thể thêm nhóm chat');
+      }
+    } catch (err: any) {
+      setAddChatError(err.message || 'Lỗi khi kết nối máy chủ');
+    } finally {
+      setSavingChat(false);
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string, chatTitle: string) => {
+    if (!selectedAccount) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa nhóm chat "${chatTitle}" khỏi kênh này không?`)) return;
+
+    try {
+      const res = await fetch(`/api/channels/${selectedAccount.id}/chats?chat_id=${chatId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChats((prev) => prev.filter((c) => c.id !== chatId));
+        await fetchAccounts();
+      } else {
+        alert(data.error || 'Không thể xóa nhóm chat');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối: ' + err.message);
     }
   };
 
@@ -254,7 +384,7 @@ export default function ChannelsPage() {
                     onClick={() => handleSelectAccount(acc)}
                     className={`p-3.5 rounded-lg border cursor-pointer transition ${
                       isSelected
-                        ? 'border-indigo-500 bg-indigo-50/50'
+                        ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500'
                         : 'border-gray-200 hover:border-gray-300 bg-gray-50/50'
                     }`}
                   >
@@ -308,24 +438,63 @@ export default function ChannelsPage() {
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <div>
-              <h2 className="font-semibold text-gray-900">
+              <h2 className="font-semibold text-gray-900 text-lg">
                 {selectedAccount ? `Nhóm Chat của: ${selectedAccount.account_name}` : 'Chi Tiết Nhóm Chat'}
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Các nhóm chat được định tuyến vào từng Workspace cụ thể.
+                Các nhóm chat được định tuyến vào từng Workspace cụ thể để gán agent và skills xử lý.
               </p>
             </div>
+            {selectedAccount && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSelectAccount(selectedAccount)}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition"
+                  title="Làm mới nhóm chat"
+                >
+                  <ArrowClockwise size={18} />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAddChatModalOpen(true);
+                    setAddChatError('');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-sm transition"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span>+ Thêm Nhóm Chat</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {!selectedAccount ? (
-            <div className="text-center py-16 text-gray-400 text-sm">
-              Chọn một tài khoản ở danh sách bên trái để xem danh sách nhóm chat.
+            <div className="text-center py-20 text-gray-400 text-sm">
+              Chọn một tài khoản ở danh sách bên trái để xem và quản lý danh sách nhóm chat.
             </div>
           ) : loadingChats ? (
-            <div className="text-center py-16 text-gray-500 text-sm">Đang tải danh sách nhóm chat...</div>
+            <div className="text-center py-20 text-gray-500 text-sm">Đang tải danh sách nhóm chat...</div>
           ) : chats.length === 0 ? (
-            <div className="text-center py-16 text-gray-400 text-sm">
-              Tài khoản này chưa tham gia nhóm chat nào hoặc chưa có tin nhắn đến bot.
+            <div className="text-center py-16 px-4 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mx-auto">
+                <ChatCircleDots size={28} />
+              </div>
+              <p className="text-gray-600 font-medium text-sm">
+                Tài khoản này chưa có nhóm chat nào được ghi nhận.
+              </p>
+              <p className="text-xs text-gray-400 max-w-md mx-auto">
+                Hệ thống sẽ tự động phát hiện khi bot/tài khoản nhận tin nhắn trong nhóm, hoặc bạn có thể thêm thủ công ID nhóm chat ngay bên dưới.
+              </p>
+              <button
+                onClick={() => {
+                  setIsAddChatModalOpen(true);
+                  setAddChatError('');
+                }}
+                className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium shadow-sm transition"
+              >
+                <Plus size={16} weight="bold" />
+                <span>Thêm Nhóm Chat Thủ Công</span>
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -334,28 +503,57 @@ export default function ChannelsPage() {
                   <tr>
                     <th className="px-4 py-3">Tên Nhóm</th>
                     <th className="px-4 py-3">ID Kênh Chat</th>
-                    <th className="px-4 py-3">Workspace Đã Gán</th>
-                    <th className="px-4 py-3 text-right">Trạng Thái</th>
+                    <th className="px-4 py-3">Loại</th>
+                    <th className="px-4 py-3">Gán Vào Workspace</th>
+                    <th className="px-4 py-3 text-right">Thao Tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {chats.map((chat) => (
                     <tr key={chat.id} className="hover:bg-gray-50/80 transition">
-                      <td className="px-4 py-3 font-medium text-gray-900">{chat.title}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{chat.platform_chat_id}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        {chat.title}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                        {chat.platform_chat_id}
+                      </td>
                       <td className="px-4 py-3">
-                        {chat.workspace_name ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
-                            {chat.workspace_name}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700">
-                            Chưa gán Workspace
-                          </span>
-                        )}
+                        <span className="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600 font-medium">
+                          {chat.chat_type === 'DIRECT' ? 'Cá nhân' : 'Nhóm chat'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={chat.workspace_id || ''}
+                            onChange={(e) => handleAssignWorkspace(chat.id, e.target.value)}
+                            disabled={updatingChatId === chat.id}
+                            className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                              chat.workspace_id
+                                ? 'bg-indigo-50/70 border-indigo-200 text-indigo-800'
+                                : 'bg-amber-50/70 border-amber-200 text-amber-800'
+                            }`}
+                          >
+                            <option value="">-- Chưa gán Workspace --</option>
+                            {workspaces.map((ws) => (
+                              <option key={ws.id} value={ws.id}>
+                                {ws.name}
+                              </option>
+                            ))}
+                          </select>
+                          {updatingChatId === chat.id && (
+                            <span className="text-xs text-indigo-600 animate-pulse">Lưu...</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Hoạt động" />
+                        <button
+                          onClick={() => handleDeleteChat(chat.id, chat.title)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Xóa nhóm chat này"
+                        >
+                          <Trash size={16} />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -365,6 +563,137 @@ export default function ChannelsPage() {
           )}
         </div>
       </div>
+
+      {/* Modal Add Chat Group */}
+      {isAddChatModalOpen && selectedAccount && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
+                <Plus size={20} className="text-indigo-600" weight="bold" />
+                Thêm Nhóm Chat Vào Kênh
+              </h3>
+              <button
+                onClick={() => setIsAddChatModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateChat} className="space-y-4">
+              <div className="p-3 bg-gray-50 rounded-lg flex items-center gap-2.5 text-xs text-gray-600">
+                {selectedAccount.platform === 'TELEGRAM' ? (
+                  <TelegramLogo size={20} className="text-sky-500" weight="fill" />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">
+                    Z
+                  </div>
+                )}
+                <span>
+                  Kênh tài khoản: <b>{selectedAccount.account_name}</b> ({selectedAccount.platform})
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tên Nhóm Chat <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Nhóm Kỹ Thuật & Hỗ Trợ Khách Hàng"
+                  value={newChatTitle}
+                  onChange={(e) => setNewChatTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ID Kênh Chat (Chat ID / Thread ID) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={
+                    selectedAccount.platform === 'TELEGRAM'
+                      ? 'Ví dụ: -1001234567890 hoặc chat ID cá nhân'
+                      : 'Ví dụ: 789792910810423597 hoặc thread ID nhóm Zalo'
+                  }
+                  value={newChatPlatformId}
+                  onChange={(e) => setNewChatPlatformId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedAccount.platform === 'TELEGRAM'
+                    ? 'ID nhóm chat Telegram thường bắt đầu bằng dấu trừ -100...'
+                    : 'ID nhóm hoặc thread chat Zalo.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phân Loại Chat
+                </label>
+                <select
+                  value={newChatType}
+                  onChange={(e) => setNewChatType(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="GROUP">Nhóm chat (Group Chat)</option>
+                  <option value="DIRECT">Chat trực tiếp 1-1 (Direct Message)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Gán Vào Workspace
+                </label>
+                <select
+                  value={newChatWorkspaceId}
+                  onChange={(e) => setNewChatWorkspaceId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="">-- Chưa gán (Gán sau) --</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id} value={ws.id}>
+                      {ws.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Tin nhắn từ nhóm này sẽ được Agent của Workspace đã chọn tiếp nhận và phản hồi.
+                </p>
+              </div>
+
+              {addChatError && (
+                <div className="p-3 rounded-lg bg-rose-50 text-rose-700 text-xs flex items-center gap-1.5">
+                  <WarningCircle size={16} />
+                  {addChatError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddChatModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingChat}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition"
+                >
+                  {savingChat ? 'Đang lưu...' : 'Thêm Nhóm Chat'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Connect Telegram */}
       {isTelegramModalOpen && (

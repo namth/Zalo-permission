@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check } from '@phosphor-icons/react';
+import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check, TelegramLogo, ChatCircleDots } from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
 
 interface Workspace {
@@ -13,6 +13,32 @@ interface Workspace {
   description?: string;
   created_at: string;
   updated_at: string;
+}
+
+interface WorkspaceChannelChat {
+  id: string;
+  account_id: string;
+  account_name: string;
+  platform: 'TELEGRAM' | 'ZALO';
+  platform_chat_id: string;
+  title: string;
+  chat_type: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface AvailableChannelChat {
+  id: string;
+  account_id: string;
+  account_name: string;
+  platform: 'TELEGRAM' | 'ZALO';
+  platform_chat_id: string;
+  title: string;
+  chat_type: string;
+  is_active: boolean;
+  workspace_id: string | null;
+  workspace_name: string | null;
+  is_assigned_to_current: boolean;
 }
 
 interface ZaloGroup {
@@ -62,6 +88,10 @@ export default function WorkspaceDetailPage() {
 
   // Data
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [channelChats, setChannelChats] = useState<WorkspaceChannelChat[]>([]);
+  const [availableChats, setAvailableChats] = useState<AvailableChannelChat[]>([]);
+  const [chatIdToAssign, setChatIdToAssign] = useState('');
+  const [assigningChat, setAssigningChat] = useState(false);
   const [zaloGroups, setZaloGroups] = useState<ZaloGroup[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -106,7 +136,9 @@ export default function WorkspaceDetailPage() {
     setLoading(true);
     try {
       if (activeTab === 'info') await fetchWorkspace();
-      if (activeTab === 'groups') await fetchZaloGroups();
+      if (activeTab === 'groups') {
+        await Promise.all([fetchChannelChats(), fetchAvailableChats(), fetchZaloGroups()]);
+      }
       if (activeTab === 'tools' || activeTab === 'data') {
         await fetchTools();
         await fetchAllTools();
@@ -133,6 +165,26 @@ export default function WorkspaceDetailPage() {
     if (data.success) {
       setWorkspace(data.data);
       setFormData({ name: data.data.name, description: data.data.description || '' });
+    }
+  };
+
+  const fetchChannelChats = async () => {
+    try {
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats`);
+      const data = await res.json();
+      if (data.success) setChannelChats(data.data || []);
+    } catch (err) {
+      console.error('Error fetching channel chats:', err);
+    }
+  };
+
+  const fetchAvailableChats = async () => {
+    try {
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats?available=true`);
+      const data = await res.json();
+      if (data.success) setAvailableChats(data.data || []);
+    } catch (err) {
+      console.error('Error fetching available chats:', err);
     }
   };
 
@@ -192,6 +244,47 @@ export default function WorkspaceDetailPage() {
       setWorkspace(data.data);
       alert('Workspace updated');
     } else setError(data.error);
+  };
+
+  const handleAssignChannelChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatIdToAssign) return;
+    setAssigningChat(true);
+    try {
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatIdToAssign }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChatIdToAssign('');
+        await Promise.all([fetchChannelChats(), fetchAvailableChats()]);
+      } else {
+        alert(data.error || 'Không thể gán nhóm chat vào workspace');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối: ' + err.message);
+    } finally {
+      setAssigningChat(false);
+    }
+  };
+
+  const handleRemoveChannelChat = async (chatId: string, title: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn gỡ nhóm chat "${title}" khỏi Workspace này không?`)) return;
+    try {
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats?chat_id=${chatId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        await Promise.all([fetchChannelChats(), fetchAvailableChats()]);
+      } else {
+        alert(data.error || 'Không thể gỡ nhóm chat khỏi workspace');
+      }
+    } catch (err: any) {
+      alert('Lỗi kết nối: ' + err.message);
+    }
   };
 
   const handleAddZaloGroup = async (e: React.FormEvent) => {
@@ -354,7 +447,7 @@ export default function WorkspaceDetailPage() {
                 : 'text-gray-500 hover:text-gray-700'
                 }`}
             >
-              {tab === 'data' ? 'Data & Tools' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'data' ? 'Data & Tools' : tab === 'groups' ? 'Kênh & Nhóm Chat' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -402,48 +495,160 @@ export default function WorkspaceDetailPage() {
             </form>
           )}
 
-          {/* ZALO GROUPS TAB */}
+          {/* CHANNEL CHATS & GROUPS TAB */}
           {activeTab === 'groups' && (
-            <div>
-              {isAdmin && (
-                <form onSubmit={handleAddZaloGroup} className="flex gap-2 mb-6 p-4 bg-gray-50 rounded">
-                  <input
-                    placeholder="Thread ID"
-                    className="border px-3 py-2 rounded flex-1"
-                    value={zaloFormData.thread_id}
-                    onChange={e => setZaloFormData({ ...zaloFormData, thread_id: e.target.value })}
-                    required
-                  />
-                  <input
-                    placeholder="Name"
-                    className="border px-3 py-2 rounded flex-1"
-                    value={zaloFormData.name}
-                    onChange={e => setZaloFormData({ ...zaloFormData, name: e.target.value })}
-                  />
-                  <button className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                    <Plus size={15} weight="bold" />
-                    Add
-                  </button>
-                </form>
-              )}
-              <div className="space-y-2">
-                {zaloGroups.map(g => (
-                  <div key={g.id} className="flex justify-between items-center border p-3 rounded">
-                    <div>
-                      <Link href={`/admin/zalo-groups/${g.id}`} className="font-semibold hover:text-blue-600 hover:underline">
-                        {g.name || 'Unnamed'}
-                      </Link>
-                      <div className="text-xs text-gray-500">{g.thread_id}</div>
-                    </div>
-                    {isAdmin && (
-                      <button onClick={() => handleRemoveZaloGroup(g.thread_id)} title="Remove group" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">
-                        <X size={14} weight="bold" />
-                        Remove
-                      </button>
-                    )}
+            <div className="space-y-8">
+              {/* Modern Channel Chats (Telegram & Zalo) */}
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                      <ChatCircleDots size={20} className="text-indigo-600" />
+                      Kênh & Nhóm Chat Đã Gán ({channelChats.length})
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Các nhóm chat thuộc Telegram Bot hoặc Zalo được định tuyến trực tiếp vào Workspace này.
+                    </p>
                   </div>
-                ))}
-                {zaloGroups.length === 0 && <p className="text-gray-500">No Zalo groups.</p>}
+                  <Link
+                    href="/admin/channels"
+                    className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    Quản lý tài khoản tại Kênh Liên Lạc →
+                  </Link>
+                </div>
+
+                {isAdmin && (
+                  <form onSubmit={handleAssignChannelChat} className="flex flex-col sm:flex-row gap-2 p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                    <select
+                      className="border border-indigo-200 px-3 py-2 rounded-lg text-sm flex-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={chatIdToAssign}
+                      onChange={(e) => setChatIdToAssign(e.target.value)}
+                    >
+                      <option value="">-- Chọn nhóm chat từ các kênh kết nối để gán vào Workspace này --</option>
+                      {availableChats
+                        .filter((c) => !c.is_assigned_to_current)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            [{c.platform}] {c.title} (ID: {c.platform_chat_id}) - Kênh: {c.account_name}
+                            {c.workspace_name ? ` (Hiện tại: ${c.workspace_name})` : ' (Chưa gán)'}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={!chatIdToAssign || assigningChat}
+                      className="flex items-center justify-center gap-1.5 bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition"
+                    >
+                      <Plus size={16} weight="bold" />
+                      {assigningChat ? 'Đang gán...' : 'Gán vào Workspace'}
+                    </button>
+                  </form>
+                )}
+
+                <div className="space-y-2.5">
+                  {channelChats.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className="flex items-center justify-between p-3.5 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        {chat.platform === 'TELEGRAM' ? (
+                          <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center">
+                            <TelegramLogo size={18} weight="fill" />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                            Zalo
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                            <span>{chat.title}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-mono">
+                              {chat.chat_type}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 font-mono mt-0.5 flex items-center gap-2">
+                            <span>ID: {chat.platform_chat_id}</span>
+                            <span>•</span>
+                            <span>Kênh: {chat.account_name}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleRemoveChannelChat(chat.id, chat.title)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition font-medium"
+                          title="Gỡ nhóm chat khỏi workspace"
+                        >
+                          <X size={14} weight="bold" />
+                          Gỡ khỏi Workspace
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {channelChats.length === 0 && (
+                    <div className="text-center py-8 text-gray-400 text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                      Chưa có kênh hoặc nhóm chat nào được gán vào Workspace này.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Legacy Zalo Groups (Accordion) */}
+              <div className="pt-6 border-t border-gray-200">
+                <details className="group">
+                  <summary className="cursor-pointer text-xs font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1 select-none">
+                    <span>Cấu hình nhóm Zalo Legacy (Cũ)</span>
+                  </summary>
+                  <div className="mt-4 space-y-4">
+                    {isAdmin && (
+                      <form onSubmit={handleAddZaloGroup} className="flex gap-2 p-3 bg-gray-50 rounded-lg">
+                        <input
+                          placeholder="Thread ID"
+                          className="border px-3 py-1.5 text-xs rounded flex-1"
+                          value={zaloFormData.thread_id}
+                          onChange={(e) => setZaloFormData({ ...zaloFormData, thread_id: e.target.value })}
+                          required
+                        />
+                        <input
+                          placeholder="Tên nhóm"
+                          className="border px-3 py-1.5 text-xs rounded flex-1"
+                          value={zaloFormData.name}
+                          onChange={(e) => setZaloFormData({ ...zaloFormData, name: e.target.value })}
+                        />
+                        <button className="flex items-center gap-1 bg-gray-700 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-gray-800 transition">
+                          <Plus size={14} weight="bold" />
+                          Thêm Legacy
+                        </button>
+                      </form>
+                    )}
+                    <div className="space-y-2">
+                      {zaloGroups.map((g) => (
+                        <div key={g.id} className="flex justify-between items-center border p-2.5 rounded-lg text-xs">
+                          <div>
+                            <Link href={`/admin/zalo-groups/${g.id}`} className="font-semibold text-gray-800 hover:underline">
+                              {g.name || 'Unnamed'}
+                            </Link>
+                            <div className="text-[11px] text-gray-400">{g.thread_id}</div>
+                          </div>
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleRemoveZaloGroup(g.thread_id)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {zaloGroups.length === 0 && <p className="text-gray-400 text-xs">Không có nhóm zalo legacy nào.</p>}
+                    </div>
+                  </div>
+                </details>
               </div>
             </div>
           )}

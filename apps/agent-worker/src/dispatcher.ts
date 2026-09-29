@@ -42,13 +42,47 @@ export class MessageDispatcher {
       chat_id: message.platformChatId,
     });
 
-    if (!wsResult || wsResult.length === 0) {
+    let workspaceId = wsResult?.[0]?.workspace_id;
+
+    if (!workspaceId) {
+      // Fallback check PostgreSQL in case of Neo4j sync latency or reconnect
+      const chatInDb = await prisma.channelChat.findUnique({
+        where: {
+          platform_platformChatId: {
+            platform: message.platform,
+            platformChatId: String(message.platformChatId),
+          },
+        },
+        include: { workspace: true },
+      });
+
+      if (chatInDb?.workspace) {
+        workspaceId = chatInDb.workspace.id;
+        // Self-heal Neo4j relationship in background
+        runCypher(
+          `
+          MERGE (c:ChannelChat { id: $chatId })
+          SET c.platform = $platform, c.platform_chat_id = $platformChatId, c.title = $title
+          WITH c
+          MATCH (w:Workspace { id: $workspaceId })
+          MERGE (c)-[:BELONGS_TO]->(w)
+          `,
+          {
+            chatId: chatInDb.id,
+            platform: message.platform,
+            platformChatId: String(message.platformChatId),
+            title: chatInDb.title,
+            workspaceId: chatInDb.workspace.id,
+          }
+        ).catch(() => {});
+      }
+    }
+
+    if (!workspaceId) {
       console.warn(`[Dispatcher] Chat ${message.platformChatId} is not assigned to any Workspace.`);
       await this.sendOutbound(message, 'Nhóm chat này chưa được kích hoạt trong bất kỳ không gian làm việc (Workspace) nào.');
       return;
     }
-
-    const { workspace_id: workspaceId } = wsResult[0];
 
     // 2. Fetch accessible Skills for this Workspace from Neo4j & Postgres
     const skillsQuery = `
@@ -65,7 +99,7 @@ export class MessageDispatcher {
 
     const accessibleSkills: SkillDefinition[] = skillsFromDb.map((s) => ({
       id: s.id,
-      key: s.key,
+      key: s.key || s.name,
       name: s.name,
       description: s.description,
       systemPrompt: s.systemPrompt,
@@ -107,7 +141,7 @@ export class MessageDispatcher {
         key: g.key,
         name: g.name,
         description: g.description,
-        baseUrl: g.baseUrl,
+        baseUrl: g.baseUrl || '',
         authType: g.authType,
         defaultAuthConfig: (g.defaultAuthConfig as Record<string, unknown>) || {},
         defaultHeaders: (g.defaultHeaders as Record<string, string>) || {},
@@ -131,12 +165,12 @@ export class MessageDispatcher {
 
     const accessibleTools: ToolDefinition[] = toolsFromDb.map((t) => ({
       id: t.id,
-      toolGroupId: t.toolGroupId,
+      toolGroupId: t.toolGroupId || '',
       key: t.key,
       name: t.name,
       description: t.description,
-      method: t.method,
-      path: t.path,
+      method: (t.method as any) || 'GET',
+      path: t.path || '',
       parametersSchema: (t.parametersSchema as Record<string, unknown>) || {},
       bodySchema: (t.bodySchema as Record<string, unknown>) || {},
       responseSchema: (t.responseSchema as Record<string, unknown>) || {},
