@@ -5,6 +5,8 @@ export interface ToolGroup {
   key: string;
   name: string;
   description?: string;
+  protocol_type?: 'REST' | 'MCP';
+  base_url?: string;
   status: 'active' | 'disabled';
   created_at: string;
   updated_at: string;
@@ -12,6 +14,8 @@ export interface ToolGroup {
 
 export interface ToolGroupDetail extends ToolGroup {
   tools: ToolInGroup[];
+  default_auth_config?: Record<string, unknown>;
+  timeout_seconds?: number;
 }
 
 export interface ToolInGroup {
@@ -19,9 +23,26 @@ export interface ToolInGroup {
   key: string;
   name: string;
   description?: string;
+  parameters_schema?: Record<string, unknown>;
+  input_schema?: Record<string, unknown>;
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface DiscoveredTool {
+  name: string;
+  description?: string;
+  parameters_schema?: Record<string, unknown>;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface McpInspectResult {
+  server_name: string;
+  target_url: string;
+  transport: string;
+  tools: DiscoveredTool[];
+  raw_config?: any;
 }
 
 export interface ToolGroupData {
@@ -117,4 +138,61 @@ export async function deleteToolGroupData(groupId: string, dataId: string): Prom
   const response = await fetch(`/api/admin/tool-groups/${groupId}/data/${dataId}`, { method: 'DELETE' });
   const data = await response.json() as ApiResponse<null>;
   if (!response.ok || !data.success) throw new Error(data.error || 'Failed to delete tool group data');
+}
+
+// --- MCP Server Integration APIs ---
+
+export async function inspectMcpConfig(payload: {
+  raw_config?: any;
+  endpoint_url?: string;
+  default_auth_token?: string;
+}): Promise<McpInspectResult> {
+  const response = await fetch('/api/mcp/inspect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json()) as ApiResponse<McpInspectResult>;
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to inspect MCP configuration');
+  }
+  return data.data!;
+}
+
+export async function importMcpServer(payload: {
+  key: string;
+  name: string;
+  description?: string;
+  target_url: string;
+  transport?: string;
+  timeout_seconds?: number;
+  default_auth_token?: string;
+  raw_config?: any;
+  selected_tools: DiscoveredTool[];
+}): Promise<{ tool_group: ToolGroup; tools_count: number }> {
+  const response = await fetch('/api/mcp/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json()) as any;
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to import MCP server');
+  }
+  return data.data;
+}
+
+export async function syncMcpTools(groupId: string): Promise<{
+  total_tools: number;
+  added_tools: number;
+  updated_tools: number;
+}> {
+  const response = await fetch(`/api/tool-groups/${groupId}/mcp/sync`, {
+    method: 'POST',
+  });
+  const data = (await response.json()) as any;
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to sync tools from MCP server');
+  }
+  return data.data;
 }

@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ToolGroup, fetchToolGroups } from './api';
-import { Plus } from '@phosphor-icons/react';
+import { Plus, Sparkle } from '@phosphor-icons/react';
+import McpImportModal from './components/mcp-import-modal';
 
 export default function ToolGroupsPage() {
   const [groups, setGroups] = useState<ToolGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
 
   useEffect(() => {
     loadGroups();
@@ -42,13 +44,23 @@ export default function ToolGroupsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Tool Groups</h1>
           <p className="text-gray-600 mt-2">Organize tools into logical groups for workspaces</p>
         </div>
-        <Link
-          href="/admin/tool-groups/new"
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
-        >
-          <Plus size={16} weight="bold" />
-          New Tool Group
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsMcpModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition text-sm font-medium shadow-sm"
+          >
+            <Sparkle size={16} weight="fill" />
+            Import MCP Server
+          </button>
+          <Link
+            href="/admin/tool-groups/new"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+          >
+            <Plus size={16} weight="bold" />
+            New Tool Group
+          </Link>
+        </div>
       </div>
 
       {/* Search */}
@@ -93,7 +105,14 @@ export default function ToolGroupsPage() {
               <tbody className="divide-y divide-gray-200">
                 {filteredGroups.map((group) => (
                   <tr key={group.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 text-sm font-mono text-gray-900">{group.key}</td>
+                    <td className="px-6 py-4 text-sm font-mono text-gray-900 flex items-center gap-2">
+                      {group.key}
+                      {group.protocol_type === 'MCP' && (
+                        <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-bold">
+                          MCP
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-900 font-medium">
                       <Link href={`/admin/tool-groups/${group.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
                         {group.name}
@@ -131,6 +150,13 @@ export default function ToolGroupsPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Import MCP */}
+      <McpImportModal
+        isOpen={isMcpModalOpen}
+        onClose={() => setIsMcpModalOpen(false)}
+        onSuccess={loadGroups}
+      />
     </div>
   );
 }

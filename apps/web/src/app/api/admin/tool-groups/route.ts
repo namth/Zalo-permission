@@ -20,7 +20,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.info(`[API] GET /api/admin/tool-groups - status: ${status || 'all'}`);
 
     const db = getDb();
-    let queryStr = `SELECT id, key, name, description, status, created_at, updated_at FROM tool_groups`;
+    let queryStr = `SELECT id, key, name, description, status, protocol_type, base_url, created_at, updated_at FROM tool_groups`;
     const params: any[] = [];
 
     if (status) {

@@ -5,9 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ToolGroupDetail, getToolGroupById, updateToolGroup, deleteToolGroup,
-  ToolGroupData, getToolGroupData, createToolGroupData, updateToolGroupData, deleteToolGroupData
+  ToolGroupData, getToolGroupData, createToolGroupData, updateToolGroupData, deleteToolGroupData,
+  syncMcpTools
 } from '../api';
-import { ArrowLeft, Trash, PencilSimple, Check, X, Plus } from '@phosphor-icons/react';
+import { ArrowLeft, Trash, PencilSimple, Check, X, Plus, ArrowsClockwise, ShieldCheck } from '@phosphor-icons/react';
 
 export default function ToolGroupDetailPage() {
   const params = useParams();
@@ -27,6 +28,22 @@ export default function ToolGroupDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  const handleSyncMcp = async () => {
+    try {
+      setSyncLoading(true);
+      setSyncMsg(null);
+      const res = await syncMcpTools(id);
+      setSyncMsg({ text: `Đồng bộ thành công! Tìm thấy ${res.total_tools} tools (+${res.added_tools} mới, ${res.updated_tools} cập nhật).` });
+      await loadGroup();
+    } catch (err: any) {
+      setSyncMsg({ text: err.message || 'Lỗi khi đồng bộ từ MCP Server', isError: true });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadGroup();
@@ -98,19 +115,52 @@ export default function ToolGroupDetailPage() {
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{group?.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold text-gray-900">{group?.name}</h1>
+              {group?.protocol_type === 'MCP' && (
+                <span className="px-2.5 py-0.5 rounded-md bg-purple-100 text-purple-700 font-bold text-xs">
+                  Native MCP
+                </span>
+              )}
+            </div>
             <p className="text-gray-500 mt-1 font-mono text-sm">{group?.key}</p>
+            {group?.base_url && (
+              <p className="text-xs text-slate-400 font-mono mt-0.5">Endpoint: {group.base_url}</p>
+            )}
           </div>
         </div>
-        <button
-          onClick={handleDelete}
-          disabled={deleteLoading}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
-        >
-          <Trash size={16} weight="bold" />
-          {deleteLoading ? 'Deleting...' : 'Delete Group'}
-        </button>
+        <div className="flex items-center gap-3">
+          {group?.protocol_type === 'MCP' && (
+            <button
+              type="button"
+              onClick={handleSyncMcp}
+              disabled={syncLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition disabled:opacity-50 border border-purple-200"
+            >
+              <ArrowsClockwise size={16} weight="bold" className={syncLoading ? 'animate-spin' : ''} />
+              {syncLoading ? 'Đang đồng bộ...' : 'Sync Tools from Server'}
+            </button>
+          )}
+          <button
+            onClick={handleDelete}
+            disabled={deleteLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
+          >
+            <Trash size={16} weight="bold" />
+            {deleteLoading ? 'Deleting...' : 'Delete Group'}
+          </button>
+        </div>
       </div>
+
+      {syncMsg && (
+        <div className={`p-4 rounded-lg text-sm border ${
+          syncMsg.isError
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+        }`}>
+          {syncMsg.text}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">{error}</div>

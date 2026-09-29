@@ -4,12 +4,20 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 export type AuthType = 'NONE' | 'BEARER' | 'API_KEY' | 'BASIC' | 'CUSTOM_HEADERS';
 
+export type ProtocolType = 'REST' | 'MCP';
+
+export type McpTransportType = 'SSE' | 'STREAMABLE_HTTP' | 'DIRECT_HTTP';
+
 export interface ToolGroupDefinition {
   id: string;
   key: string;
   name: string;
   description?: string | null;
+  protocolType?: ProtocolType;
   baseUrl: string;
+  mcpTransport?: McpTransportType;
+  mcpRawConfig?: Record<string, unknown> | null;
+  timeoutSeconds?: number;
   authType: AuthType;
   defaultAuthConfig?: Record<string, unknown>;
   defaultHeaders?: Record<string, string>;
@@ -23,8 +31,9 @@ export interface ToolDefinition {
   key: string;
   name: string;
   description: string;
-  method: HttpMethod;
-  path: string;
+  method?: HttpMethod;
+  path?: string;
+  mcpToolName?: string;
   parametersSchema?: Record<string, unknown>;
   bodySchema?: Record<string, unknown>;
   responseSchema?: Record<string, unknown>;

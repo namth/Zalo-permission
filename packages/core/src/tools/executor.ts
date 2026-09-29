@@ -1,5 +1,6 @@
 import type { ToolDefinition, ToolGroupDefinition, ToolExecutionResult, HttpMethod } from '../types.js';
 import { VariableInjector } from './variable-injector.js';
+import { McpToolExecutor } from './mcp-executor.js';
 
 /**
  * Kiểm tra xem hostname/IP có nằm trong dải IP nội bộ hay không để phòng ngừa SSRF
@@ -48,9 +49,42 @@ export class ToolExecutor {
     const { tool, group, scopedVariables, inputParameters = {}, timeoutMs = 10000 } = options;
     const startTime = Date.now();
 
+    // 0. Nếu là MCP ToolGroup, chuyển tiếp cho McpToolExecutor
+    if (group.protocolType === 'MCP') {
+      const rawBaseUrl = VariableInjector.injectString(group.baseUrl, scopedVariables);
+      const authHeaders: Record<string, string> = {};
+
+      if (scopedVariables.AUTH_TOKEN || scopedVariables.API_KEY) {
+        const token = scopedVariables.AUTH_TOKEN || scopedVariables.API_KEY;
+        authHeaders['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+      } else if (group.defaultAuthConfig && typeof group.defaultAuthConfig === 'object') {
+        const defaultToken = (group.defaultAuthConfig as any).token || (group.defaultAuthConfig as any).apiKey;
+        if (defaultToken) {
+          authHeaders['Authorization'] = defaultToken.startsWith('Bearer ') ? defaultToken : `Bearer ${defaultToken}`;
+        }
+      }
+
+      // Hỗ trợ merge thêm defaultHeaders nếu có
+      if (group.defaultHeaders) {
+        Object.assign(authHeaders, group.defaultHeaders);
+      }
+
+      const mcpToolName = tool.mcpToolName || tool.key;
+      const timeout = (group.timeoutSeconds || 15) * 1000;
+
+      return McpToolExecutor.execute({
+        endpointUrl: rawBaseUrl,
+        toolName: mcpToolName,
+        arguments: inputParameters,
+        authHeaders,
+        timeoutMs: timeout,
+        toolId: tool.id,
+      });
+    }
+
     // 1. Resolve Base URL & Endpoint Path with scoped variables
     const rawBaseUrl = VariableInjector.injectString(group.baseUrl, scopedVariables);
-    let resolvedPath = VariableInjector.injectString(tool.path, scopedVariables);
+    let resolvedPath = VariableInjector.injectString(tool.path || '', scopedVariables);
 
     // 2. Thay thế path parameters (ví dụ /products/{id})
     for (const [key, value] of Object.entries(inputParameters)) {
@@ -70,7 +104,7 @@ export class ToolExecutor {
         toolId: tool.id,
         toolKey: tool.key,
         url: fullUrlString,
-        method: tool.method,
+        method: tool.method || 'GET',
         headersSent: {},
         statusCode: 403,
         responseBody: { error: `SSRF Blocked: Destination ${targetUrl.hostname} is restricted.` },
@@ -123,12 +157,13 @@ export class ToolExecutor {
     }
 
     // 5. Query Parameters vs Request Body
-    const method = tool.method.toUpperCase() as HttpMethod;
+    const method = (tool.method || 'GET').toUpperCase() as HttpMethod;
     let requestBody: string | undefined;
 
     if (method === 'GET' || method === 'DELETE') {
+      const toolPathParam = tool.path || '';
       for (const [key, value] of Object.entries(inputParameters)) {
-        if (!tool.path.includes(`{${key}}`) && value !== undefined && value !== null) {
+        if (!toolPathParam.includes(`{${key}}`) && value !== undefined && value !== null) {
           targetUrl.searchParams.append(key, String(value));
         }
       }
