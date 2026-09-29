@@ -16,6 +16,7 @@ import {
   ClockCounterClockwise,
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
+import { CopilotDrawer } from '@/components/admin/copilot-drawer';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -183,6 +184,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </div>
       </main>
+
+      {/* Admin AI Copilot Drawer */}
+      <CopilotDrawer />
     </div>
   );
 }
