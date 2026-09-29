@@ -96,7 +96,7 @@ export interface AuditLog {
   action_type: string;
   input_data?: Record<string, any>;
   output_data?: Record<string, any>;
-  status: 'success' | 'failed' | 'pending';
+  status: 'success' | 'failed' | 'pending' | 'SUCCESS' | 'FAILED' | 'REJECTED';
   error_message?: string;
   metadata?: Record<string, any>;
   created_at: string;
@@ -114,7 +114,7 @@ export interface AuditLogRequest {
   action_type: string;
   input_data?: Record<string, any>;
   output_data?: Record<string, any>;
-  status: 'success' | 'failed' | 'pending';
+  status: 'success' | 'failed' | 'pending' | 'SUCCESS' | 'FAILED' | 'REJECTED';
   error_message?: string;
   metadata?: Record<string, any>;
 }
