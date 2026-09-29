@@ -74,33 +74,41 @@ export class ZaloChannelAdapter {
         // Đăng ký nhận tin nhắn
         this.api.listener.on('message', async (message: any) => {
           try {
+            const data = message?.data || message;
+
             // Không phản hồi tin nhắn do chính tài khoản bot gửi ra
-            if (message.uidFrom === this.ownId) {
+            if (message?.isSelf || data?.uidFrom === this.ownId || data?.uidFrom === '0') {
               return;
             }
 
-            const isGroup = Boolean(message.idTo && message.idTo !== this.ownId);
-            const platformChatId = isGroup ? message.idTo : message.uidFrom;
-            
+            const isGroup = message?.type === ThreadType.Group || Boolean(message?.threadId && data?.idTo && data.idTo !== this.ownId);
+            const platformChatId = String(message?.threadId || data?.idTo || data?.uidFrom || '');
+            const senderId = String(data?.uidFrom || '');
+            const senderName = String(data?.dName || message?.dName || 'Zalo User');
+
             let text = '';
-            if (typeof message.content === 'string') {
+            if (typeof data?.content === 'string') {
+              text = data.content;
+            } else if (data?.content && typeof data.content === 'object') {
+              text = (data.content as any).title || (data.content as any).msg || (data.content as any).description || '';
+            } else if (typeof message?.content === 'string') {
               text = message.content;
-            } else if (message.content && typeof message.content === 'object') {
-              text = (message.content as any).title || (message.content as any).msg || (message.content as any).description || '';
             }
 
-            if (!text.trim()) {
+            if (!text.trim() || !platformChatId) {
               return;
             }
+
+            console.log(`[ZaloAdapter] Inbound message received from chat ${platformChatId} (${isGroup ? 'Group' : 'Direct'}) by ${senderName}: "${text.slice(0, 60)}"`);
 
             if (this.config.onMessageReceived) {
               await this.config.onMessageReceived({
                 platform: 'ZALO',
                 accountId: this.accountId,
                 platformChatId,
-                senderId: message.uidFrom,
-                senderName: message.dName || 'Zalo User',
-                messageId: String(message.msgId || Date.now()),
+                senderId,
+                senderName,
+                messageId: String(data?.msgId || message?.msgId || Date.now()),
                 text,
                 timestamp: Date.now(),
               });
@@ -122,9 +130,9 @@ export class ZaloChannelAdapter {
   }
 
   /**
-   * Gửi tin nhắn trả lời về nhóm Zalo
+   * Gửi tin nhắn trả lời về nhóm Zalo hoặc Direct Chat
    */
-  async sendMessage(platformChatId: string, text: string): Promise<void> {
+  async sendMessage(platformChatId: string, text: string, chatType: ThreadType = ThreadType.Group): Promise<void> {
     if (!this.api) {
       console.warn(`[ZaloAdapter] Cannot send message: API instance is not initialized for ${this.accountId}`);
       return;
@@ -132,7 +140,7 @@ export class ZaloChannelAdapter {
 
     try {
       console.log(`[ZaloAdapter] Sending response to Zalo Thread ${platformChatId}: ${text.slice(0, 50)}...`);
-      await this.api.sendMessage(text, platformChatId, ThreadType.Group);
+      await this.api.sendMessage(text, platformChatId, chatType);
     } catch (err: any) {
       console.error(`[ZaloAdapter] Failed to send message to Zalo Thread ${platformChatId}:`, err?.message || err);
     }

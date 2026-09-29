@@ -1,4 +1,5 @@
 import neo4j, { Driver, Session } from 'neo4j-driver';
+import { ensureEnvLoaded } from './env.js';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -6,6 +7,7 @@ declare global {
 }
 
 export function getNeo4jDriver(): Driver {
+  ensureEnvLoaded();
   if (global.neo4jDriverGlobal) {
     return global.neo4jDriverGlobal;
   }

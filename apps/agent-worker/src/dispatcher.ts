@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   RouterAgent,
   WorkerAgent,
@@ -29,24 +30,30 @@ export class MessageDispatcher {
    */
   async dispatch(message: InboundChatMessage): Promise<void> {
     const startTime = Date.now();
-    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId}`);
+    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} by user: ${message.senderName || message.senderId}`);
 
-    // 1. Resolve Workspace via Neo4j Graph
+    // 1. Resolve Workspace via Neo4j Graph (ChannelChat or ZaloGroup)
     const wsLookupQuery = `
       MATCH (c:ChannelChat { platform: $platform, platform_chat_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
+      RETURN w.id AS workspace_id, w.name AS workspace_name
+      UNION
+      MATCH (g:ZaloGroup { thread_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
       RETURN w.id AS workspace_id, w.name AS workspace_name
       LIMIT 1
     `;
     const wsResult = await runCypher<{ workspace_id: string; workspace_name: string }>(wsLookupQuery, {
       platform: message.platform,
-      chat_id: message.platformChatId,
+      chat_id: String(message.platformChatId),
+    }).catch((e) => {
+      console.warn('[Dispatcher] Neo4j workspace lookup notice:', e);
+      return [];
     });
 
     let workspaceId = wsResult?.[0]?.workspace_id;
 
     if (!workspaceId) {
-      // Fallback check PostgreSQL in case of Neo4j sync latency or reconnect
-      const chatInDb = await prisma.channelChat.findUnique({
+      // Fallback check PostgreSQL channel_chats
+      let chatInDb = await prisma.channelChat.findUnique({
         where: {
           platform_platformChatId: {
             platform: message.platform,
@@ -58,21 +65,43 @@ export class MessageDispatcher {
 
       if (chatInDb?.workspace) {
         workspaceId = chatInDb.workspace.id;
+      } else if (message.platform === 'ZALO') {
+        // Fallback check zalo_groups table
+        const zaloGroup = await prisma.$queryRaw<Array<{ id: string; workspace_id: string; name: string }>>`
+          SELECT id, workspace_id, name FROM zalo_groups WHERE thread_id = ${String(message.platformChatId)} LIMIT 1
+        `.catch(() => []);
+
+        if (zaloGroup?.[0]?.workspace_id) {
+          workspaceId = zaloGroup[0].workspace_id;
+          // Auto-link channelChat to this workspace in PostgreSQL
+          try {
+            if (chatInDb) {
+              await prisma.channelChat.update({
+                where: { id: chatInDb.id },
+                data: { workspaceId },
+              });
+            }
+          } catch (e) {
+            console.warn('[Dispatcher] Failed to link channelChat to workspace in DB:', e);
+          }
+        }
+      }
+
+      if (workspaceId) {
         // Self-heal Neo4j relationship in background
         runCypher(
           `
-          MERGE (c:ChannelChat { id: $chatId })
-          SET c.platform = $platform, c.platform_chat_id = $platformChatId, c.title = $title
+          MERGE (c:ChannelChat { platform: $platform, platform_chat_id: $platformChatId })
+          ON CREATE SET c.id = randomUUID(), c.title = $title
           WITH c
           MATCH (w:Workspace { id: $workspaceId })
           MERGE (c)-[:BELONGS_TO]->(w)
           `,
           {
-            chatId: chatInDb.id,
             platform: message.platform,
             platformChatId: String(message.platformChatId),
-            title: chatInDb.title,
-            workspaceId: chatInDb.workspace.id,
+            title: chatInDb?.title || 'Chat Group',
+            workspaceId,
           }
         ).catch(() => {});
       }
@@ -222,6 +251,7 @@ export class MessageDispatcher {
     try {
       await prisma.auditLog.create({
         data: {
+          id: randomUUID(),
           workspaceId,
           platform: message.platform,
           senderId: message.senderId,

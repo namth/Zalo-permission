@@ -1,10 +1,11 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
+import { ensureEnvLoaded } from '@omniagent/database';
 import { getRedisClient, INBOUND_STREAM, CONSUMER_GROUP, initStreamGroup } from './redis.js';
 import { MessageDispatcher } from './dispatcher.js';
 import { ChannelGatewayManager } from './channel-manager.js';
 import type { InboundChatMessage } from '@omniagent/core';
 
-dotenv.config();
+ensureEnvLoaded();
 
 const WORKER_ID = `worker_${process.pid}_${Date.now()}`;
 

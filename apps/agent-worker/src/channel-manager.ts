@@ -13,59 +13,65 @@ export class ChannelGatewayManager {
   async startAllChannels(): Promise<void> {
     const redis = getRedisClient();
 
-    try {
-      const activeAccounts = await prisma.channelAccount.findMany({
-        where: { status: 'ACTIVE' },
-      });
+    let retryCount = 0;
+    while (true) {
+      try {
+        const activeAccounts = await prisma.channelAccount.findMany({
+          where: { status: 'ACTIVE' },
+        });
 
-      console.log(`[ChannelManager] Found ${activeAccounts.length} active channel accounts to initialize.`);
+        console.log(`[ChannelManager] Found ${activeAccounts.length} active channel accounts to initialize.`);
 
-      for (const account of activeAccounts) {
-        if (account.platform === 'TELEGRAM') {
-          try {
-            const botToken = decryptData(account.encryptedCredentials);
-            const adapter = new TelegramChannelAdapter({
-              accountId: account.id,
-              botToken,
-              onMessageReceived: async (msg: InboundChatMessage) => {
-                console.log(`[ChannelManager] Telegram message received from chat ${msg.platformChatId}: "${msg.text.slice(0, 30)}..."`);
-                
-                // 1. Tự động đồng bộ nhóm chat vào CSDL & Neo4j nếu chưa có
-                await this.syncChatGroup(account.id, 'TELEGRAM', msg.platformChatId, msg.senderName || 'Chat Group');
+        for (const account of activeAccounts) {
+          if (account.platform === 'TELEGRAM' && !this.telegramAdapters.has(account.id)) {
+            try {
+              const botToken = decryptData(account.encryptedCredentials);
+              const adapter = new TelegramChannelAdapter({
+                accountId: account.id,
+                botToken,
+                onMessageReceived: async (msg: InboundChatMessage) => {
+                  console.log(`[ChannelManager] Telegram message received from chat ${msg.platformChatId}: "${msg.text.slice(0, 30)}..."`);
+                  
+                  // 1. Tự động đồng bộ nhóm chat vào CSDL & Neo4j nếu chưa có
+                  await this.syncChatGroup(account.id, 'TELEGRAM', msg.platformChatId, msg.senderName || 'Chat Group');
 
-                // 2. Đẩy vào hàng đợi Redis Streams
-                await redis.xadd(INBOUND_STREAM, '*', 'data', JSON.stringify(msg));
-              },
-            });
+                  // 2. Đẩy vào hàng đợi Redis Streams
+                  await redis.xadd(INBOUND_STREAM, '*', 'data', JSON.stringify(msg));
+                },
+              });
 
-            await adapter.start();
-            this.telegramAdapters.set(account.id, adapter);
-          } catch (err) {
-            console.error(`[ChannelManager] Failed to start Telegram account ${account.accountName}:`, err);
-          }
-        } else if (account.platform === 'ZALO') {
-          try {
-            const credentials = JSON.parse(decryptData(account.encryptedCredentials));
-            const adapter = new ZaloChannelAdapter({
-              accountId: account.id,
-              authType: account.authType as any,
-              credentials,
-              onMessageReceived: async (msg: InboundChatMessage) => {
-                console.log(`[ChannelManager] Zalo message received from chat ${msg.platformChatId}`);
-                await this.syncChatGroup(account.id, 'ZALO', msg.platformChatId, 'Zalo Group');
-                await redis.xadd(INBOUND_STREAM, '*', 'data', JSON.stringify(msg));
-              },
-            });
+              await adapter.start();
+              this.telegramAdapters.set(account.id, adapter);
+            } catch (err) {
+              console.error(`[ChannelManager] Failed to start Telegram account ${account.accountName}:`, err);
+            }
+          } else if (account.platform === 'ZALO' && !this.zaloAdapters.has(account.id)) {
+            try {
+              const credentials = JSON.parse(decryptData(account.encryptedCredentials));
+              const adapter = new ZaloChannelAdapter({
+                accountId: account.id,
+                authType: account.authType as any,
+                credentials,
+                onMessageReceived: async (msg: InboundChatMessage) => {
+                  console.log(`[ChannelManager] Zalo message received from chat ${msg.platformChatId}: "${msg.text.slice(0, 40)}"`);
+                  await this.syncChatGroup(account.id, 'ZALO', msg.platformChatId, 'Zalo Group');
+                  await redis.xadd(INBOUND_STREAM, '*', 'data', JSON.stringify(msg));
+                },
+              });
 
-            await adapter.start();
-            this.zaloAdapters.set(account.id, adapter);
-          } catch (err) {
-            console.error(`[ChannelManager] Failed to start Zalo account ${account.accountName}:`, err);
+              await adapter.start();
+              this.zaloAdapters.set(account.id, adapter);
+            } catch (err) {
+              console.error(`[ChannelManager] Failed to start Zalo account ${account.accountName}:`, err);
+            }
           }
         }
+        break; // Successfully initialized
+      } catch (dbErr) {
+        retryCount++;
+        console.warn(`[ChannelManager] Notice when fetching channel accounts (attempt ${retryCount}), retrying in 5s:`, dbErr);
+        await new Promise((res) => setTimeout(res, 5000));
       }
-    } catch (dbErr) {
-      console.warn('[ChannelManager] Notice when fetching channel accounts:', dbErr);
     }
 
     // Khởi chạy tiến trình Outbound Sender lắng nghe phản hồi từ Agent để gửi về Telegram/Zalo
@@ -84,6 +90,17 @@ export class ChannelGatewayManager {
     title: string
   ): Promise<void> {
     try {
+      // Check if this chat exists in zalo_groups to preserve its workspaceId
+      let existingWorkspaceId: string | null = null;
+      if (platform === 'ZALO') {
+        const zg = await prisma.$queryRaw<Array<{ workspace_id: string }>>`
+          SELECT workspace_id FROM zalo_groups WHERE thread_id = ${platformChatId} LIMIT 1
+        `.catch(() => []);
+        if (zg?.[0]?.workspace_id) {
+          existingWorkspaceId = zg[0].workspace_id;
+        }
+      }
+
       const chat = await prisma.channelChat.upsert({
         where: {
           platform_platformChatId: {
@@ -94,6 +111,7 @@ export class ChannelGatewayManager {
         update: {
           title,
           isActive: true,
+          ...(existingWorkspaceId ? { workspaceId: existingWorkspaceId } : {}),
         },
         create: {
           accountId,
@@ -102,6 +120,7 @@ export class ChannelGatewayManager {
           title,
           chatType: 'GROUP',
           isActive: true,
+          ...(existingWorkspaceId ? { workspaceId: existingWorkspaceId } : {}),
         },
       });
 
@@ -121,6 +140,20 @@ export class ChannelGatewayManager {
           title,
         }
       ).catch(() => {});
+
+      if (chat.workspaceId) {
+        await runCypher(
+          `
+          MATCH (c:ChannelChat { id: $id })
+          MATCH (w:Workspace { id: $workspaceId })
+          MERGE (c)-[:BELONGS_TO]->(w)
+          `,
+          {
+            id: chat.id,
+            workspaceId: chat.workspaceId,
+          }
+        ).catch(() => {});
+      }
     } catch (e) {
       console.warn('[ChannelManager] Notice on auto-sync chat group:', e);
     }
