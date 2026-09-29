@@ -103,6 +103,18 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
 
 ---
 
+### Phân hệ 7: Admin AI Copilot Drawer (`FEAT-ADMIN-COPILOT`)
+* **Giao diện:** Slide-over Right Sidebar Drawer (`w-[400px]`) cố định trên toàn bộ `/admin/*`.
+* **Trí tuệ nhân tạo:** Tích hợp LLM qua OpenRouter Gateway (`OPENROUTER_API_KEY`) với cơ chế Function Calling nội bộ.
+* **4 Nhóm Công cụ Quản trị:**
+  1. `mcp_management`: Nhận diện URL/JSON MCP server, handshake và nạp công cụ vào kho.
+  2. `workspace_permissions`: Tra cứu quyền và gán/thu hồi Tool/ToolGroup cho Workspace.
+  3. `skill_management`: Dạy skill mới bằng ngôn ngữ tự nhiên, tạo System Prompt và liên kết Tool.
+  4. `system_diagnostics`: Tra cứu Audit log và kiểm tra trạng thái kênh Zalo/Telegram.
+* **Cơ chế An toàn (Human-in-the-Loop):** Render Action Preview Card yêu cầu Admin bấm xác nhận trước khi thực thi mọi thao tác thay đổi dữ liệu; tự động ghi vết `audit_logs` với `action_type = 'COPILOT_ACTION'`.
+
+---
+
 ## 2. Ma trận Phân quyền (RBAC Matrix)
 
 Dự án áp dụng mô hình **Single-tenant Internal Admin** (Toàn quyền quản trị Dashboard) kết hợp **Phân quyền Đồ thị theo Kênh (Channel Graph RBAC)** cho người dùng cuối:

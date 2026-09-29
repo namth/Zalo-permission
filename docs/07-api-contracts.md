@@ -333,3 +333,66 @@ Tất cả các API quản trị nội bộ đều tuân theo chuẩn RESTful JS
 * **Endpoint:** `GET /api/audit-logs/{id}/trace`
 * **Response Status:** `200 OK`
 * **Response Payload:** Trả về toàn bộ `execution_plan`, `tool_calls` (với URL, Payload, Response), và `final_response`.
+
+---
+
+## 5. Phân hệ Admin AI Copilot (Copilot APIs)
+
+### 5.1. Trò chuyện & Phân tích Ý định (Chat & Intent Resolution)
+* **Endpoint:** `POST /api/admin/copilot/chat`
+* **Quyền hạn:** `ADMIN`, `SUPER_ADMIN`
+* **Request Payload:**
+```json
+{
+  "message": "Gán toàn bộ tool nhóm simplefinance vào workspace e8b5...",
+  "history": [
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
+  ]
+}
+```
+* **Response Status:** `200 OK`
+* **Response Payload:**
+```json
+{
+  "success": true,
+  "reply": "Tôi đã chuẩn bị thao tác gán nhóm công cụ vào workspace. Vui lòng xác nhận bên dưới.",
+  "action_preview": {
+    "action_id": "act_8f7b2c",
+    "action_type": "ASSIGN_TOOL_GROUP_TO_WORKSPACE",
+    "summary": "Gán ToolGroup 'simplefinance' (20 tools) vào Workspace 'Bán Hàng'",
+    "parameters": {
+      "workspace_id": "e8b5...",
+      "tool_group_key": "simplefinance"
+    }
+  }
+}
+```
+
+### 5.2. Xác nhận Thực thi Hành động (Execute Action Confirmation)
+* **Endpoint:** `POST /api/admin/copilot/execute`
+* **Quyền hạn:** `ADMIN`, `SUPER_ADMIN`
+* **Request Payload:**
+```json
+{
+  "action_id": "act_8f7b2c",
+  "action_type": "ASSIGN_TOOL_GROUP_TO_WORKSPACE",
+  "parameters": {
+    "workspace_id": "e8b5...",
+    "tool_group_key": "simplefinance"
+  }
+}
+```
+* **Response Status:** `200 OK`
+* **Response Payload:**
+```json
+{
+  "success": true,
+  "message": "Đã gán thành công 20 công cụ của nhóm 'simplefinance' vào Workspace 'Bán Hàng'.",
+  "result_data": {
+    "affected_tools": 20,
+    "workspace_id": "e8b5..."
+  }
+}
+```
+

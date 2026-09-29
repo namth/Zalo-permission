@@ -165,3 +165,12 @@ Kế hoạch được chia nhỏ thành 5 Milestone tuần tự với các Ticke
   * Hiển thị bảng Preview Tools nhận diện được (Tên, Mô tả, Schema) kèm Checkbox chọn lọc.
   * Thêm nút "Sync Tools from Server" trên trang chi tiết ToolGroup `/tools/groups/[id]`.
 * **Tiêu chuẩn nghiệm thu (DoD):** Dán đoạn JSON config của `simplefinance`, fetch danh sách tool thành công và lưu vào CSDL.
+
+### [TASK-506] Xây dựng Admin AI Copilot Drawer (`FEAT-ADMIN-COPILOT`)
+* **Mục tiêu:** Trợ lý ảo AI hoạt động dưới dạng slide-over drawer hỗ trợ quản trị hệ thống phân quyền Zalo/Telegram.
+* **Chi tiết công việc:**
+  * Core Agent Dispatcher tích hợp OpenRouter LLM với 4 nhóm function calling nội bộ (`mcp_management`, `workspace_permissions`, `skill_management`, `system_diagnostics`).
+  * API endpoints: `/api/admin/copilot/chat` và `/api/admin/copilot/execute` (ghi Audit Log `COPILOT_ACTION`).
+  * UI Component: Slide-over Right Sidebar Drawer (`w-[400px]`), trigger button góc phải, Action Preview Card kèm 1-Click Confirm.
+* **Tiêu chuẩn nghiệm thu (DoD):** Admin có thể ra lệnh bằng văn bản tự nhiên để thêm MCP server, gán quyền Workspace hoặc học skill mới qua Action Preview Card.
+
