@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ToolGroup, fetchToolGroups } from './api';
-import { Plus, Sparkle } from '@phosphor-icons/react';
+import { ToolGroup, fetchToolGroups, deleteToolGroup } from './api';
+import { Plus, Sparkle, Trash } from '@phosphor-icons/react';
 import McpImportModal from './components/mcp-import-modal';
 
 export default function ToolGroupsPage() {
@@ -12,6 +12,7 @@ export default function ToolGroupsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadGroups();
@@ -30,6 +31,22 @@ export default function ToolGroupsPage() {
     }
   };
 
+  const handleDeleteGroup = async (e: React.MouseEvent, group: ToolGroup) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa nhóm công cụ "${group.name}"?\nCẢNH BÁO: Tất cả các tool thuộc nhóm này sẽ bị XÓA SẠCH khỏi hệ thống!`)) {
+      return;
+    }
+    try {
+      setDeletingId(group.id);
+      await deleteToolGroup(group.id);
+      await loadGroups();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi xóa nhóm công cụ');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filteredGroups = groups.filter(g =>
     g.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,6 +117,7 @@ export default function ToolGroupsPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Description</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -128,6 +146,18 @@ export default function ToolGroupsPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {new Date(group.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteGroup(e, group)}
+                        disabled={deletingId === group.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
+                        title="Xóa Tool Group"
+                      >
+                        <Trash size={15} weight="bold" />
+                        <span>{deletingId === group.id ? 'Đang xóa...' : 'Xóa'}</span>
+                      </button>
                     </td>
                   </tr>
                 ))}

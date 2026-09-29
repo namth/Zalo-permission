@@ -21,7 +21,9 @@ export interface CopilotActionPreview {
     | 'ASSIGN_TOOL_GROUP_TO_WORKSPACE'
     | 'REMOVE_TOOL_FROM_WORKSPACE'
     | 'CREATE_SKILL'
-    | 'SYNC_MCP_TOOLS';
+    | 'SYNC_MCP_TOOLS'
+    | 'DELETE_TOOL_GROUP'
+    | 'DELETE_TOOL';
   summary: string;
   details?: Record<string, any>;
   parameters: Record<string, any>;
@@ -64,11 +66,16 @@ Nhiệm vụ của bạn:
 2. Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (Thêm MCP Server, Gán quyền Workspace, Dạy Skill mới, Xóa/Thu hồi quyền, Đồng bộ Tool):
    - Bạn PHẢI tra cứu trước thông tin (như ID của Workspace hoặc ToolGroup) nếu chưa rõ.
    - Bạn KHÔNG được tự ý thực thi ngay các hành động ghi/sửa/xóa, mà PHẢI gọi các tool "propose_*" tương ứng để tạo Action Preview Card cho Admin bấm xác nhận.
-3. Trả lời bằng tiếng Việt chuyên nghiệp, ngắn gọn, súc tích và có cấu trúc rõ ràng.
+3. Khi người dùng muốn xóa Tool Group hoặc Tool cá nhân:
+   - Hãy tra cứu trước (dùng list_tool_groups hoặc list_tools_in_group) để lấy thông tin ID/Key chính xác.
+   - Nhắc nhở người dùng rằng xóa Tool Group sẽ cascade xóa toàn bộ các tools thuộc nhóm đó trong cả PostgreSQL và Neo4j.
+   - PHẢI gọi tool "propose_delete_tool_group" hoặc "propose_delete_tool" để tạo Action Preview Card cho Admin xác nhận trước khi thực hiện xóa vĩnh viễn.
+4. Trả lời bằng tiếng Việt chuyên nghiệp, ngắn gọn, súc tích và có cấu trúc rõ ràng.
 
 Quy tắc:
 - Khi người dùng gửi link MCP hoặc JSON mcpServers: hãy dùng tool "inspect_mcp_source" để kiểm tra trước, sau đó đề xuất "propose_import_mcp".
-- Khi người dùng muốn gán tool vào workspace: tra cứu danh sách workspace ("list_workspaces") và danh sách tools ("list_tool_groups" hoặc "list_tools_in_group"), sau đó gọi "propose_assign_tool_to_workspace" hoặc "propose_assign_tool_group_to_workspace".`;
+- Khi người dùng muốn gán tool vào workspace: tra cứu danh sách workspace ("list_workspaces") và danh sách tools ("list_tool_groups" hoặc "list_tools_in_group"), sau đó gọi "propose_assign_tool_to_workspace" hoặc "propose_assign_tool_group_to_workspace".
+- Khi người dùng yêu cầu xóa tool group hoặc tool: tìm kiếm ID/Key và gọi "propose_delete_tool_group" hoặc "propose_delete_tool".`;
   }
 
   /**
@@ -264,6 +271,36 @@ Quy tắc:
               tool_group_name: { type: 'string', description: 'Tên của ToolGroup' },
             },
             required: ['tool_group_id'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'propose_delete_tool_group',
+          description: 'Đề xuất xóa vĩnh viễn một nhóm công cụ (ToolGroup) và CASCADE xóa toàn bộ các tools trực thuộc trong hệ thống (PostgreSQL và Neo4j).',
+          parameters: {
+            type: 'object',
+            properties: {
+              tool_group_id_or_key: { type: 'string', description: 'ID (UUID) hoặc Key của ToolGroup cần xóa' },
+              tool_group_name: { type: 'string', description: 'Tên của ToolGroup' },
+            },
+            required: ['tool_group_id_or_key'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'propose_delete_tool',
+          description: 'Đề xuất xóa vĩnh viễn một công cụ (Tool) cá nhân khỏi hệ thống (PostgreSQL và Neo4j) và gỡ quyền khỏi các Workspace.',
+          parameters: {
+            type: 'object',
+            properties: {
+              tool_id_or_key: { type: 'string', description: 'ID (UUID) hoặc Key của Tool cần xóa' },
+              tool_name: { type: 'string', description: 'Tên hiển thị của Tool' },
+            },
+            required: ['tool_id_or_key'],
           },
         },
       },
@@ -524,6 +561,32 @@ Quy tắc:
           details: {
             'Tool Group ID': args.tool_group_id,
             'Tên nhóm': args.tool_group_name || '—',
+          },
+          parameters: args,
+        };
+
+      case 'propose_delete_tool_group':
+        return {
+          action_id: actionId,
+          action_type: 'DELETE_TOOL_GROUP',
+          summary: `⚠️ CẢNH BÁO NGUY HIỂM: Xóa nhóm công cụ "${args.tool_group_name || args.tool_group_id_or_key}". Toàn bộ các công cụ (tools) trực thuộc nhóm này sẽ bị XÓA SẠCH vĩnh viễn khỏi hệ thống và gỡ khỏi tất cả workspace!`,
+          details: {
+            'Nhóm cần xóa': args.tool_group_name || args.tool_group_id_or_key,
+            'Mã / ID': args.tool_group_id_or_key,
+            'Phạm vi': 'CASCADE DELETE (Xóa sạch toàn bộ Tool liên quan)',
+          },
+          parameters: args,
+        };
+
+      case 'propose_delete_tool':
+        return {
+          action_id: actionId,
+          action_type: 'DELETE_TOOL',
+          summary: `⚠️ Xóa vĩnh viễn công cụ "${args.tool_name || args.tool_id_or_key}" khỏi hệ thống. Công cụ này sẽ bị xóa khỏi PostgreSQL, đồ thị Neo4j và bị gỡ khỏi tất cả Workspace đã gán.`,
+          details: {
+            'Công cụ cần xóa': args.tool_name || args.tool_id_or_key,
+            'Mã / ID': args.tool_id_or_key,
+            'Phạm vi': 'Xóa đơn lẻ và thu hồi mọi quyền truy cập',
           },
           parameters: args,
         };
@@ -830,6 +893,74 @@ Quy tắc:
           success: true,
           message: `Đã đồng bộ thành công ${syncedCount} công cụ từ MCP Server "${tg.name}"!`,
           data: { synced_count: syncedCount },
+        };
+      }
+
+      if (actionType === 'DELETE_TOOL_GROUP') {
+        const { tool_group_id_or_key } = params;
+
+        // Resolve ToolGroup by id or key
+        const groupRes = await query(
+          'SELECT id, key, name FROM tool_groups WHERE id::text = $1 OR key = $1',
+          [tool_group_id_or_key]
+        );
+
+        if (groupRes.rows.length === 0) {
+          throw new Error(`Không tìm thấy nhóm công cụ "${tool_group_id_or_key}" trong hệ sinh thái.`);
+        }
+
+        const group = groupRes.rows[0];
+        const deleteResult = await ToolGroupSyncService.deleteToolGroup(group.id, adminUserId);
+
+        const count = (deleteResult as any)?.deleted_tools_count ?? 0;
+
+        await logAuditAction(
+          null,
+          null,
+          adminUserId,
+          'COPILOT_ACTION',
+          { action: 'DELETE_TOOL_GROUP', group_id: group.id, group_key: group.key },
+          { group_id: group.id, deleted_tools_count: count },
+          'SUCCESS'
+        );
+
+        return {
+          success: true,
+          message: `Đã xóa vĩnh viễn nhóm công cụ "${group.name}" và xóa sạch ${count} công cụ trực thuộc thành công!`,
+          data: { group_id: group.id, group_key: group.key, deleted_tools_count: count },
+        };
+      }
+
+      if (actionType === 'DELETE_TOOL') {
+        const { tool_id_or_key } = params;
+
+        // Resolve Tool by id or key
+        const toolRes = await query(
+          'SELECT id, key, name FROM tools WHERE id::text = $1 OR key = $1',
+          [tool_id_or_key]
+        );
+
+        if (toolRes.rows.length === 0) {
+          throw new Error(`Không tìm thấy công cụ "${tool_id_or_key}" trong hệ sinh thái.`);
+        }
+
+        const tool = toolRes.rows[0];
+        await ToolSyncService.deleteTool(tool.id, adminUserId);
+
+        await logAuditAction(
+          null,
+          null,
+          adminUserId,
+          'COPILOT_ACTION',
+          { action: 'DELETE_TOOL', tool_id: tool.id, tool_key: tool.key },
+          { tool_id: tool.id, tool_key: tool.key },
+          'SUCCESS'
+        );
+
+        return {
+          success: true,
+          message: `Đã xóa vĩnh viễn công cụ "${tool.name}" (${tool.key}) và thu hồi toàn bộ phân quyền thành công!`,
+          data: { tool_id: tool.id, tool_key: tool.key },
         };
       }
 

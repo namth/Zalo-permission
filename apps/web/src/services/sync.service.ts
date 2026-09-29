@@ -507,25 +507,50 @@ export class ToolGroupSyncService {
 
       const toolGroup = getResult.rows[0];
 
-      // 1. Delete from PostgreSQL (cascade will set tools.group_id to null)
+      // 1. Find all tools belonging to this group in PostgreSQL
+      const toolsResult = await txn.pgQuery(
+        'SELECT id, key FROM tools WHERE tool_group_id = $1 OR key LIKE $2',
+        [id, `${toolGroup.key}_%`]
+      );
+      const toolIds = toolsResult.rows.map((r: any) => String(r.id));
+      const toolKeys = toolsResult.rows.map((r: any) => String(r.key));
+
+      // 2. Delete tools and related configs from PostgreSQL
+      if (toolIds.length > 0) {
+        await txn.pgQuery('DELETE FROM tools WHERE id = ANY($1)', [toolIds]);
+      }
+      await txn.pgQuery('DELETE FROM workspace_tool_configs WHERE tool_group_id = $1', [id]);
+      await txn.pgQuery('DELETE FROM tool_group_data WHERE tool_group_id = $1', [id]).catch(() => {});
       await txn.pgQuery('DELETE FROM tool_groups WHERE id = $1', [id]);
 
-      // 2. Delete from Neo4j
-      const neo4jResult = await txn.neo4jRun(
-        `MATCH (tg:ToolGroup {id: $id})
-         OPTIONAL MATCH (tg)-[r]-()
-         DELETE r, tg
-         RETURN count(r) as relationshipCount`,
-        { id }
+      // 3. Cascade delete from Neo4j (Tools + ToolGroup + all relationships)
+      await txn.neo4jRun(
+        `MATCH (tg:ToolGroup) WHERE tg.id = $id OR tg.key = $key
+         OPTIONAL MATCH (tg)-[:CONTAINS]->(t1:Tool)
+         OPTIONAL MATCH (t2:Tool)-[:BELONGS_TO_GROUP]->(tg)
+         WITH tg, [x IN (collect(t1) + collect(t2)) WHERE x IS NOT NULL] AS groupTools
+         UNWIND (CASE WHEN size(groupTools) = 0 THEN [null] ELSE groupTools END) AS t
+         OPTIONAL MATCH (t)-[r1]-()
+         DELETE r1, t
+         WITH tg
+         OPTIONAL MATCH (tg)-[r2]-()
+         DELETE r2, tg`,
+        { id, key: toolGroup.key }
       );
 
-      if (neo4jResult.records.length === 0) {
-        logger.warn(`Tool group ${id} not found in Neo4j, but continuing`);
+      // Extra safety check in Neo4j for tools by keys/IDs
+      if (toolKeys.length > 0 || toolIds.length > 0) {
+        await txn.neo4jRun(
+          `MATCH (t:Tool) WHERE t.key IN $toolKeys OR t.id IN $toolIds
+           OPTIONAL MATCH (t)-[r]-()
+           DELETE r, t`,
+          { toolKeys, toolIds }
+        );
       }
 
       await txn.commit();
-      logger.info(`Tool group deleted successfully: ${id}`);
-      return toolGroup;
+      logger.info(`Tool group and ${toolIds.length} tools deleted successfully: ${id} (${toolGroup.key})`);
+      return { ...toolGroup, deleted_tools_count: toolIds.length };
     } catch (error) {
       await txn.rollback();
       logger.error(`Failed to delete tool group: ${error}`);
@@ -789,24 +814,25 @@ export class ToolSyncService {
 
       const tool = getResult.rows[0];
 
-      // 1. Delete from PostgreSQL (cascade will remove workspace_tools, etc)
+      // 1. Delete from PostgreSQL
+      await txn.pgQuery('DELETE FROM tool_data WHERE tool_id = $1', [id]).catch(() => {});
       await txn.pgQuery('DELETE FROM tools WHERE id = $1', [id]);
 
-      // 2. Delete from Neo4j
+      // 2. Delete from Neo4j (match both by id and by key)
       const neo4jResult = await txn.neo4jRun(
-        `MATCH (t:Tool {id: $id})
+        `MATCH (t:Tool) WHERE t.id = $id OR t.key = $key
          OPTIONAL MATCH (t)-[r]-()
          DELETE r, t
          RETURN count(r) as relationshipCount`,
-        { id }
+        { id, key: tool.key }
       );
 
       if (neo4jResult.records.length === 0) {
-        logger.warn(`Tool ${id} not found in Neo4j, but continuing`);
+        logger.warn(`Tool ${id} (${tool.key}) not found in Neo4j, but continuing`);
       }
 
       await txn.commit();
-      logger.info(`Tool deleted successfully: ${id}`);
+      logger.info(`Tool deleted successfully: ${id} (${tool.key})`);
       return tool;
     } catch (error) {
       await txn.rollback();

@@ -8,6 +8,7 @@ import {
   ToolGroupData, getToolGroupData, createToolGroupData, updateToolGroupData, deleteToolGroupData,
   syncMcpTools
 } from '../api';
+import { deleteTool } from '../../tools/api';
 import { ArrowLeft, Trash, PencilSimple, Check, X, Plus, ArrowsClockwise, ShieldCheck } from '@phosphor-icons/react';
 
 export default function ToolGroupDetailPage() {
@@ -28,6 +29,7 @@ export default function ToolGroupDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deletingToolId, setDeletingToolId] = useState<string | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
@@ -90,6 +92,21 @@ export default function ToolGroupDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete tool group');
       setDeleteLoading(false);
+    }
+  };
+
+  const handleDeleteTool = async (toolId: string, toolName: string) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa công cụ "${toolName}"?\nHành động này không thể hoàn tác.`)) {
+      return;
+    }
+    try {
+      setDeletingToolId(toolId);
+      await deleteTool(toolId);
+      await loadGroup();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi xóa công cụ');
+    } finally {
+      setDeletingToolId(null);
     }
   };
 
@@ -298,6 +315,7 @@ export default function ToolGroupDetailPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Description</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -319,6 +337,18 @@ export default function ToolGroupDetailPage() {
                         {tool.status}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-sm text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTool(tool.id, tool.name)}
+                        disabled={deletingToolId === tool.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
+                        title="Xóa Tool"
+                      >
+                        <Trash size={14} weight="bold" />
+                        <span>{deletingToolId === tool.id ? 'Đang xóa...' : 'Xóa'}</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -326,6 +356,9 @@ export default function ToolGroupDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Tool Group Shared Config Data (Neo4j) */}
+      <ToolGroupDataSection groupId={id} />
     </div>
   );
 }

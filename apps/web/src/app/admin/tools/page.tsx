@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Tool, fetchTools } from './api';
+import { Tool, fetchTools, deleteTool } from './api';
 import { StatusBadge } from './components';
-import { Plus } from '@phosphor-icons/react';
+import { Plus, Trash } from '@phosphor-icons/react';
 
 export default function ToolsPage() {
   const [tools, setTools] = useState<Tool[]>([]);
@@ -12,6 +12,7 @@ export default function ToolsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadTools();
@@ -29,6 +30,23 @@ export default function ToolsPage() {
       setError(err instanceof Error ? err.message : 'Error loading tools');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteTool = async (e: React.MouseEvent, tool: Tool) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa công cụ "${tool.name}"?\nHành động này không thể hoàn tác.`)) {
+      return;
+    }
+    try {
+      setDeletingId(tool.id);
+      await deleteTool(tool.id);
+      await loadTools();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi xóa công cụ');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -119,6 +137,7 @@ export default function ToolsPage() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Tool Group</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Created</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -136,6 +155,18 @@ export default function ToolsPage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {new Date(tool.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteTool(e, tool)}
+                        disabled={deletingId === tool.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition disabled:opacity-50"
+                        title="Xóa Tool"
+                      >
+                        <Trash size={15} weight="bold" />
+                        <span>{deletingId === tool.id ? 'Đang xóa...' : 'Xóa'}</span>
+                      </button>
                     </td>
                   </tr>
                 ))}

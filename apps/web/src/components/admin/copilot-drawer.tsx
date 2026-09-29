@@ -338,74 +338,98 @@ export function CopilotDrawer() {
               </div>
 
               {/* ACTION PREVIEW CARD (HUMAN-IN-THE-LOOP) */}
-              {msg.action_preview && (
-                <div className="mt-2.5 w-full max-w-[92%] bg-white rounded-xl border border-indigo-200 p-3.5 shadow-md">
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-indigo-50">
-                    <ShieldCheck size={18} weight="fill" className="text-indigo-600" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-900">
-                      Xác nhận hành động (Action Preview)
-                    </span>
+              {msg.action_preview && (() => {
+                const isDanger = msg.action_preview.action_type === 'DELETE_TOOL_GROUP' || msg.action_preview.action_type === 'DELETE_TOOL';
+                return (
+                  <div className={`mt-2.5 w-full max-w-[92%] bg-white rounded-xl border p-3.5 shadow-md ${
+                    isDanger ? 'border-red-300 ring-1 ring-red-100' : 'border-indigo-200'
+                  }`}>
+                    <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${
+                      isDanger ? 'border-red-100' : 'border-indigo-50'
+                    }`}>
+                      {isDanger ? (
+                        <Trash size={18} weight="fill" className="text-red-600" />
+                      ) : (
+                        <ShieldCheck size={18} weight="fill" className="text-indigo-600" />
+                      )}
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        isDanger ? 'text-red-900' : 'text-indigo-900'
+                      }`}>
+                        {isDanger ? 'Xác nhận xóa dữ liệu (Danger Action)' : 'Xác nhận hành động (Action Preview)'}
+                      </span>
+                    </div>
+
+                    <p className={`text-xs font-medium mb-2 leading-relaxed ${
+                      isDanger ? 'text-red-900 font-semibold' : 'text-gray-800'
+                    }`}>
+                      {msg.action_preview.summary}
+                    </p>
+
+                    {/* Parameter Details Table */}
+                    {msg.action_preview.details && (
+                      <div className={`rounded-lg p-2.5 mb-3 text-[11px] space-y-1 border font-mono ${
+                        isDanger ? 'bg-red-50/60 border-red-200/80 text-red-950' : 'bg-indigo-50/50 border-indigo-100/60'
+                      }`}>
+                        {Object.entries(msg.action_preview.details).map(([key, val]) => (
+                          <div key={key} className="flex justify-between items-start gap-2">
+                            <span className="text-gray-500 font-sans">{key}:</span>
+                            <span className="text-gray-900 font-semibold truncate max-w-[200px]" title={String(val)}>
+                              {String(val)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    {msg.action_preview.status === 'PENDING' ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => handleConfirmAction(msg.id, msg.action_preview)}
+                          disabled={executingActionId === msg.action_preview.action_id}
+                          className={`flex-1 py-1.5 px-3 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50 ${
+                            isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                          }`}
+                        >
+                          {executingActionId === msg.action_preview.action_id ? (
+                            <>
+                              <ArrowsClockwise size={13} className="animate-spin" />
+                              Đang thực thi...
+                            </>
+                          ) : isDanger ? (
+                            <>
+                              <Trash size={13} weight="bold" />
+                              Xác nhận xóa vĩnh viễn
+                            </>
+                          ) : (
+                            <>
+                              <Check size={13} weight="bold" />
+                              Xác nhận thực hiện
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleCancelAction(msg.id)}
+                          disabled={executingActionId === msg.action_preview.action_id}
+                          className="py-1.5 px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition"
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    ) : msg.action_preview.status === 'EXECUTED' ? (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                        <CheckCircle size={15} weight="fill" className="text-emerald-600 flex-shrink-0" />
+                        <span>{msg.action_preview.execution_result || 'Đã thực thi thành công!'}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-200">
+                        <X size={14} className="text-gray-400" />
+                        <span>Đã hủy bỏ hành động này.</span>
+                      </div>
+                    )}
                   </div>
-
-                  <p className="text-xs font-medium text-gray-800 mb-2 leading-relaxed">
-                    {msg.action_preview.summary}
-                  </p>
-
-                  {/* Parameter Details Table */}
-                  {msg.action_preview.details && (
-                    <div className="bg-indigo-50/50 rounded-lg p-2.5 mb-3 text-[11px] space-y-1 border border-indigo-100/60 font-mono">
-                      {Object.entries(msg.action_preview.details).map(([key, val]) => (
-                        <div key={key} className="flex justify-between items-start gap-2">
-                          <span className="text-gray-500 font-sans">{key}:</span>
-                          <span className="text-gray-900 font-semibold truncate max-w-[200px]" title={String(val)}>
-                            {String(val)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  {msg.action_preview.status === 'PENDING' ? (
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        onClick={() => handleConfirmAction(msg.id, msg.action_preview)}
-                        disabled={executingActionId === msg.action_preview.action_id}
-                        className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50"
-                      >
-                        {executingActionId === msg.action_preview.action_id ? (
-                          <>
-                            <ArrowsClockwise size={13} className="animate-spin" />
-                            Đang thực thi...
-                          </>
-                        ) : (
-                          <>
-                            <Check size={13} weight="bold" />
-                            Xác nhận thực hiện
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleCancelAction(msg.id)}
-                        disabled={executingActionId === msg.action_preview.action_id}
-                        className="py-1.5 px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition"
-                      >
-                        Hủy
-                      </button>
-                    </div>
-                  ) : msg.action_preview.status === 'EXECUTED' ? (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                      <CheckCircle size={15} weight="fill" className="text-emerald-600 flex-shrink-0" />
-                      <span>{msg.action_preview.execution_result || 'Đã thực thi thành công!'}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-200">
-                      <X size={14} className="text-gray-400" />
-                      <span>Đã hủy bỏ hành động này.</span>
-                    </div>
-                  )}
-                </div>
-              )}
+                );
+              })()}
             </div>
           ))}
 
