@@ -110,6 +110,7 @@ export async function POST(
            WITH t
            MATCH (tg:ToolGroup { id: $groupId })
            MERGE (tg)-[:CONTAINS]->(t)
+           MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
            RETURN t`,
           {
             id: newTool.id,
@@ -119,16 +120,35 @@ export async function POST(
           }
         );
       } else {
-        // Cập nhật schema & description
+        // Cập nhật schema, description và tool_group_id
+        const existingToolId = checkRes.rows[0].id;
         await txn.pgQuery(
           `UPDATE tools SET
             name = $1,
             description = $2,
             parameters_schema = $3,
             input_schema = $3,
+            tool_group_id = $4,
             updated_at = NOW()
-          WHERE key = $4`,
-          [rawToolName, toolDescription, JSON.stringify(schema), toolKey]
+          WHERE key = $5`,
+          [rawToolName, toolDescription, JSON.stringify(schema), toolGroup.id, toolKey]
+        );
+
+        // Đảm bảo quan hệ Neo4j
+        await txn.neo4jRun(
+          `MERGE (t:Tool { key: $key })
+           SET t.name = $name,
+               t.updated_at = timestamp()
+           WITH t
+           MATCH (tg:ToolGroup { id: $groupId })
+           MERGE (tg)-[:CONTAINS]->(t)
+           MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
+           RETURN t`,
+          {
+            key: toolKey,
+            name: rawToolName,
+            groupId: toolGroup.id,
+          }
         );
         updatedCount++;
       }

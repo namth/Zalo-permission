@@ -56,7 +56,7 @@ export async function logAuditAction(
   action_type: string,
   input_data: any = null,
   output_data: any = null,
-  status: string = "success",
+  status: string = "SUCCESS",
   error_message: string | null = null,
   metadata: any = null,
 ): Promise<AuditLog> {
@@ -64,6 +64,10 @@ export async function logAuditAction(
   const serializedInputData = input_data ? makeJsonSerializable(input_data) : null;
   const serializedOutputData = output_data ? makeJsonSerializable(output_data) : null;
   const serializedMetadata = metadata ? makeJsonSerializable(metadata) : null;
+
+  // Normalize status to uppercase enum ('SUCCESS' | 'FAILED' | 'REJECTED')
+  const rawStatus = (status || 'SUCCESS').toUpperCase();
+  const normalizedStatus = (rawStatus === 'FAILED' || rawStatus === 'REJECTED') ? rawStatus : 'SUCCESS';
 
   const result = await query(
     `INSERT INTO audit_logs 
@@ -77,7 +81,7 @@ export async function logAuditAction(
       action_type,
       serializedInputData ? JSON.stringify(serializedInputData) : null,
       serializedOutputData ? JSON.stringify(serializedOutputData) : null,
-      status,
+      normalizedStatus,
       error_message,
       serializedMetadata ? JSON.stringify(serializedMetadata) : null,
     ],
@@ -258,7 +262,7 @@ export async function logAuditError(
     action_type,
     null,
     null,
-    "failed",
+    "FAILED",
     errorMessage,
     metadata,
   );

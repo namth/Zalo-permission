@@ -277,7 +277,7 @@ export default function ToolGroupDetailPage() {
             <p className="text-sm text-gray-500 mt-0.5">{group?.tools?.length || 0} tools assigned</p>
           </div>
           <Link
-            href="/admin/tools/new"
+            href={`/admin/tools/new?group_id=${id}`}
             className="text-sm text-blue-600 hover:text-blue-800 font-medium transition"
           >
             + Add Tool

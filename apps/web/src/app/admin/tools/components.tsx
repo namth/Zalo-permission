@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Tool,
   createTool, updateTool,
@@ -13,11 +14,14 @@ interface ToolFormProps {
 }
 
 export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
+  const searchParams = useSearchParams();
+  const defaultGroupId = searchParams.get('group_id') || '';
+
   const [formData, setFormData] = useState<Partial<Tool>>(() => {
     if (tool) {
       return {
         ...tool,
-        group_id: tool.group_id || tool.group_info?.id || ''
+        group_id: tool.group_id || tool.group_info?.id || defaultGroupId
       };
     }
     return {
@@ -25,7 +29,7 @@ export function ToolForm({ tool, onSubmit, onSuccess }: ToolFormProps) {
       name: '',
       description: '',
       status: 'active',
-      group_id: '',
+      group_id: defaultGroupId,
     };
   });
   const [groups, setGroups] = useState<{ id: string, name: string }[]>([]);

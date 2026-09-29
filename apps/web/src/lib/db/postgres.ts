@@ -401,7 +401,13 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
       disabled_tool_ids JSONB DEFAULT '[]',
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(workspace_id, tool_group_id)
-    )`
+    )`,
+
+    // 13. Backfill tool_group_id for existing tools matched by prefix
+    `UPDATE tools t
+     SET tool_group_id = tg.id
+     FROM tool_groups tg
+     WHERE t.tool_group_id IS NULL AND t.key LIKE tg.key || '_%'`
   ];
 
   for (const queryStr of steps) {

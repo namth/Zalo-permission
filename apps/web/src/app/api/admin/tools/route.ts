@@ -25,7 +25,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.info(`[API] GET /api/admin/tools - status: ${status || 'all'}, limit: ${limit}, offset: ${offset}`);
 
     const db = getDb();
-    let query = `SELECT id, key, name, description, input_schema, output_schema, status, created_at, updated_at 
+    let query = `SELECT id, key, name, description, tool_group_id, input_schema, output_schema, status, created_at, updated_at 
                  FROM tools`;
     const params: any[] = [];
 
@@ -44,32 +44,47 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
     const total = parseInt(countResult.rows[0].total, 10);
 
-    // Get group mapping from Neo4j
-    const neo4jRes = await neo4jClient.run(`
-      MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
-      RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
-    `);
-    
+    // Get group mapping from PostgreSQL tool_groups
+    const pgGroupsRes = await db.query('SELECT id, key, name FROM tool_groups');
+    const pgGroupMap = new Map<string, { id: string; key: string; name: string }>();
+    for (const g of pgGroupsRes.rows) {
+      pgGroupMap.set(String(g.id), { id: String(g.id), key: g.key, name: g.name });
+    }
+
+    // Get group mapping from Neo4j (both BELONGS_TO_GROUP and CONTAINS)
     const groupMap = new Map<string, { id: string; key: string; name: string }>();
-    for (const record of neo4jRes.records) {
-      const toolId = record.get('tool_id');
-      const groupId = record.get('group_id');
+    try {
+      const neo4jRes = await neo4jClient.run(`
+        MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
+        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
+        UNION
+        MATCH (tg:ToolGroup)-[:CONTAINS]->(t:Tool)
+        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
+      `);
       
-      if (toolId && groupId) {
-        groupMap.set(String(toolId), {
-          id: String(groupId),
-          key: record.get('group_key'),
-          name: record.get('group_name')
-        });
+      for (const record of neo4jRes.records) {
+        const toolId = record.get('tool_id');
+        const groupId = record.get('group_id');
+        
+        if (toolId && groupId) {
+          groupMap.set(String(toolId), {
+            id: String(groupId),
+            key: record.get('group_key'),
+            name: record.get('group_name')
+          });
+        }
       }
+    } catch (neoErr) {
+      logger.warn(`Failed to fetch Neo4j tool group mappings: ${neoErr}`);
     }
 
     const data = result.rows.map((row: any) => {
       const rowId = String(row.id);
-      const group_info = groupMap.get(rowId) || null;
+      const group_info = groupMap.get(rowId) || (row.tool_group_id ? pgGroupMap.get(String(row.tool_group_id)) : null) || null;
       
       return {
         ...row,
+        group_id: row.tool_group_id || group_info?.id || null,
         group_info
       };
     });
@@ -170,7 +185,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       action_type: 'TOOL_CREATED',
       input_data: { key, name },
       output_data: { tool_id: tool.id },
-      status: 'success',
+      status: 'SUCCESS',
     });
 
     logger.info(`[API] Tool created with full sync: ${tool.id}`);

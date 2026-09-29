@@ -24,6 +24,9 @@ export class AuditLogService {
         RETURNING *
       `;
 
+      const rawStatus = (request.status || 'SUCCESS').toUpperCase();
+      const status = (rawStatus === 'FAILED' || rawStatus === 'REJECTED') ? rawStatus : 'SUCCESS';
+
       const result = await this.db.query(query, [
         request.workspace_id,
         request.thread_id || null,
@@ -31,7 +34,7 @@ export class AuditLogService {
         request.action_type,
         request.input_data ? JSON.stringify(request.input_data) : null,
         request.output_data ? JSON.stringify(request.output_data) : null,
-        request.status,
+        status,
         request.error_message || null,
         request.metadata ? JSON.stringify(request.metadata) : null,
       ]);

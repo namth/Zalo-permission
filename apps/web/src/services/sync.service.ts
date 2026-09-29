@@ -557,9 +557,9 @@ export class ToolSyncService {
 
       // 1. Create in PostgreSQL
       const pgResult = await txn.pgQuery(
-        `INSERT INTO tools (key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
-         RETURNING id, key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at`,
+        `INSERT INTO tools (key, name, description, input_schema, output_schema, embedding, tool_group_id, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW(), NOW())
+         RETURNING id, key, name, description, input_schema, output_schema, embedding, tool_group_id, status, created_at, updated_at`,
         [
           key,
           name,
@@ -567,6 +567,7 @@ export class ToolSyncService {
           input_schema ? JSON.stringify(input_schema) : null,
           output_schema ? JSON.stringify(output_schema) : null,
           embedding ? JSON.stringify(embedding) : null,
+          group_id || null,
         ]
       );
 
@@ -579,9 +580,10 @@ export class ToolSyncService {
       // 2. Create in Neo4j
       let neo4jResult;
       if (group_id) {
-        const groupCheck = await txn.pgQuery('SELECT key FROM tool_groups WHERE id = $1', [group_id]);
+        const groupCheck = await txn.pgQuery('SELECT id, key FROM tool_groups WHERE id = $1', [group_id]);
         if (groupCheck.rows.length > 0) {
           const groupKey = groupCheck.rows[0].key;
+          const groupId = groupCheck.rows[0].id;
           neo4jResult = await txn.neo4jRun(
             `CREATE (t:Tool {
               id: $id,
@@ -589,10 +591,11 @@ export class ToolSyncService {
               name: $name
             })
             WITH t
-            MATCH (tg:ToolGroup {key: $groupKey})
+            MATCH (tg:ToolGroup) WHERE tg.id = $groupId OR tg.key = $groupKey
             MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
+            MERGE (tg)-[:CONTAINS]->(t)
             RETURN t`,
-            { id: tool.id, key: tool.key, name: tool.name, groupKey }
+            { id: tool.id, key: tool.key, name: tool.name, groupKey, groupId }
           );
         } else {
           neo4jResult = await txn.neo4jRun(
@@ -669,8 +672,12 @@ export class ToolSyncService {
         fields.push(`status = $${paramIndex++}`);
         values.push(updates.status);
       }
+      if (updates.group_id !== undefined) {
+        fields.push(`tool_group_id = $${paramIndex++}`);
+        values.push(updates.group_id || null);
+      }
 
-      if (fields.length === 0 && updates.group_id === undefined) {
+      if (fields.length === 0) {
         const result = await txn.pgQuery('SELECT * FROM tools WHERE id = $1', [id]);
         return result.rows[0];
       }
@@ -685,7 +692,7 @@ export class ToolSyncService {
           `UPDATE tools
            SET ${fields.join(', ')}
            WHERE id = $${paramIndex}
-           RETURNING id, key, name, description, input_schema, output_schema, embedding, status, created_at, updated_at`,
+           RETURNING id, key, name, description, tool_group_id, input_schema, output_schema, embedding, status, created_at, updated_at`,
           values
         );
 
@@ -712,26 +719,31 @@ export class ToolSyncService {
 
       if (updates.group_id !== undefined) {
         if (updates.group_id) {
-          const groupCheck = await txn.pgQuery('SELECT key FROM tool_groups WHERE id = $1', [updates.group_id]);
+          const groupCheck = await txn.pgQuery('SELECT id, key FROM tool_groups WHERE id = $1', [updates.group_id]);
           if (groupCheck.rows.length > 0) {
             const groupKey = groupCheck.rows[0].key;
-            // Remove old relationship and create new one
+            const groupId = groupCheck.rows[0].id;
+            // Remove old relationships and create new ones
             await txn.neo4jRun(
               `MATCH (t:Tool {id: $id})
-               OPTIONAL MATCH (t)-[r:BELONGS_TO_GROUP]->()
-               DELETE r
+               OPTIONAL MATCH (t)-[r1:BELONGS_TO_GROUP]->()
+               OPTIONAL MATCH ()-[r2:CONTAINS]->(t)
+               DELETE r1, r2
                WITH t
-               MATCH (tg:ToolGroup {key: $groupKey})
+               MATCH (tg:ToolGroup) WHERE tg.id = $groupId OR tg.key = $groupKey
                MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
+               MERGE (tg)-[:CONTAINS]->(t)
                RETURN t`,
-              { id, groupKey }
+              { id, groupKey, groupId }
             );
           }
         } else {
           // Remove relationship if group_id is explicitly set to null
           await txn.neo4jRun(
-            `MATCH (t:Tool {id: $id})-[r:BELONGS_TO_GROUP]->()
-             DELETE r`,
+            `MATCH (t:Tool {id: $id})
+             OPTIONAL MATCH (t)-[r1:BELONGS_TO_GROUP]->()
+             OPTIONAL MATCH ()-[r2:CONTAINS]->(t)
+             DELETE r1, r2`,
             { id }
           );
         }

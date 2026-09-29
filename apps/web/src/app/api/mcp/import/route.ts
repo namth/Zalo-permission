@@ -125,7 +125,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const insertedTool = toolPgRes.rows[0];
       insertedTools.push(insertedTool);
 
-      // Đồng bộ Tool và quan hệ CONTAINS vào Neo4j
+      // Đồng bộ Tool và quan hệ CONTAINS + BELONGS_TO_GROUP vào Neo4j
       await txn.neo4jRun(
         `MERGE (t:Tool { key: $key })
          SET t.id = $id,
@@ -134,6 +134,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
          WITH t
          MATCH (tg:ToolGroup { id: $groupId })
          MERGE (tg)-[:CONTAINS]->(t)
+         MERGE (t)-[:BELONGS_TO_GROUP]->(tg)
          RETURN t`,
         {
           id: insertedTool.id,
