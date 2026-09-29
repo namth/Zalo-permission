@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { SyncTransaction } from '@/services/sync.service';
 import { McpToolExecutor } from '@omniagent/core';
 import { getDb } from '@/lib/db';
@@ -86,14 +87,15 @@ export async function POST(
 
       if (checkRes.rows.length === 0) {
         // Thêm mới
+        const toolId = randomUUID();
         const insertRes = await txn.pgQuery(
           `INSERT INTO tools (
-            key, name, description, tool_group_id, method, path,
+            id, key, name, description, tool_group_id, method, path,
             parameters_schema, input_schema, status, is_active, created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, 'POST', '/call', $5, $5, 'active', true, NOW(), NOW())
+          VALUES ($1, $2, $3, $4, $5, 'POST'::"HttpMethod", '/call', $6, $6, 'active', true, NOW(), NOW())
           RETURNING id, key, name`,
-          [toolKey, rawToolName, toolDescription, toolGroup.id, JSON.stringify(schema)]
+          [toolId, toolKey, rawToolName, toolDescription, toolGroup.id, JSON.stringify(schema)]
         );
 
         const newTool = insertRes.rows[0];

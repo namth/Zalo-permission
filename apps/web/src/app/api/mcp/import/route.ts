@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { SyncTransaction } from '@/services/sync.service';
 import { logger } from '@/lib/logger';
 
@@ -38,12 +39,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ? { token: default_auth_token.trim() }
       : {};
 
+    const groupId = randomUUID();
     const groupResult = await txn.pgQuery(
       `INSERT INTO tool_groups (
-        key, name, description, protocol_type, base_url, mcp_transport,
+        id, key, name, description, protocol_type, base_url, mcp_transport,
         mcp_raw_config, timeout_seconds, default_auth_config, status, is_active, created_at, updated_at
       )
-      VALUES ($1, $2, $3, 'MCP', $4, $5, $6, $7, $8, 'active', true, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, 'MCP', $5, $6, $7, $8, $9, 'active', true, NOW(), NOW())
       ON CONFLICT (key) DO UPDATE SET
         name = EXCLUDED.name,
         description = EXCLUDED.description,
@@ -56,6 +58,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         updated_at = NOW()
       RETURNING id, key, name, description, protocol_type, base_url, status`,
       [
+        groupId,
         sanitizedKey,
         name.trim(),
         description || null,
@@ -93,13 +96,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const toolKey = `${sanitizedKey}_${rawToolName.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
       const toolDescription = tool.description || `Tool ${rawToolName} from ${name}`;
       const schema = tool.parameters_schema || tool.inputSchema || { type: 'object', properties: {} };
+      const toolId = randomUUID();
 
       const toolPgRes = await txn.pgQuery(
         `INSERT INTO tools (
-          key, name, description, tool_group_id, method, path,
+          id, key, name, description, tool_group_id, method, path,
           parameters_schema, input_schema, status, is_active, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, 'POST', '/call', $5, $5, 'active', true, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, 'POST'::"HttpMethod", '/call', $6, $6, 'active', true, NOW(), NOW())
         ON CONFLICT (key) DO UPDATE SET
           name = EXCLUDED.name,
           description = EXCLUDED.description,
@@ -109,6 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           updated_at = NOW()
         RETURNING id, key, name, description, tool_group_id`,
         [
+          toolId,
           toolKey,
           rawToolName,
           toolDescription,
