@@ -75,7 +75,10 @@ Nhiệm vụ của bạn:
 Quy tắc:
 - Khi người dùng gửi link MCP hoặc JSON mcpServers: hãy dùng tool "inspect_mcp_source" để kiểm tra trước, sau đó đề xuất "propose_import_mcp".
 - Khi người dùng muốn gán tool vào workspace: tra cứu danh sách workspace ("list_workspaces") và danh sách tools ("list_tool_groups" hoặc "list_tools_in_group"), sau đó gọi "propose_assign_tool_to_workspace" hoặc "propose_assign_tool_group_to_workspace".
-- Khi người dùng yêu cầu xóa tool group hoặc tool: tìm kiếm ID/Key và gọi "propose_delete_tool_group" hoặc "propose_delete_tool".`;
+- Khi người dùng yêu cầu xóa tool group hoặc tool: tìm kiếm ID/Key và gọi "propose_delete_tool_group" hoặc "propose_delete_tool".
+- Khi người dùng yêu cầu tạo Skill mới, dạy Skill mới, hoặc lưu quy trình/kịch bản thao tác thành Skill:
+  + Bạn BẮT BUỘC PHẢI tự động trích xuất hoặc đề xuất mã key (chữ thường, gạch dưới, ví dụ: them_chi_tieu), tên hiển thị (ví dụ: Thêm Chi Tiêu), mô tả tóm tắt, và biên soạn system_prompt chi tiết từng bước dựa trên toàn bộ quy trình mà người dùng đã mô tả.
+  + BẮT BUỘC PHẢI gọi tool "propose_create_skill". TUYỆT ĐỐI KHÔNG được chỉ hứa hẹn hoặc liệt kê bằng chữ suông "Tôi sẽ tạo..." hoặc yêu cầu người dùng phải tự điền lại các thông tin đó mà không gọi tool!`;
   }
 
   /**
@@ -154,6 +157,14 @@ Quy tắc:
               workspace_id: { type: 'string', description: 'Lọc theo ID Workspace (tùy chọn)' },
             },
           },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_skills',
+          description: 'Lấy danh sách tất cả các Skills (kỹ năng của AI Agent) hiện có trong hệ thống kèm mô tả và trạng thái.',
+          parameters: { type: 'object', properties: {} },
         },
       },
 
@@ -245,14 +256,14 @@ Quy tắc:
         type: 'function',
         function: {
           name: 'propose_create_skill',
-          description: 'Đề xuất tạo một Skill mới cho AI Agent.',
+          description: 'BẮT BUỘC GỌI TOOL NÀY khi người dùng yêu cầu tạo Skill, dạy Skill mới, hoặc biến một quy trình/kịch bản thành Skill cho AI Agent. Hãy tự động tổng hợp key, name, description và system_prompt chi tiết từng bước để gọi tool này tạo Action Preview Card cho Admin bấm xác nhận.',
           parameters: {
             type: 'object',
             properties: {
-              key: { type: 'string', description: 'Mã định danh của Skill (chữ thường, gạch nối)' },
-              name: { type: 'string', description: 'Tên hiển thị của Skill' },
+              key: { type: 'string', description: 'Mã định danh duy nhất của Skill (chữ thường, gạch dưới, ví dụ: them_chi_tieu)' },
+              name: { type: 'string', description: 'Tên hiển thị của Skill (ví dụ: Thêm Chi Tiêu)' },
               description: { type: 'string', description: 'Mô tả ngắn gọn về kỹ năng' },
-              system_prompt: { type: 'string', description: 'System prompt hướng dẫn AI khi kích hoạt skill này' },
+              system_prompt: { type: 'string', description: 'System prompt chi tiết hướng dẫn AI quy trình các bước khi thực hiện skill này' },
               workspace_id: { type: 'string', description: 'ID Workspace cần liên kết ngay (tùy chọn)' },
             },
             required: ['key', 'name', 'system_prompt'],
@@ -399,6 +410,11 @@ Quy tắc:
         return res.rows;
       }
 
+      if (name === 'list_skills') {
+        const res = await query('SELECT id, key, name, description, status, is_active, created_at FROM skills ORDER BY created_at DESC LIMIT 50');
+        return res.rows;
+      }
+
       return { error: `Tool ${name} không tồn tại` };
     } catch (err: any) {
       logger.error(`[Copilot ReadTool Error] ${name}: ${err.message}`);
@@ -459,8 +475,12 @@ Quy tắc:
         // Nếu là tool đề xuất hành động (PROPOSE), dừng lại và trả về Action Preview Card
         if (fnName.startsWith('propose_')) {
           const actionPreview = this.buildActionPreview(fnName, fnArgs);
+          const defaultReply = fnName === 'propose_create_skill'
+            ? `Tôi đã biên soạn xong cấu hình và quy trình cho Skill **${actionPreview.parameters?.name || actionPreview.parameters?.key}**. Bạn hãy kiểm tra thông tin và nhấn nút xác nhận bên dưới để hệ thống khởi tạo Skill nhé:`
+            : 'Tôi đã lên kế hoạch thực hiện thao tác sau đây. Vui lòng kiểm tra và xác nhận:';
+
           return {
-            reply: message.content || 'Tôi đã lên kế hoạch thực hiện thao tác sau đây. Vui lòng kiểm tra và xác nhận:',
+            reply: message.content || defaultReply,
             action_preview: actionPreview,
           };
         }
@@ -546,9 +566,10 @@ Quy tắc:
           summary: `Tạo Skill mới "${args.name}" (${args.key}) cho Agent.`,
           details: {
             'Tên Skill': args.name,
-            'Key': args.key,
-            'Mô tả': args.description || 'Không có mô tả',
-            'Gán vào Workspace': args.workspace_id ? args.workspace_id : 'Chưa gán',
+            'Mã Key': args.key,
+            'Mô tả': args.description || 'Kỹ năng xử lý nghiệp vụ',
+            'Phạm vi': args.workspace_id ? `Workspace ${args.workspace_id}` : 'Dùng chung (Toàn hệ thống)',
+            'Quy trình / Prompt': args.system_prompt ? (args.system_prompt.length > 120 ? args.system_prompt.substring(0, 120) + '...' : args.system_prompt) : '—',
           },
           parameters: args,
         };
@@ -785,12 +806,19 @@ Quy tắc:
       if (actionType === 'CREATE_SKILL') {
         const { key, name, description, system_prompt, workspace_id } = params;
         const skillId = randomUUID();
+        const sanitizedKey = (key || name).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
 
         const skillRes = await query(
-          `INSERT INTO skills (id, key, name, description, detail, status, is_active, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'active', true, NOW(), NOW())
+          `INSERT INTO skills (id, key, name, description, system_prompt, detail, status, is_active, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5, 'active', true, NOW(), NOW())
+           ON CONFLICT (key) DO UPDATE SET
+             name = EXCLUDED.name,
+             description = EXCLUDED.description,
+             system_prompt = EXCLUDED.system_prompt,
+             detail = EXCLUDED.detail,
+             updated_at = NOW()
            RETURNING id, key, name`,
-          [skillId, key, name, description || null, system_prompt]
+          [skillId, sanitizedKey, name.trim(), description || null, system_prompt]
         );
         const skill = skillRes.rows[0];
 
@@ -802,12 +830,13 @@ Quy tắc:
           { id: skill.id, key: skill.key, name: skill.name, systemPrompt: system_prompt }
         );
 
-        // Gán vào Workspace nếu có
+        // Gán vào Workspace nếu có (hỗ trợ cả CAN_USE và SHARED_TO)
         if (workspace_id) {
           await neo4jClient.run(
             `MATCH (w:Workspace { id: $workspace_id })
              MATCH (s:Skill { id: $skill_id })
              MERGE (w)-[:CAN_USE]->(s)
+             MERGE (s)-[:SHARED_TO]->(w)
              RETURN w`,
             { workspace_id, skill_id: skill.id }
           );
@@ -818,7 +847,7 @@ Quy tắc:
           null,
           adminUserId,
           'COPILOT_ACTION',
-          { action: 'CREATE_SKILL', key, name },
+          { action: 'CREATE_SKILL', key: sanitizedKey, name },
           { skill_id: skill.id, workspace_id },
           'SUCCESS'
         );

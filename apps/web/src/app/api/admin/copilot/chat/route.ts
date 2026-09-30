@@ -16,12 +16,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Tránh trùng lặp nếu frontend đã bao gồm message hiện tại trong mảng history
+    const previousHistory = history.filter((h: any, idx: number) => {
+      if (idx === history.length - 1 && h.role === 'user' && h.content?.trim() === message.trim()) {
+        return false;
+      }
+      return true;
+    });
+
     const messages: CopilotMessage[] = [
-      ...history.slice(-10), // Giữ tối đa 10 tin nhắn gần nhất trong context
+      ...previousHistory.slice(-10), // Giữ tối đa 10 tin nhắn gần nhất trong context
       { role: 'user', content: message.trim() },
     ];
 
-    logger.info(`[Copilot API] Processing chat message: "${message.substring(0, 60)}..."`);
+    logger.info(`[Copilot API] Processing chat message (${messages.length} messages in context): "${message.substring(0, 60)}..."`);
     const result = await copilotService.chat(messages);
 
     return NextResponse.json({
