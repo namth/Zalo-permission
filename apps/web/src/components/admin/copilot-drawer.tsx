@@ -49,21 +49,21 @@ export function CopilotDrawer() {
   const [loading, setLoading] = useState(false);
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
 
-  // Dimensions & resizing (Default wider: 580px, taller: 640px)
-  const DEFAULT_WIDTH = 580;
-  const DEFAULT_HEIGHT = 640;
-  const MIN_WIDTH = 420;
-  const MIN_HEIGHT = 360;
+  // Dimensions & resizing
+  const DEFAULT_DRAWER_WIDTH = 520;
+  const MIN_DRAWER_WIDTH = 420;
+  const DEFAULT_INPUT_HEIGHT = 160;
+  const MIN_INPUT_HEIGHT = 80;
 
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
-  const [height, setHeight] = useState(DEFAULT_HEIGHT);
-  const [isResizing, setIsResizing] = useState(false);
-  const [isMaximized, setIsMaximized] = useState(false);
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const [inputHeight, setInputHeight] = useState(DEFAULT_INPUT_HEIGHT);
+  const [isResizingDrawer, setIsResizingDrawer] = useState(false);
+  const [isResizingInput, setIsResizingInput] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load open state preference from localStorage (default to true unless explicitly closed)
+  // Load open state and dimension preferences from localStorage
   useEffect(() => {
     try {
       const savedOpen = localStorage.getItem('omniagent_copilot_open');
@@ -73,18 +73,19 @@ export function CopilotDrawer() {
         setIsOpen(true);
       }
 
-      const savedWidth = localStorage.getItem('omniagent_copilot_width');
-      const savedHeight = localStorage.getItem('omniagent_copilot_height');
+      const savedWidth = localStorage.getItem('omniagent_copilot_drawer_width');
       if (savedWidth) {
         const parsedW = parseInt(savedWidth, 10);
         if (!isNaN(parsedW)) {
-          setWidth(Math.max(MIN_WIDTH, Math.min(window.innerWidth - 32, parsedW)));
+          setDrawerWidth(Math.max(MIN_DRAWER_WIDTH, Math.min(window.innerWidth - 32, parsedW)));
         }
       }
-      if (savedHeight) {
-        const parsedH = parseInt(savedHeight, 10);
+
+      const savedInputHeight = localStorage.getItem('omniagent_copilot_input_height');
+      if (savedInputHeight) {
+        const parsedH = parseInt(savedInputHeight, 10);
         if (!isNaN(parsedH)) {
-          setHeight(Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 32, parsedH)));
+          setInputHeight(Math.max(MIN_INPUT_HEIGHT, Math.min(window.innerHeight - 200, parsedH)));
         }
       }
     } catch {
@@ -101,86 +102,103 @@ export function CopilotDrawer() {
     }
   };
 
-  const handleToggleMaximize = () => {
-    setIsMaximized(prev => !prev);
-  };
-
-  const handleStartResize = (e: React.MouseEvent, direction: 'top' | 'left' | 'top-left') => {
+  // Drag Left Edge to adjust Drawer Width
+  const handleStartDrawerResize = (e: React.MouseEvent) => {
     e.preventDefault();
-    setIsResizing(true);
-    setIsMaximized(false);
+    setIsResizingDrawer(true);
 
     const startX = e.clientX;
-    const startY = e.clientY;
-    const startWidth = width;
-    const startHeight = height;
-
-    let latestHeight = startHeight;
+    const startWidth = drawerWidth;
     let latestWidth = startWidth;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
-      if (direction === 'top' || direction === 'top-left') {
-        const deltaY = startY - moveEvent.clientY;
-        const maxHeight = window.innerHeight - 32;
-        latestHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
-        setHeight(latestHeight);
-      }
-      if (direction === 'left' || direction === 'top-left') {
-        const deltaX = startX - moveEvent.clientX;
-        const maxWidth = window.innerWidth - 32;
-        latestWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + deltaX));
-        setWidth(latestWidth);
-      }
+      const deltaX = startX - moveEvent.clientX;
+      const maxWidth = window.innerWidth - 60;
+      latestWidth = Math.max(MIN_DRAWER_WIDTH, Math.min(maxWidth, startWidth + deltaX));
+      setDrawerWidth(latestWidth);
     };
 
     const onMouseUp = () => {
-      setIsResizing(false);
+      setIsResizingDrawer(false);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       try {
-        localStorage.setItem('omniagent_copilot_height', latestHeight.toString());
-        localStorage.setItem('omniagent_copilot_width', latestWidth.toString());
-      } catch {
-        // ignore
-      }
+        localStorage.setItem('omniagent_copilot_drawer_width', latestWidth.toString());
+      } catch {}
     };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  const handleTouchStartResize = (e: React.TouchEvent, direction: 'top') => {
+  // Drag Splitter Bar to resize Input Height (drag up -> input taller, chat shrinks)
+  const handleStartInputResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingInput(true);
+
+    const startY = e.clientY;
+    const startHeight = inputHeight;
+    let latestHeight = startHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = startY - moveEvent.clientY;
+      const maxHeight = window.innerHeight - 200;
+      latestHeight = Math.max(MIN_INPUT_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+      setInputHeight(latestHeight);
+    };
+
+    const onMouseUp = () => {
+      setIsResizingInput(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      try {
+        localStorage.setItem('omniagent_copilot_input_height', latestHeight.toString());
+      } catch {}
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleTouchStartInputResize = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     if (!touch) return;
-    setIsResizing(true);
-    setIsMaximized(false);
+    setIsResizingInput(true);
 
     const startY = touch.clientY;
-    const startHeight = height;
+    const startHeight = inputHeight;
     let latestHeight = startHeight;
 
     const onTouchMove = (moveEvent: TouchEvent) => {
       const curTouch = moveEvent.touches[0];
       if (!curTouch) return;
       const deltaY = startY - curTouch.clientY;
-      const maxHeight = window.innerHeight - 32;
-      latestHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
-      setHeight(latestHeight);
+      const maxHeight = window.innerHeight - 200;
+      latestHeight = Math.max(MIN_INPUT_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+      setInputHeight(latestHeight);
     };
 
     const onTouchEnd = () => {
-      setIsResizing(false);
+      setIsResizingInput(false);
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
       try {
-        localStorage.setItem('omniagent_copilot_height', latestHeight.toString());
-      } catch {
-        // ignore
-      }
+        localStorage.setItem('omniagent_copilot_input_height', latestHeight.toString());
+      } catch {}
     };
 
     window.addEventListener('touchmove', onTouchMove);
     window.addEventListener('touchend', onTouchEnd);
+  };
+
+  const handleToggleInputExpand = () => {
+    setInputHeight(prev => {
+      const newH = prev > 220 ? DEFAULT_INPUT_HEIGHT : 320;
+      try {
+        localStorage.setItem('omniagent_copilot_input_height', newH.toString());
+      } catch {}
+      return newH;
+    });
   };
 
   // Load chat history from localStorage
@@ -380,52 +398,25 @@ export function CopilotDrawer() {
         </button>
       )}
 
-      {/* 2. RESIZABLE FLOATING CHAT BOX */}
+      {/* 2. FULL-HEIGHT SLIDE-OVER RIGHT SIDEBAR DRAWER */}
       <div
         style={{
-          width: isMaximized ? 'min(880px, calc(100vw - 32px))' : `${width}px`,
-          height: isMaximized ? 'calc(100vh - 32px)' : `${height}px`,
-          maxWidth: 'calc(100vw - 24px)',
-          maxHeight: 'calc(100vh - 24px)',
+          width: `${drawerWidth}px`,
+          maxWidth: '95vw',
         }}
-        className={`fixed bottom-4 right-4 bg-white z-40 shadow-2xl rounded-2xl border border-slate-300/90 flex flex-col overflow-hidden transition-all ${
-          isResizing ? 'select-none transition-none' : 'duration-200 ease-out'
-        } ${
-          isOpen
-            ? 'opacity-100 scale-100 pointer-events-auto translate-y-0'
-            : 'opacity-0 scale-95 pointer-events-none translate-y-8'
-        }`}
+        className={`fixed top-0 right-0 h-full bg-white z-40 shadow-2xl border-l border-gray-200 flex flex-col transition-transform duration-300 ease-in-out transform ${
+          isResizingDrawer || isResizingInput ? 'select-none transition-none' : ''
+        } ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
-        {/* Top edge resize handle (drag up / down to adjust height) */}
+        {/* Left edge resize handle to adjust drawer width */}
         <div
-          onMouseDown={(e) => handleStartResize(e, 'top')}
-          onTouchStart={(e) => handleTouchStartResize(e, 'top')}
-          onDoubleClick={handleToggleMaximize}
-          className="group absolute top-0 left-0 right-0 h-3.5 z-50 cursor-ns-resize flex items-center justify-center hover:bg-indigo-500/25 active:bg-indigo-500/40 transition-colors select-none"
-          title="Kéo lên/xuống để chỉnh chiều cao (Nhấp đúp để phóng to/thu nhỏ)"
-        >
-          <div className="w-12 h-1 bg-white/40 group-hover:bg-yellow-300 group-hover:w-16 group-active:bg-yellow-400 rounded-full transition-all shadow-sm" />
-        </div>
-
-        {/* Left edge resize handle (drag left / right to adjust width) */}
-        <div
-          onMouseDown={(e) => handleStartResize(e, 'left')}
-          className="group absolute top-0 left-0 bottom-0 w-2.5 z-50 cursor-ew-resize hover:bg-indigo-500/25 active:bg-indigo-500/40 transition-colors select-none"
-          title="Kéo sang trái/phải để chỉnh độ rộng"
-        />
-
-        {/* Top-left corner resize handle */}
-        <div
-          onMouseDown={(e) => handleStartResize(e, 'top-left')}
-          className="absolute top-0 left-0 w-4 h-4 z-50 cursor-nwse-resize hover:bg-yellow-400/50 rounded-tl-2xl transition-colors select-none"
-          title="Kéo góc để chỉnh cả chiều cao và chiều rộng"
+          onMouseDown={handleStartDrawerResize}
+          className="absolute top-0 left-0 bottom-0 w-2.5 z-50 cursor-ew-resize hover:bg-indigo-500/25 active:bg-indigo-500/40 transition-colors select-none"
+          title="Kéo sang trái/phải để điều chỉnh độ rộng của Copilot"
         />
 
         {/* Header */}
-        <div
-          onDoubleClick={handleToggleMaximize}
-          className="px-5 py-3.5 border-b border-gray-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0 select-none cursor-default"
-        >
+        <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 text-yellow-300">
               <Sparkle size={20} weight="fill" />
@@ -444,17 +435,6 @@ export function CopilotDrawer() {
 
           <div className="flex items-center gap-1">
             <button
-              onClick={handleToggleMaximize}
-              title={isMaximized ? 'Thu nhỏ về kích thước tùy chỉnh' : 'Phóng to'}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
-            >
-              {isMaximized ? (
-                <ArrowsIn size={16} weight="bold" />
-              ) : (
-                <ArrowsOut size={16} weight="bold" />
-              )}
-            </button>
-            <button
               onClick={handleClearChat}
               title="Làm mới cuộc trò chuyện"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
@@ -463,10 +443,10 @@ export function CopilotDrawer() {
             </button>
             <button
               onClick={() => handleToggleOpen(false)}
-              title="Thu nhỏ / Đóng"
+              title="Đóng Copilot"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
             >
-              <Minus size={18} weight="bold" />
+              <X size={18} weight="bold" />
             </button>
           </div>
         </div>
@@ -633,38 +613,71 @@ export function CopilotDrawer() {
           </div>
         )}
 
-        {/* Input Footer */}
-        <div className="p-3.5 border-t border-gray-200 bg-white flex-shrink-0">
+        {/* RESIZABLE SPLITTER (DRAG UP / DOWN TO RESIZE INPUT HEIGHT & SHRINK CHAT) */}
+        <div
+          onMouseDown={handleStartInputResize}
+          onTouchStart={handleTouchStartInputResize}
+          onDoubleClick={handleToggleInputExpand}
+          className="group relative h-4 bg-slate-100 border-t border-b border-gray-200 cursor-row-resize flex items-center justify-center hover:bg-indigo-50 active:bg-indigo-100 transition-colors select-none flex-shrink-0"
+          title="Kéo lên/xuống để chỉnh độ cao ô nhập lệnh (Nhấp đúp để mở rộng/thu nhỏ)"
+        >
+          <div className="w-14 h-1.5 bg-gray-300 group-hover:bg-indigo-500 group-active:bg-indigo-600 rounded-full transition-all shadow-xs" />
+          <span className="absolute right-3 text-[10px] text-gray-400 group-hover:text-indigo-600 font-medium transition-colors">
+            {inputHeight > 220 ? 'Thu ngắn ô nhập' : 'Kéo lên để nới rộng ô nhập'}
+          </span>
+        </div>
+
+        {/* RESIZABLE INPUT FOOTER */}
+        <div
+          style={{ height: `${inputHeight}px` }}
+          className="p-3 bg-white flex flex-col flex-shrink-0 transition-[height] duration-75"
+        >
           <form
             onSubmit={e => {
               e.preventDefault();
               handleSend();
             }}
-            className="relative flex items-end gap-2"
+            className="flex-1 flex flex-col gap-2 min-h-0"
           >
-            <textarea
-              ref={textareaRef}
-              rows={2}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Hỏi hoặc ra lệnh cho Copilot... (Enter để gửi)"
-              disabled={loading}
-              className="w-full text-xs text-gray-900 border border-gray-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition bg-slate-50/50"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white rounded-xl transition flex-shrink-0 shadow-sm"
-              title="Gửi tin nhắn"
-            >
-              <PaperPlaneRight size={16} weight="fill" />
-            </button>
+            <div className="relative flex-1 min-h-0">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Hỏi hoặc ra lệnh cho Copilot... (Shift + Enter để xuống dòng, Enter để gửi)"
+                disabled={loading}
+                className="w-full h-full text-xs text-gray-900 border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition bg-slate-50/50 leading-relaxed font-sans placeholder:text-gray-400"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-0.5 flex-shrink-0">
+              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                <span>Shift + Enter để xuống dòng</span>
+                <span>•</span>
+                <span>Chế độ an toàn 1-Click Confirm</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleInputExpand}
+                  className="px-2 py-1 text-[11px] text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                >
+                  {inputHeight > 220 ? 'Thu ngắn ô nhập' : 'Mở rộng ô nhập'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!input.trim() || loading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded-xl transition flex-shrink-0 shadow-sm"
+                  title="Gửi tin nhắn"
+                >
+                  <span>Gửi</span>
+                  <PaperPlaneRight size={14} weight="fill" />
+                </button>
+              </div>
+            </div>
           </form>
-          <div className="flex justify-between items-center mt-1.5 px-1 text-[10px] text-gray-400">
-            <span>Shift + Enter để xuống dòng</span>
-            <span>Chế độ an toàn 1-Click Confirm</span>
-          </div>
         </div>
       </div>
     </>
