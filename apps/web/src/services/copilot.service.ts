@@ -78,7 +78,11 @@ Quy tắc:
 - Khi người dùng yêu cầu xóa tool group hoặc tool: tìm kiếm ID/Key và gọi "propose_delete_tool_group" hoặc "propose_delete_tool".
 - Khi người dùng yêu cầu tạo Skill mới, dạy Skill mới, hoặc lưu quy trình/kịch bản thao tác thành Skill:
   + Bạn BẮT BUỘC PHẢI tự động trích xuất hoặc đề xuất mã key (chữ thường, gạch dưới, ví dụ: them_chi_tieu), tên hiển thị (ví dụ: Thêm Chi Tiêu), mô tả tóm tắt, và biên soạn system_prompt chi tiết từng bước dựa trên toàn bộ quy trình mà người dùng đã mô tả.
-  + BẮT BUỘC PHẢI gọi tool "propose_create_skill". TUYỆT ĐỐI KHÔNG được chỉ hứa hẹn hoặc liệt kê bằng chữ suông "Tôi sẽ tạo..." hoặc yêu cầu người dùng phải tự điền lại các thông tin đó mà không gọi tool!`;
+  + BẮT BUỘC PHẢI gọi tool "propose_create_skill". TUYỆT ĐỐI KHÔNG được chỉ hứa hẹn hoặc liệt kê bằng chữ suông "Tôi sẽ tạo..." hoặc yêu cầu người dùng phải tự điền lại các thông tin đó mà không gọi tool!
+
+QUAN TRỌNG NHẤT VỀ GỌI TOOL:
+- Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (tạo skill, gán tool, thu hồi tool, import MCP, xóa tool...): Bạn PHẢI GỌI FUNCTION TOOL (trong trường tool_calls) NGAY LẬP TỨC để hệ thống hiển thị Action Preview Card cho Admin bấm xác nhận.
+- TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ trả về tin nhắn văn bản nói "Tôi sẽ gọi tool..." hay "Tôi sẽ tạo..." mà không phát lệnh gọi tool tương ứng!`;
   }
 
   /**
@@ -452,8 +456,36 @@ Quy tắc:
       const choice = completion.choices[0];
       const message = choice.message;
 
-      // Nếu không có tool_calls, trả lời trực tiếp
+      // Nếu không có tool_calls
       if (!message.tool_calls || message.tool_calls.length === 0) {
+        // Tự động kiểm tra nếu LLM đang mô tả hoặc hứa hẹn thực hiện hành động tạo skill / tool action
+        const text = (message.content || '').toLowerCase();
+        const lastUserMsg = (messages[messages.length - 1]?.content || '').toLowerCase();
+
+        const isTryingToCreateSkill =
+          (lastUserMsg.includes('skill') || text.includes('skill')) &&
+          (lastUserMsg.includes('tạo') || lastUserMsg.includes('dạy') || lastUserMsg.includes('thêm') ||
+           text.includes('sẽ tạo') || text.includes('gọi tool') || text.includes('mã định danh'));
+
+        const isActionIntent =
+          text.includes('sẽ gọi tool') ||
+          text.includes('gọi tool để') ||
+          text.includes('sẽ tiến hành tạo') ||
+          text.includes('sẽ tiến hành gán') ||
+          text.includes('sẽ tạo một skill');
+
+        if (iterations === 1 && (isTryingToCreateSkill || isActionIntent)) {
+          logger.info('[Copilot] Model responded with text instead of tool call. Forcing tool calling in next turn...');
+          formattedMessages.push(message);
+          formattedMessages.push({
+            role: 'user',
+            content: isTryingToCreateSkill
+              ? 'Dựa trên các thông số bạn vừa xác định, hãy gọi ngay tool propose_create_skill (với key, name, description, system_prompt chi tiết) để tạo Action Preview Card cho tôi xác nhận.'
+              : 'Dựa trên các thông tin bạn vừa nêu, hãy gọi ngay tool propose_* tương ứng để tạo Action Preview Card cho tôi xác nhận.',
+          });
+          continue;
+        }
+
         return {
           reply: message.content || 'Tôi đã xử lý yêu cầu của bạn.',
         };
