@@ -81,12 +81,28 @@ export class McpToolExecutor {
         params: {},
       };
 
-      const res = await fetch(endpointUrl, {
+      let res = await fetch(endpointUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+
+      // Tự động thử lại với HTTPS nếu server trả về lỗi do redirect từ HTTP sang HTTPS (ví dụ qua Cloudflare 301 chuyển method thành GET)
+      if (!res.ok && endpointUrl.startsWith('http://')) {
+        try {
+          const httpsUrl = endpointUrl.replace('http://', 'https://');
+          const httpsRes = await fetch(httpsUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+          if (httpsRes.ok) {
+            res = httpsRes;
+          }
+        } catch {}
+      }
 
       if (!res.ok) {
         throw new Error(`MCP server phản hồi lỗi HTTP ${res.status}: ${res.statusText}`);
@@ -208,12 +224,27 @@ export class McpToolExecutor {
     };
 
     try {
-      const response = await fetch(endpointUrl, {
+      let response = await fetch(endpointUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(rpcPayload),
         signal: controller.signal,
       });
+
+      if (!response.ok && endpointUrl.startsWith('http://')) {
+        try {
+          const httpsUrl = endpointUrl.replace('http://', 'https://');
+          const httpsRes = await fetch(httpsUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(rpcPayload),
+            signal: controller.signal,
+          });
+          if (httpsRes.ok) {
+            response = httpsRes;
+          }
+        } catch {}
+      }
 
       const latencyMs = Date.now() - startTime;
       let responseBody: any;
