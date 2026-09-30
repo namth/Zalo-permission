@@ -5,4 +5,5 @@ export * from './tools/mcp-parser.js';
 export * from './tools/mcp-executor.js';
 export * from './agents/router-agent.js';
 export * from './agents/worker-agent.js';
+export * from './agents/vision-agent.js';
 

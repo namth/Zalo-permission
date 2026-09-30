@@ -87,7 +87,8 @@ export default function WorkflowPage() {
     setSimStep(2);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 2] ChannelGatewayManager xác thực gói tin: Sender "${simSender}" -> Đẩy vào Redis Stream "${data?.agent.inboundStream || 'stream:inbound_messages'}"`,
+      `[Bước 2 - BỘ LỌC TRẠNG THÁI COLD/WARM] Quét Mention (@Thảo Chi / "Chi ơi...") -> Xác định trạng thái WARM (Session TTL: 10 phút trên Redis).`,
+      `[Bước 2] Đẩy gói tin đã chuẩn hoá vào Redis Stream "${data?.agent.inboundStream || 'stream:inbound_messages'}"`,
     ]);
 
     await new Promise((r) => setTimeout(r, 600));
@@ -95,6 +96,7 @@ export default function WorkflowPage() {
     setSimLogs((prev) => [
       ...prev,
       `[Bước 3] Neo4j Graph Query: Match (ZaloGroup {thread_id}) -> Tìm thấy Workspace "INOVA Technology Workspace".`,
+      `[Bước 3] Nếu có ảnh đính kèm: Kích hoạt Vision Agent (Gemini 2.0 Flash) OCR trích xuất số tiền & danh mục bill.`,
       `[Bước 3] Phân quyền 2 tầng: Nạp 20 tools thuộc nhóm "SimpleFinance MCP Service", biến môi trường đã giải mã an toàn.`,
     ]);
 
@@ -102,7 +104,8 @@ export default function WorkflowPage() {
     setSimStep(4);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 4 - AI 1: ROUTER] Router Agent (${data?.agent.routerModel || 'gemini-2.0-flash'}): Phân loại intent = "simplefinance_transaction_create" (~180ms), đề xuất nhóm công cụ SimpleFinance.`,
+      `[Bước 4 - AI 1: ROUTER] Router Agent (${data?.agent.routerModel || 'gemini-2.0-flash'}): Phân loại intent = "simplefinance_transaction_create" (~180ms), xác nhận tin nhắn hướng đến bot (is_addressed_to_agent: true), phát hiện cần gọi tool (requires_tools: true).`,
+      `[Bước 4.1 - ⚡ PRE-TOOL INSTANT ACK] DeepSeek-V3 sinh câu phản hồi chớp nhoáng: "Dạ anh ${simSender} chờ em một chút em lưu sổ chi tiêu ngay nhé ạ! ✨" -> Gửi ngay tin nhắn đầu tiên về nhóm Zalo!`,
     ]);
 
     await new Promise((r) => setTimeout(r, 700));
@@ -130,9 +133,9 @@ export default function WorkflowPage() {
     setSimStep(8);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 8 - GIAO VẬN & AUDIT] Đẩy câu trả lời ra Redis Stream "${data?.agent.outboundStream || 'stream:outbound_messages'}" -> ZaloAdapter gửi lại nhóm Zalo!`,
+      `[Bước 8 - GIAO VẬN & AUDIT] Đẩy câu trả lời ra Redis Stream "${data?.agent.outboundStream || 'stream:outbound_messages'}" -> ZaloAdapter gửi tin nhắn kết quả về nhóm Zalo!`,
       `[Bước 8] Ghi nhật ký Audit Log vào PostgreSQL (Tổng thời gian xử lý: ~720ms, Trạng thái: SUCCESS).`,
-      `✨ Thảo Chi phản hồi: "Dạ xong rồi anh ${simSender} ơi! Em đã ghi nhận khoản trà 60k cho 2 anh rồi nhé, hiện anh Trung đang nợ anh 30k ạ! 😊"`,
+      `✨ Thảo Chi phản hồi kết quả: "Dạ xong rồi anh ${simSender} ơi! Em đã ghi nhận khoản trà 60k cho 2 anh rồi nhé, hiện anh Trung đang nợ anh 30k ạ! 😊"`,
     ]);
 
     setSimulating(false);
@@ -140,44 +143,44 @@ export default function WorkflowPage() {
 
   const nodeDetails: Record<string, { title: string; subtitle: string; tag: string; tech: string; desc: string; inputs: string[]; outputs: string[]; codeRef: string }> = {
     'inbound': {
-      title: '1. Kênh Nhắn Tin (Inbound Channels)',
-      subtitle: 'Tiếp nhận sự kiện từ Zalo Group / Telegram Bot',
+      title: '1. Kênh Nhắn Tin (Inbound Channels & Quote/Media Extraction)',
+      subtitle: 'Tiếp nhận sự kiện & bóc tách câu nói cũ được Tag cùng Hình ảnh',
       tag: 'Hạ Tầng Kênh',
-      tech: 'zca-js (Zalo QR Session / OA Secret) & grammy (Telegram)',
-      desc: 'Lắng nghe các tin nhắn từ nhóm chat hoặc chat cá nhân. Khi có tin nhắn, adapter bóc tách GroupMessage/UserMessage, lấy senderId, senderName, platformChatId và nội dung text.',
+      tech: 'zca-js (Zalo QR Session / OA Secret) & grammy (Telegram Bot API)',
+      desc: 'Lắng nghe các tin nhắn từ nhóm chat hoặc chat cá nhân. Tự động bóc tách tin nhắn được tag/trích dẫn (data.quote / reply_to_message) và trích xuất URL hình ảnh hóa đơn/bill chuyển khoản. Đóng gói đầy đủ vào InboundChatMessage.',
       inputs: ['Sự kiện WebSocket từ Zalo Web API', 'Webhook / Long-polling từ Telegram Bot API'],
-      outputs: ['InboundChatMessage { platform, accountId, platformChatId, senderId, senderName, text }'],
-      codeRef: 'packages/channels/src/zalo/index.ts',
+      outputs: ['InboundChatMessage { platform, platformChatId, senderName, text, isGroup, quotedMessage, mediaUrls }'],
+      codeRef: 'packages/channels/src/zalo/index.ts & telegram/index.ts',
     },
     'queue': {
-      title: '2. Hàng Đợi & Điều Phối (Gateway & Redis Streams)',
-      subtitle: 'Đệm tin nhắn phi đồng bộ, chịu tải cao',
-      tag: 'Hàng Đợi Thông Điệp',
-      tech: 'Redis Streams (stream:inbound_messages) & Consumer Groups',
-      desc: 'Tin nhắn sau khi chuẩn hoá được ChannelGatewayManager đẩy vào Redis Stream. Nhóm worker agent_workers sẽ phân phối cho các tiến trình nền xử lý phi đồng bộ, đảm bảo không nghẽn tin nhắn kể cả khi chat liên tục trong nhiều nhóm.',
+      title: '2. Bộ Lọc Trạng Thái COLD / WARM & Hàng Đợi (Redis Session State)',
+      subtitle: 'Quản lý phiên hội thoại nhóm 10 phút, tránh chen ngang làm loãng việc',
+      tag: 'Phiên Hội Thoại & Hàng Đợi',
+      tech: 'Redis Session Key (TTL: 600s) & Redis Streams (stream:inbound_messages)',
+      desc: 'Kiểm tra trạng thái COLD/WARM của nhóm chat. Trong trạng thái COLD, nếu không có mention (@Thảo Chi, "Chi ơi...") -> Bỏ qua lập tức để không làm loãng việc, không tốn AI token ($0) và không ghi rác vào audit log. Khi có mention -> Kích hoạt phiên WARM trong 10 phút.',
       inputs: ['InboundChatMessage từ Channel Gateway'],
       outputs: ['Redis Stream Message ID & Consumer ACK sau khi hoàn tất'],
-      codeRef: 'apps/agent-worker/src/channel-manager.ts & redis.ts',
+      codeRef: 'apps/agent-worker/src/session.ts & channel-manager.ts',
     },
     'memory': {
-      title: '3. Bộ Nhớ Đồ Thị & Phân Quyền (Neo4j & Postgres)',
-      subtitle: 'Phân giải không gian làm việc & kiểm soát quyền 2 tầng',
-      tag: 'Đồ Thị & RBAC',
-      tech: 'Neo4j Cypher Graph & PostgreSQL Relational DB',
-      desc: 'Từ ID nhóm chat, hệ thống truy vấn đồ thị quan hệ để xác định Workspace tương ứng. Sau đó trích xuất toàn bộ Kỹ Năng (Skill SOPs), Nhóm Công Cụ (Tool Groups) và Tool được cấp quyền, đồng thời giải mã các biến môi trường cấu hình (API Key, Bearer token) cho workspace.',
-      inputs: ['platformChatId, platform, workspaceId'],
-      outputs: ['accessibleSkills[], accessibleTools[], scopedVariablesMap (Decrypted)'],
-      codeRef: 'apps/agent-worker/src/dispatcher.ts & packages/database',
+      title: '3. Bộ Nhớ Đồ Thị & Vision Agent (Neo4j & Gemini Vision)',
+      subtitle: 'Phân giải không gian làm việc & OCR bóc tách hình ảnh bill/hóa đơn',
+      tag: 'Đồ Thị & Vision OCR',
+      tech: 'Neo4j Cypher Graph & Google Gemini 2.0 Flash Vision',
+      desc: 'Từ ID nhóm chat, xác định Workspace tương ứng trên đồ thị Neo4j. Nếu tin nhắn có đính kèm hình ảnh (bill, hóa đơn, chuyển khoản), Vision Agent kích hoạt Gemini 2.0 Flash OCR để trích xuất số tiền, ngày giờ và danh mục chi tiêu thành văn bản có cấu trúc.',
+      inputs: ['platformChatId, platform, workspaceId, mediaUrls[]'],
+      outputs: ['accessibleSkills[], accessibleTools[], visualSummary, scopedVariablesMap'],
+      codeRef: 'packages/core/src/agents/vision-agent.ts & apps/agent-worker/src/dispatcher.ts',
     },
     'router-agent': {
-      title: '4. [AI Agent 1] Router Agent (Định Tuyến Ý Định)',
-      subtitle: 'Phân loại nhanh ý định & chọn đúng Tool Groups / Skills',
-      tag: 'AI Agent #1 (Classifier)',
-      tech: 'Google Gemini 2.0 Flash (google/gemini-2.0-flash | ~$0.0001 / request | ~180ms)',
-      desc: 'Agent thứ nhất trong quy trình. Đọc câu hỏi người dùng cùng tóm tắt danh mục Tool Groups và Skills. Sử dụng 3 - 5 tin nhắn lịch sử gần nhất để phân loại chuẩn xác ý định (ghi chi tiêu, tra cứu nợ, quản lý thành viên, hay chitchat) và lọc đúng nhóm công cụ cần thiết, tiết kiệm token cho các bước sau.',
-      inputs: ['userPrompt, recentHistory (3-5 tin), accessibleSkills, accessibleToolGroups kèm danh sách tools'],
-      outputs: ['RouterDecision { intent, isSkillMatched, matchedSkillId, recommendedToolGroups, confidence }'],
-      codeRef: 'packages/core/src/agents/router-agent.ts',
+      title: '4. [AI Agent 1] Router Agent & Pre-Tool Instant Ack',
+      subtitle: 'Định tuyến ý định & Bắn tin nhắn phản hồi chớp nhoáng qua DeepSeek',
+      tag: 'AI Agent #1 (Classifier & Pre-Ack)',
+      tech: 'Google Gemini 2.0 Flash & DeepSeek-V3 (~$0.0001 / request | ~180ms)',
+      desc: 'Phân loại nhanh ý định, kiểm tra xem tin nhắn có hướng đến bot không (is_addressed_to_agent). Nếu phát hiện cần gọi tool nặng, hệ thống lập tức kích hoạt DeepSeek sinh 1 câu phản hồi ngắn ("Dạ anh chờ em chút em lưu sổ ngay nhé ạ ✨") gửi trước về Zalo để người dùng an tâm.',
+      inputs: ['userPrompt, recentHistory (3-5 tin), visualSummary, quotedMessage, accessibleSkills/Tools'],
+      outputs: ['RouterDecision { intent, requiresTools, isAddressedToAgent } + Pre-Ack Outbound Sent'],
+      codeRef: 'packages/core/src/agents/router-agent.ts & worker-agent.ts (generatePreAck)',
     },
     'tool-worker': {
       title: '5. [AI Agent 2] Action / Tool Worker Agent (Lập Kế Hoạch & Gọi Hàm)',
@@ -334,7 +337,7 @@ export default function WorkflowPage() {
                   </span>
                 </div>
                 <h3 className="font-semibold text-sm text-slate-100">Kênh Nhắn Tin</h3>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Zalo Groups (zca-js) & Telegram Bots (grammy)</p>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Bóc tách Tag Quote & Hình ảnh Bill</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-blue-300">
                   <span>{data?.metrics?.activeChannels || 2} Kênh Active</span>
                   <CaretRight size={12} />
@@ -363,10 +366,10 @@ export default function WorkflowPage() {
                     Step 2
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-slate-100">Redis Queue</h3>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">stream:inbound_messages đệm phi đồng bộ</p>
+                <h3 className="font-semibold text-sm text-slate-100">Lọc Cold/Warm & Queue</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Session 10m & Stream đệm phi đồng bộ</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-amber-300">
-                  <span>Consumer Group</span>
+                  <span>TTL: 600s</span>
                   <CaretRight size={12} />
                 </div>
               </div>
@@ -393,8 +396,8 @@ export default function WorkflowPage() {
                     Step 3
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-slate-100">Bộ Nhớ & Đồ Thị Quyền</h3>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Neo4j Dual Lookup + PostgreSQL Vault</p>
+                <h3 className="font-semibold text-sm text-slate-100">Bộ Nhớ & Vision OCR</h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">Neo4j Đồ Thị & Gemini Vision Đọc Bill</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-purple-300">
                   <span>{data?.metrics?.totalWorkspaces || 1} Workspaces</span>
                   <CaretRight size={12} />
@@ -423,8 +426,8 @@ export default function WorkflowPage() {
                     Step 4 (AI #1)
                   </span>
                 </div>
-                <h3 className="font-semibold text-sm text-cyan-200">Router Agent</h3>
-                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Định tuyến & Lọc Tool Group (~180ms)</p>
+                <h3 className="font-semibold text-sm text-cyan-200">Router & Pre-Ack</h3>
+                <p className="text-xs text-slate-300 mt-1 line-clamp-2">Định tuyến & Bắn tin chờ DeepSeek</p>
                 <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-[11px] text-cyan-300">
                   <span className="font-medium">{data?.agent?.routerModel || 'Gemini 2.0 Flash'}</span>
                   <CaretRight size={12} />

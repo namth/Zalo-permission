@@ -16,25 +16,45 @@ export class TelegramChannelAdapter {
     this.accountId = config.accountId;
     this.bot = new Bot(config.botToken);
 
-    // Setup bot message listener
-    this.bot.on('message:text', async (ctx) => {
+    // Setup bot message listener (support both text and photo)
+    this.bot.on(['message:text', 'message:photo'], async (ctx) => {
       const chat = ctx.chat;
       const message = ctx.message;
       const sender = ctx.from;
-      let text = message.text || '';
+      let text = message.text || message.caption || '';
+      const isGroup = chat.type === 'group' || chat.type === 'supergroup';
 
-      // Xử lý trong Group Chat: chỉ nhận khi được @mention hoặc reply bot
-      if (chat.type === 'group' || chat.type === 'supergroup') {
-        const isReplyToBot = message.reply_to_message?.from?.username === this.botUsername;
-        const mentionTag = `@${this.botUsername}`;
-        const hasMention = text.includes(mentionTag);
-
-        if (!isReplyToBot && !hasMention) {
-          return; // Ignore general group chatter not addressed to bot
+      // Bóc tách Tin Nhắn Được Tag / Reply
+      let quotedMessage: any = undefined;
+      if (message.reply_to_message) {
+        const replyMsg = message.reply_to_message;
+        const replyText = replyMsg.text || (replyMsg as any).caption || '';
+        if (replyText) {
+          quotedMessage = {
+            messageId: String(replyMsg.message_id),
+            senderId: String(replyMsg.from?.id || ''),
+            senderName: replyMsg.from?.first_name || replyMsg.from?.username || 'Thành viên nhóm',
+            text: replyText,
+          };
         }
+      }
 
-        // Clean @mention tag from text
-        text = text.replace(mentionTag, '').trim();
+      // Bóc tách Hình Ảnh (Photo)
+      const mediaUrls: string[] = [];
+      if (message.photo && message.photo.length > 0) {
+        try {
+          const largestPhoto = message.photo[message.photo.length - 1];
+          const file = await ctx.api.getFile(largestPhoto.file_id);
+          if (file.file_path) {
+            mediaUrls.push(`https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`);
+          }
+        } catch (e) {
+          console.warn('[TelegramAdapter] Failed to get file path for photo:', e);
+        }
+      }
+
+      if (!text.trim() && mediaUrls.length > 0) {
+        text = '[Hình ảnh đính kèm]';
       }
 
       const inboundMsg: InboundChatMessage = {
@@ -45,6 +65,9 @@ export class TelegramChannelAdapter {
         senderName: sender.first_name || sender.username || 'User',
         messageId: String(message.message_id),
         text,
+        isGroup,
+        quotedMessage,
+        mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
         timestamp: message.date * 1000,
       };
 

@@ -95,11 +95,50 @@ export class ZaloChannelAdapter {
               text = message.content;
             }
 
+            // Bóc tách Tin Nhắn Được Tag / Trích Dẫn (Quote)
+            let quotedMessage: any = undefined;
+            const rawQuote = data?.quote || data?.content?.quote || data?.propertyExt?.quote || message?.quote;
+            if (rawQuote) {
+              const quoteText = rawQuote.msg || rawQuote.content || rawQuote.title || (typeof rawQuote === 'string' ? rawQuote : '');
+              if (quoteText) {
+                quotedMessage = {
+                  messageId: String(rawQuote.cliMsgId || rawQuote.globalMsgId || rawQuote.id || ''),
+                  senderId: String(rawQuote.ownerId || rawQuote.uidFrom || ''),
+                  senderName: String(rawQuote.dName || 'Thành viên nhóm'),
+                  text: String(quoteText),
+                  mediaUrl: rawQuote.attach ? String(rawQuote.attach) : undefined,
+                };
+              }
+            }
+
+            // Bóc tách Hình Ảnh (Bill, Hóa đơn, Ảnh chụp màn hình)
+            const mediaUrls: string[] = [];
+            const msgType = String(data?.msgType || message?.msgType || '');
+            if (msgType.includes('photo') || msgType.includes('image')) {
+              const photoUrl = data?.content?.href || data?.content?.url || data?.content?.thumb || data?.params?.url;
+              if (photoUrl) mediaUrls.push(String(photoUrl));
+            }
+            if (data?.content && typeof data.content === 'object' && data.content.href) {
+              if (!mediaUrls.includes(data.content.href)) {
+                mediaUrls.push(data.content.href);
+              }
+            }
+
+            if (!text.trim() && mediaUrls.length > 0) {
+              text = '[Hình ảnh đính kèm]';
+            }
+
             if (!text.trim() || !platformChatId) {
               return;
             }
 
             console.log(`[ZaloAdapter] Inbound message received from chat ${platformChatId} (${isGroup ? 'Group' : 'Direct'}) by ${senderName}: "${text.slice(0, 60)}"`);
+            if (quotedMessage) {
+              console.log(`[ZaloAdapter] ↳ Quoted Tag from ${quotedMessage.senderName}: "${quotedMessage.text.slice(0, 50)}"`);
+            }
+            if (mediaUrls.length > 0) {
+              console.log(`[ZaloAdapter] ↳ Media Attachments (${mediaUrls.length}):`, mediaUrls);
+            }
 
             if (this.config.onMessageReceived) {
               await this.config.onMessageReceived({
@@ -110,6 +149,9 @@ export class ZaloChannelAdapter {
                 senderName,
                 messageId: String(data?.msgId || message?.msgId || Date.now()),
                 text,
+                isGroup,
+                quotedMessage,
+                mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
                 timestamp: Date.now(),
               });
             }

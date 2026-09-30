@@ -390,4 +390,50 @@ Hãy viết lại câu trả lời hoàn chỉnh, tràn đầy cảm xúc và ch
 
     return completion.choices[0]?.message?.content?.trim() || rawDraft;
   }
+
+  /**
+   * Pre-tool Instant Acknowledgement:
+   * Khi Router xác định cần gọi tool (thực thi API tốn thời gian),
+   * hàm này tạo ngay 1 câu thông báo ngắn gọn qua DeepSeek để gửi trước cho người dùng.
+   */
+  async generatePreAck(options: {
+    userPrompt: string;
+    senderName?: string;
+    intent?: string;
+    suggestedPreAck?: string | null;
+  }): Promise<string> {
+    const { userPrompt, senderName = 'Người dùng', intent, suggestedPreAck } = options;
+
+    const systemInstruction = `${DEFAULT_AGENT_PERSONA}
+
+## NHIỆM VỤ CỦA BẠN:
+Người dùng vừa đưa ra yêu cầu cần thực thi công cụ hoặc tra cứu hệ thống.
+Hãy viết NGAY 1 câu phản hồi ngắn gọn (chỉ 1 câu, tối đa 15-20 từ) thông báo rằng em đã nhận được yêu cầu và bảo người dùng chờ em một chút trong khi em tiến hành thực hiện.
+Quy tắc:
+1. Luôn tự xưng "em", gọi người dùng là "anh ${senderName}" hoặc "chị ${senderName}".
+2. Văn phong tự nhiên, ấm áp, thêm emoji phù hợp (ví dụ: ✨, 😊, ạ).
+3. ĐI THẲNG VÀO HÀNH ĐỘNG (ví dụ: "Dạ anh ${senderName} chờ em một chút em lưu sổ chi tiêu ngay nhé ạ! ✨", hoặc "Dạ em đang tra cứu cho anh đây ạ!").
+4. CHỈ TRẢ VỀ DUY NHẤT 1 CÂU NÓI, không giải thích gì thêm.`;
+
+    const userContent = `Yêu cầu của ${senderName}: "${userPrompt}"
+Ý định nhận diện: ${intent || 'Thực thi công cụ'}
+Gợi ý ban đầu: ${suggestedPreAck || 'Không có'}`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: this.synthesizerModelId || 'deepseek/deepseek-chat',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.5,
+        max_tokens: 60,
+      });
+
+      return completion.choices[0]?.message?.content?.trim() || `Dạ anh/chị chờ em một chút em xử lý ngay nhé ạ! ✨`;
+    } catch (err) {
+      console.warn('[WorkerAgent] Failed to generate pre-ack with DeepSeek, using fallback:', err);
+      return `Dạ anh/chị chờ em một chút em kiểm tra và thực hiện ngay nhé ạ! ✨`;
+    }
+  }
 }

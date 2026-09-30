@@ -65,6 +65,14 @@ export interface ConversationHistoryMessage {
   senderName?: string;
 }
 
+export interface QuotedMessageInfo {
+  messageId?: string;
+  senderId?: string;
+  senderName?: string;
+  text?: string;
+  mediaUrl?: string;
+}
+
 export interface InboundChatMessage {
   platform: PlatformType;
   accountId: string;
@@ -73,6 +81,9 @@ export interface InboundChatMessage {
   senderName?: string;
   messageId: string;
   text: string;
+  isGroup?: boolean;
+  quotedMessage?: QuotedMessageInfo;
+  mediaUrls?: string[];
   timestamp: number;
 }
 
@@ -84,6 +95,9 @@ export interface RouterDecision {
   recommendedToolGroups: string[];
   confidence: number;
   extractedParameters?: Record<string, unknown>;
+  isAddressedToAgent?: boolean;
+  requiresTools?: boolean;
+  suggestedPreAck?: string;
 }
 
 export interface ToolExecutionResult {
@@ -100,7 +114,7 @@ export interface ToolExecutionResult {
 
 export interface ExecutionPlanStep {
   step: number;
-  action: 'THINK' | 'CALL_TOOL' | 'SYNTHESIZE' | 'PERSONA_SYNTHESIZE';
+  action: 'THINK' | 'CALL_TOOL' | 'SYNTHESIZE' | 'PERSONA_SYNTHESIZE' | 'PRE_ACK_SYNTHESIZE';
   description: string;
   toolKey?: string;
   input?: Record<string, unknown>;

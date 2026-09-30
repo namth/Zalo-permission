@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import {
   RouterAgent,
   WorkerAgent,
+  VisionAgent,
   type InboundChatMessage,
   type SkillDefinition,
   type ToolGroupDefinition,
@@ -16,14 +17,17 @@ import {
   decryptJson,
 } from '@omniagent/database';
 import { getRedisClient, OUTBOUND_STREAM } from './redis.js';
+import { getChatSession, refreshWarmSession, checkMention } from './session.js';
 
 export class MessageDispatcher {
   private routerAgent: RouterAgent;
   private workerAgent: WorkerAgent;
+  private visionAgent: VisionAgent;
 
   constructor() {
     this.routerAgent = new RouterAgent();
     this.workerAgent = new WorkerAgent();
+    this.visionAgent = new VisionAgent();
   }
 
   /**
@@ -31,7 +35,20 @@ export class MessageDispatcher {
    */
   async dispatch(message: InboundChatMessage): Promise<void> {
     const startTime = Date.now();
-    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} by user: ${message.senderName || message.senderId}`);
+    const redis = getRedisClient();
+    const isGroup = Boolean(message.isGroup || String(message.platformChatId) !== String(message.senderId));
+    const isMentioned = checkMention(message.text);
+    const session = await getChatSession(redis, message.platform, message.platformChatId);
+
+    // BỘ LỌC TRẠNG THÁI COLD / WARM TRONG NHÓM CHAT:
+    // Nếu trong nhóm chat và Bot đang ở trạng thái COLD mà người dùng KHÔNG mention/gọi tên Bot
+    // -> Bỏ qua lập tức để tránh làm loãng hội thoại, không tốn AI token và không ghi rác vào audit log.
+    if (isGroup && !session.isWarm && !isMentioned) {
+      console.log(`[Dispatcher] ❄️ [COLD State] Ignored group chatter in ${message.platformChatId} (not addressed to Thảo Chi): "${message.text.slice(0, 40)}"`);
+      return;
+    }
+
+    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} (${session.isWarm ? '🔥 WARM' : '⚡ COLD->WARM'}) by user: ${message.senderName || message.senderId}`);
 
     // 1. Resolve Workspace via Neo4j Graph (ChannelChat or ZaloGroup)
     const wsLookupQuery = `
@@ -295,16 +312,54 @@ export class MessageDispatcher {
         ...(log.finalResponse ? [{ role: 'assistant' as const, content: log.finalResponse }] : []),
       ]);
 
+    // 3.2 PERCEPTION / VISION AGENT: Trích xuất hóa đơn, bill, ảnh chụp chuyển khoản nếu có ảnh
+    let visualSummary = '';
+    if (message.mediaUrls && message.mediaUrls.length > 0) {
+      console.log(`[Dispatcher] 📸 Extracting facts from ${message.mediaUrls.length} image(s) using VisionAgent...`);
+      try {
+        visualSummary = await this.visionAgent.extractImageFacts({
+          imageUrls: message.mediaUrls,
+          userPrompt: message.text,
+          senderName: message.senderName,
+        });
+        console.log(`[Dispatcher] ↳ Visual Summary:`, visualSummary.slice(0, 80));
+      } catch (visErr) {
+        console.warn('[Dispatcher] Failed to extract facts from images:', visErr);
+      }
+    }
+
+    // Làm giàu câu hỏi với câu trích dẫn/tag cũ và dữ liệu hình ảnh
+    let enrichedPrompt = message.text;
+    if (message.quotedMessage && message.quotedMessage.text) {
+      enrichedPrompt = `[Tin nhắn được trích dẫn từ ${message.quotedMessage.senderName || 'Người khác'}]: "${message.quotedMessage.text}"\n[Tin nhắn hiện tại của ${message.senderName || 'Người dùng'}]: "${message.text}"`;
+    }
+    if (visualSummary) {
+      enrichedPrompt += `\n\n${visualSummary}`;
+    }
+
     // 4. ROUTER AGENT: Classify user intent & match Skill/Tool Categories
     const routerDecision = await this.routerAgent.classify({
-      userPrompt: message.text,
+      userPrompt: enrichedPrompt,
       accessibleSkills,
       accessibleToolGroups: Array.from(toolGroupsMap.values()),
       accessibleTools,
       conversationHistory,
+      isGroup,
+      isWarmSession: session.isWarm,
+      quotedMessage: message.quotedMessage,
+      visualSummary,
     });
 
     console.log(`[Dispatcher] Router Decision:`, routerDecision);
+
+    // Kiểm tra xem tin nhắn có hướng đến Agent không trong phiên warm của nhóm
+    if (isGroup && routerDecision.isAddressedToAgent === false && !isMentioned) {
+      console.log(`[Dispatcher] 🔇 Ignored message in warm group session (addressed to other members): "${message.text.slice(0, 40)}"`);
+      return; // Không xen ngang cuộc trò chuyện giữa các thành viên, không ghi audit log
+    }
+
+    // Nếu tin nhắn hướng đến bot, kích hoạt hoặc gia hạn phiên WARM thêm 10 phút
+    await refreshWarmSession(redis, message.platform, message.platformChatId, message.senderId, message.senderName);
 
     let matchedSkill: SkillDefinition | null = null;
     let filteredTools: ToolDefinition[] = accessibleTools;
@@ -326,9 +381,34 @@ export class MessageDispatcher {
       filteredTools = [];
     }
 
+    // 4.1 PRE-TOOL INSTANT ACKNOWLEDGEMENT:
+    // Nếu Router xác định tác vụ cần gọi tool/API nặng, lập tức gửi 1 câu thông báo ngắn qua DeepSeek
+    // để người dùng biết Bot đang xử lý, tránh cảm giác bị đơ.
+    const requiresTools = Boolean(
+      routerDecision.requiresTools ||
+      (filteredTools.length > 0 && routerDecision.intent !== 'chitchat') ||
+      routerDecision.isSkillMatched
+    );
+
+    let preAckSent: string | null = null;
+    if (requiresTools) {
+      try {
+        preAckSent = await this.workerAgent.generatePreAck({
+          userPrompt: message.text,
+          senderName: message.senderName,
+          intent: routerDecision.intent,
+          suggestedPreAck: routerDecision.suggestedPreAck,
+        });
+        console.log(`[Dispatcher] ⚡ Sent fast Pre-Ack to ${message.platformChatId}: "${preAckSent}"`);
+        await this.sendOutbound(message, preAckSent);
+      } catch (ackErr) {
+        console.warn('[Dispatcher] Failed to send Pre-Ack:', ackErr);
+      }
+    }
+
     // 5. WORKER AGENT: Think -> Plan -> Act (Tools) -> Synthesize
     const workerResult = await this.workerAgent.execute({
-      userPrompt: message.text,
+      userPrompt: enrichedPrompt,
       senderName: message.senderName,
       matchedSkill,
       tools: filteredTools,
@@ -336,6 +416,15 @@ export class MessageDispatcher {
       scopedVariablesMap,
       conversationHistory,
     });
+
+    if (preAckSent) {
+      workerResult.plan.unshift({
+        step: 0,
+        action: 'PRE_ACK_SYNTHESIZE',
+        description: `Gửi phản hồi nhanh cho người dùng qua DeepSeek trước khi gọi Tool: "${preAckSent}"`,
+        output: preAckSent,
+      });
+    }
 
     const latencyMs = Date.now() - startTime;
 
@@ -350,7 +439,7 @@ export class MessageDispatcher {
           workspaceId,
           platform: message.platform,
           senderId: message.senderId,
-          userPrompt: message.text,
+          userPrompt: enrichedPrompt,
           detectedIntent: routerDecision.intent,
           matchedSkillId: matchedSkill ? matchedSkill.id : null,
           executionPlan: JSON.parse(JSON.stringify(workerResult.plan)),
