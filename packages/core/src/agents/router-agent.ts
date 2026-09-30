@@ -5,6 +5,7 @@ import type {
   ToolDefinition,
   RouterDecision,
   ConversationHistoryMessage,
+  QuotedMessageInfo,
 } from '../types.js';
 
 export interface RouterAgentOptions {
