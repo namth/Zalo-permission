@@ -334,6 +334,8 @@ export default function WorkspaceDetailPage() {
     } catch (err: any) {
       alert('Lỗi kết nối: ' + err.message);
     }
+  };
+
   const [updatingChatId, setUpdatingChatId] = useState<string | null>(null);
 
   const handleToggleAlwaysRespond = async (chatId: string, nextValue: boolean) => {
