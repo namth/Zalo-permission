@@ -421,6 +421,7 @@ export class MessageDispatcher {
       toolGroupsMap,
       scopedVariablesMap,
       conversationHistory,
+      requiresTools,
     });
 
     if (preAckSent) {

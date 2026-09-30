@@ -112,7 +112,7 @@ export default function WorkflowPage() {
     setSimStep(5);
     setSimLogs((prev) => [
       ...prev,
-      `[Bước 5 - AI 2: TOOL WORKER] Tool Worker Agent (${data?.agent.workerModel || 'openai/gpt-4o-mini'}): Lập kế hoạch ReAct, phát hiện thiếu ID thành viên -> Chủ động sinh lệnh gọi Function Calling: member_list, group_list.`,
+      `[Bước 5 - AI 2: TOOL WORKER] Tool Worker Agent (${data?.agent.workerModel || 'google/gemini-2.5-flash'}): Lập kế hoạch ReAct, phát hiện thiếu ID thành viên -> Chủ động sinh lệnh gọi Function Calling: member_list, group_list.`,
     ]);
 
     await new Promise((r) => setTimeout(r, 700));
@@ -176,7 +176,7 @@ export default function WorkflowPage() {
       title: '4. [AI Agent 1] Router Agent & Pre-Tool Instant Ack',
       subtitle: 'Định tuyến ý định & Bắn tin nhắn phản hồi chớp nhoáng qua DeepSeek',
       tag: 'AI Agent #1 (Classifier & Pre-Ack)',
-      tech: 'Google Gemini 2.0 Flash & DeepSeek-V3 (~$0.0001 / request | ~180ms)',
+      tech: 'Google Gemini 2.5 Flash & DeepSeek-V3 (~$0.0001 / request | ~180ms)',
       desc: 'Phân loại nhanh ý định, kiểm tra xem tin nhắn có hướng đến bot không (is_addressed_to_agent). Nếu phát hiện cần gọi tool nặng, hệ thống lập tức kích hoạt DeepSeek sinh 1 câu phản hồi ngắn ("Dạ anh chờ em chút em lưu sổ ngay nhé ạ ✨") gửi trước về Zalo để người dùng an tâm.',
       inputs: ['userPrompt, recentHistory (3-5 tin), visualSummary, quotedMessage, accessibleSkills/Tools'],
       outputs: ['RouterDecision { intent, requiresTools, isAddressedToAgent } + Pre-Ack Outbound Sent'],
@@ -186,8 +186,8 @@ export default function WorkflowPage() {
       title: '5. [AI Agent 2] Action / Tool Worker Agent (Lập Kế Hoạch & Gọi Hàm)',
       subtitle: 'Vòng lặp ReAct, tự động suy luận tham số & phát sinh Function Calling',
       tag: 'AI Agent #2 (Function Caller)',
-      tech: 'OpenAI GPT-4o Mini (openai/gpt-4o-mini | ~$0.0004 / request | Chuẩn Schema JSON)',
-      desc: 'Agent thứ hai trong quy trình. Chuyên trách về logic kỹ thuật và Function Calling. Nạp 6 - 10 tin nhắn lịch sử gần nhất vào mảng messages để hiểu toàn bộ ngữ cảnh các giao dịch trước, tự động tra cứu ID thành viên/sản phẩm nếu thiếu, và phát sinh các lệnh gọi công cụ có cấu trúc chuẩn xác.',
+      tech: 'Google Gemini 2.5 Flash (google/gemini-2.5-flash | ~$0.0001 / request | Suy luận & Phân tích số học chính xác)',
+      desc: 'Agent thứ hai trong quy trình. Chuyên trách về logic kỹ thuật, quy đổi đơn vị tiền tệ chuẩn xác (30k -> 30000) và tính toán công nợ chia đều không nhầm lẫn. Nạp 6 - 10 tin nhắn lịch sử gần nhất vào mảng messages để hiểu toàn bộ ngữ cảnh, tự động tra cứu ID nếu thiếu và phát sinh các lệnh gọi công cụ có cấu trúc chuẩn.',
       inputs: ['userPrompt, recentHistory (6-10 tin), senderName context, matchedSkill SOP, filteredTools, scopedVariables'],
       outputs: ['toolCalls[] (Danh sách lệnh gọi hàm có tham số JSON)'],
       codeRef: 'packages/core/src/agents/worker-agent.ts',
@@ -640,15 +640,15 @@ export default function WorkflowPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600">🟣 Router LLM:</span>
                         <div className="text-right">
-                          <code className="bg-cyan-100 text-cyan-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'google/gemini-2.0-flash-001'}</code>
+                          <code className="bg-cyan-100 text-cyan-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'google/gemini-2.5-flash'}</code>
                           <span className="text-gray-500 text-[10px] ml-1">(~$0.0001)</span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600">🔵 Worker LLM:</span>
                         <div className="text-right">
-                          <code className="bg-indigo-100 text-indigo-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.workerModel || 'openai/gpt-4o-mini'}</code>
-                          <span className="text-gray-500 text-[10px] ml-1">(~$0.0004)</span>
+                          <code className="bg-indigo-100 text-indigo-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.workerModel || 'google/gemini-2.5-flash'}</code>
+                          <span className="text-gray-500 text-[10px] ml-1">(~$0.0001)</span>
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
@@ -660,7 +660,7 @@ export default function WorkflowPage() {
                       </div>
                       <div className="pt-1.5 flex items-center justify-between font-semibold text-emerald-700 border-t border-indigo-100/60">
                         <span>Tổng chi phí 3 Agent:</span>
-                        <span>~$0.0008 / req (~20 - 25 VNĐ)</span>
+                        <span>~$0.0005 / req (~12 - 15 VNĐ)</span>
                       </div>
                     </div>
                   </div>
@@ -723,7 +723,7 @@ export default function WorkflowPage() {
                       ~$0.0001 / req
                     </span>
                   </div>
-                  <h3 className="font-bold text-gray-900 text-base mt-2.5">Google Gemini 2.0 Flash</h3>
+                  <h3 className="font-bold text-gray-900 text-base mt-2.5">Google Gemini 2.5 Flash</h3>
                   <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-100/80 text-cyan-900 font-semibold text-xs">
                     <span>⚡ Số lượng nạp:</span>
                     <span className="underline decoration-cyan-500 font-bold">3 - 5 tin nhắn gần nhất</span>
@@ -746,21 +746,21 @@ export default function WorkflowPage() {
                       AI Agent #2: Tool Worker
                     </span>
                     <span className="text-xs font-semibold text-indigo-700 font-mono">
-                      ~$0.0004 / req
+                      ~$0.0001 / req
                     </span>
                   </div>
-                  <h3 className="font-bold text-gray-900 text-base mt-2.5">OpenAI GPT-4o Mini</h3>
+                  <h3 className="font-bold text-gray-900 text-base mt-2.5">Google Gemini 2.5 Flash</h3>
                   <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-100/80 text-indigo-900 font-semibold text-xs">
                     <span>⚡ Số lượng nạp:</span>
                     <span className="underline decoration-indigo-500 font-bold">6 - 10 tin nhắn gần nhất</span>
                   </div>
                   <p className="text-xs text-gray-600 leading-relaxed mt-3">
-                    <strong>Mục đích:</strong> Nạp đầy đủ ngữ cảnh nghiệp vụ để ReAct suy luận tham số Function Calling (VD: biết người vừa nợ là ai, số tiền giao dịch trước đó, thông tin bổ sung) mà không cần hỏi lại người dùng.
+                    <strong>Mục đích:</strong> Nạp đầy đủ ngữ cảnh nghiệp vụ để ReAct suy luận tham số Function Calling (VD: quy đổi số tiền 30k &rarr; 30000, tính công nợ chia đều không nhầm lẫn) mà không cần hỏi lại người dùng.
                   </p>
                 </div>
                 <div className="pt-3 border-t border-indigo-100 text-[11px] text-gray-500 space-y-1">
                   <div><strong>Vị trí tiêm:</strong> Mảng <code>messages[]</code> (lượt role user & assistant chuẩn)</div>
-                  <div><strong>Chi phí Token:</strong> Vừa phải (~500 tokens), chuẩn Schema JSON tuyệt đối.</div>
+                  <div><strong>Chi phí Token:</strong> Tiết kiệm (~500 tokens), chuẩn Schema JSON và tính toán chính xác.</div>
                 </div>
               </div>
 

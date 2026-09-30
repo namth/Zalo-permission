@@ -80,6 +80,22 @@ AI: Niêu xương bò 3-4 tiếng với hành, gừng nướng anh nhé. Nêm n�
 ---
 *Nhớ: Mục tiêu là chat tự nhiên như người Việt thật sự, đồng thời sử dụng tools một cách mượt mà để hỗ trợ user tốt nhất.*`;
 
+/**
+ * Tính toán an toàn biểu thức số học không dùng eval nguy hiểm
+ * Chỉ cho phép số, dấu cộng, trừ, nhân, chia, ngoặc tròn, phần trăm
+ */
+export function safeEvaluateMathExpression(expr: string): number {
+  const sanitized = expr.replace(/\s+/g, '');
+  if (!/^[-+*/%().0-9]+$/.test(sanitized)) {
+    throw new Error('Biểu thức toán học chứa ký tự không hợp lệ');
+  }
+  const result = Function(`'use strict'; return (${sanitized})`)();
+  if (typeof result !== 'number' || !isFinite(result)) {
+    throw new Error('Kết quả phép tính không hợp lệ');
+  }
+  return result;
+}
+
 export interface WorkerExecuteOptions {
   userPrompt: string;
   senderName?: string;
@@ -92,6 +108,7 @@ export interface WorkerExecuteOptions {
   maxSteps?: number;
   openRouterApiKey?: string;
   modelId?: string;
+  requiresTools?: boolean;
 }
 
 export interface WorkerExecutionResult {
@@ -118,7 +135,7 @@ export class WorkerAgent {
       },
     });
 
-    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'openai/gpt-4o-mini';
+    this.modelId = modelId || process.env.WORKER_MODEL_ID || 'google/gemini-2.5-flash';
     this.synthesizerModelId = synthesizerModelId || process.env.SYNTHESIZER_MODEL_ID || 'deepseek/deepseek-chat';
   }
 
@@ -145,33 +162,77 @@ export class WorkerAgent {
     const toolMap = new Map<string, ToolDefinition>();
     tools.forEach((t) => toolMap.set(t.key, t));
 
-    // Convert ToolDefinitions to OpenAI Tools Schema
-    const openAiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = tools.map((tool) => ({
+    // Built-in Calculator Tool hỗ trợ tính toán số học, chia tiền nhóm chính xác
+    const builtinCalculator: OpenAI.Chat.Completions.ChatCompletionTool = {
       type: 'function',
       function: {
-        name: tool.key,
-        description: tool.description,
-        parameters: (tool.parametersSchema as Record<string, unknown>) || {
+        name: 'calculate',
+        description: 'Máy tính số học: Thực hiện tính toán chính xác giá trị biểu thức số học (+, -, *, /, ngoặc tròn, phần trăm). Sử dụng khi cần chia tiền nhóm, cộng dồn chi phí, tính tiền nợ hoặc quy đổi số học.',
+        parameters: {
           type: 'object',
-          properties: {},
+          properties: {
+            expression: {
+              type: 'string',
+              description: 'Biểu thức số học (ví dụ: "30000 / 2", "(120000 + 45000) / 3", "50000 * 0.1")',
+            },
+          },
+          required: ['expression'],
         },
       },
-    }));
+    };
+
+    // Convert ToolDefinitions to OpenAI Tools Schema
+    const openAiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+      ...tools.map((tool) => ({
+        type: 'function' as const,
+        function: {
+          name: tool.key,
+          description: tool.description,
+          parameters: (tool.parametersSchema as Record<string, unknown>) || {
+            type: 'object',
+            properties: {},
+          },
+        },
+      })),
+      builtinCalculator,
+    ];
 
     // Build System Prompt
     let systemInstruction = systemPrompt || process.env.AGENT_BASE_PROMPT || DEFAULT_AGENT_PERSONA;
 
     // Append Tool Calling & Execution rules
-    systemInstruction += `\n\n## QUY TẮC THỰC THI CÔNG CỤ (TOOLS):
+    systemInstruction += `\n\n## QUY TẮC THỰC THI CÔNG CỤ (TOOLS) & SUY LUẬN TÍNH TOÁN:
 1. Suy nghĩ cẩn thận và chủ động hành động. Nếu người dùng yêu cầu tra cứu dữ liệu hoặc thực hiện tác vụ (như ghi nhận chi tiêu, thanh toán, kiểm tra công nợ...), hãy chủ động gọi function/tool phù hợp đã được cấp quyền cho workspace này.
 2. Khi thực hiện tác vụ cần các định danh ID (ví dụ: member_id/payer_id, group_id, product_id):
    - ĐỪNG vội vàng hỏi người dùng nếu chưa tra cứu!
    - Hãy chủ động gọi các công cụ danh sách có sẵn (ví dụ: \`member_list\` để tìm ID thành viên theo tên người gửi/người được nhắc đến, \`group_list\` để lấy ID nhóm, \`product_list\` để tìm sản phẩm phù hợp) trước khi tạo giao dịch.
    - Nếu tìm thấy thành viên/sản phẩm tương ứng trong danh sách, hãy dùng các ID đó để tiến hành gọi công cụ tạo/cập nhật dữ liệu ngay.
    - Chỉ hỏi lại người dùng khi đã tra cứu mà không thấy thông tin hoặc cần xác nhận một chi tiết mơ hồ.
-3. Tuyệt đối không tự bịa đặt hay ảo giác dữ liệu API. Luôn dùng dữ liệu thực từ kết quả của tool.
-4. Nếu API trả lời lỗi hoặc không có dữ liệu, hãy giải thích lịch sự, ngắn gọn và tự nhiên bằng tiếng Việt cho người dùng.
-5. Trình bày câu trả lời ngắn gọn, trực diện, phù hợp với tin nhắn Zalo/Telegram.
+3. QUY ĐỔI TIỀN TỆ & ĐƠN VỊ VIỆT NAM (BẮT BUỘC):
+   - Người Việt Nam khi chat thường dùng tiếng lóng hoặc viết tắt số tiền:
+     * "k", "ngàn", "nghìn": 30k = 30 ngàn = 30 nghìn = 30000 VNĐ.
+     * Trong ngữ cảnh chi tiêu, ăn uống, dịch vụ thường ngày (như cafe, trà, ăn trưa...), khi người dùng viết số trần như "30 trà", "50 phở", "trà 30", "cơm 45" thì số tiền thực tế là 30.000đ, 50.000đ, 45.000đ.
+     * "củ", "triệu", "tr": 1 củ = 1 triệu = 1.000.000 VNĐ.
+     * "lít", "lít rưỡi": 1 lít = 100.000 VNĐ, 5 lít = 500.000 VNĐ.
+   - KHI ĐIỀN THAM SỐ VÀO CÔNG CỤ (Tool Arguments):
+     * TUYỆT ĐỐI không truyền chuỗi viết tắt (như "30k", "30 ngàn") hoặc số rút gọn (30).
+     * BẮT BUỘC quy đổi thành số nguyên đầy đủ đúng giá trị thực tế: 30000, 50000, 1000000.
+4. NGUYÊN TẮC SUY LUẬN TÍNH TOÁN & CÔNG NỢ KHI CHIA TIỀN (SPLIT EXPENSE):
+   - Xác định Người trả tiền (Payer): Người chi trả số tiền ban đầu (ví dụ: người gửi tin nhắn, hoặc người được chỉ định như "anh Nam trả", "Nam chi").
+   - Xác định Danh sách người tham gia (Participants): Tổng số người cùng chia sẻ chi phí này (ví dụ: "anh đi với anh Trung" -> có 2 người: Nam và Trung).
+   - Công thức tính toán:
+     * Tổng tiền = T (ví dụ: 30.000 VNĐ)
+     * Số người tham gia = N (ví dụ: 2 người)
+     * Tiền mỗi người phải chịu = T / N (ví dụ: 30.000 / 2 = 15.000 VNĐ/người).
+   - Logic công nợ (Debt / Liability) - CỰC KỲ QUAN TRỌNG:
+     * Người trả tiền (Payer) ĐÃ TRẢ TOÀN BỘ số tiền T, do đó Payer KHÔNG nợ ai cả!
+     * Mỗi người tham gia còn lại (non-payer) chỉ nợ Payer đúng số tiền bằng (T / N).
+     * Tuyệt đối KHÔNG ĐƯỢC tính: "Mỗi người nợ T" (như mỗi người nợ 30k là SAI HOÀN TOÀN).
+     * Tuyệt đối KHÔNG ghi Payer nợ tiền.
+     * Ví dụ chuẩn: Nam trả 30.000đ cho 2 người (Nam & Trung) -> Mỗi người chịu 15.000đ. Nam đã thanh toán đủ, Trung nợ Nam 15.000đ. Có thể dùng tool calculate để tính toán biểu thức nếu cần.
+5. Tuyệt đối không tự bịa đặt hay ảo giác dữ liệu API. Luôn dùng dữ liệu thực từ kết quả của tool.
+6. Nếu API trả lời lỗi hoặc không có dữ liệu, hãy giải thích lịch sự, ngắn gọn và tự nhiên bằng tiếng Việt cho người dùng.
+7. Trình bày câu trả lời ngắn gọn, trực diện, phù hợp với tin nhắn Zalo/Telegram.
 `;
 
     if (matchedSkill) {
@@ -207,12 +268,14 @@ export class WorkerAgent {
     while (currentStep < maxSteps) {
       currentStep++;
 
+      // On step 1, if requiresTools is true and action tools exist, force function calling
+      const isFirstStepRequired = currentStep === 1 && options.requiresTools && openAiTools.length > 0;
       const completion = await this.openai.chat.completions.create({
         model: this.modelId,
         messages,
         tools: openAiTools.length > 0 ? openAiTools : undefined,
-        tool_choice: openAiTools.length > 0 ? 'auto' : 'none',
-        temperature: 0.2,
+        tool_choice: openAiTools.length > 0 ? (isFirstStepRequired ? 'required' : 'auto') : 'none',
+        temperature: 0.1,
       });
 
       const message = completion.choices[0]?.message;
@@ -240,6 +303,36 @@ export class WorkerAgent {
             toolKey,
             input: parsedArgs,
           });
+
+          // Xử lý built-in calculate tool
+          if (toolKey === 'calculate') {
+            const expr = String(parsedArgs.expression || '');
+            try {
+              const calcResult = safeEvaluateMathExpression(expr);
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: JSON.stringify({ expression: expr, result: calcResult }),
+              });
+              toolExecutions.push({
+                toolId: 'builtin_calculator',
+                toolKey: 'calculate',
+                url: 'builtin://calculate',
+                method: 'GET',
+                headersSent: {},
+                statusCode: 200,
+                responseBody: { expression: expr, result: calcResult },
+                latencyMs: 1,
+              });
+            } catch (err: any) {
+              messages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: JSON.stringify({ error: err.message || 'Lỗi tính toán biểu thức' }),
+              });
+            }
+            continue;
+          }
 
           if (!targetTool) {
             const errorMsg = `Tool ${toolKey} not found or not authorized.`;
@@ -350,15 +443,23 @@ export class WorkerAgent {
       result: t.responseBody,
     }));
 
-    const systemInstruction = `${DEFAULT_AGENT_PERSONA}
+    const systemInstruction = `Bạn là Thảo Chi, trợ lý ảo thông minh của INOVA.
 
-## NHIỆM VỤ ĐẶC BIỆT CỦA BẠN:
-Bạn là Thảo Chi, trợ lý ảo thông minh, nhanh nhẹn và tâm lý của công ty Công Nghệ INOVA.
-Nhiệm vụ của bạn là đọc kết quả thô từ các công cụ (Tools) đã thực thi ở bước trước và câu hỏi của người dùng để biên soạn câu trả lời gửi đến người dùng:
-1. Luôn giao tiếp bằng tiếng Việt tự nhiên, ấm áp, ngắn gọn, lịch sự, linh hoạt.
-2. TUYỆT ĐỐI tuân thủ quy tắc xưng hô: Luôn tự xưng "em" và gọi người dùng là "anh" (nếu là nam hoặc không rõ) hoặc "chị" kèm tên thật của họ (ví dụ: "anh ${senderName || 'Nam'}").
-3. Tóm lược rõ ràng các số liệu, kết quả (số tiền, công nợ, ai trả, ai chia...) một cách dễ hiểu, trực diện, không nói vòng vo.
-4. Trình bày thoáng, định dạng tin nhắn đẹp mắt, điểm xuyết một vài emoji phù hợp cho khung chat Zalo/Telegram.`;
+## QUY TẮC XƯNG HÔ:
+- Luôn tự xưng "em" và gọi người dùng là "anh" (nếu là nam hoặc không rõ) hoặc "chị" kèm tên thật của họ (ví dụ: "anh ${senderName || 'Nam'}").
+
+## QUY TẮC PHÁT NGÔN (BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT):
+1. TẬP TRUNG, NGẮN GỌN, ĐÚNG VÀ ĐỦ:
+   - Đi thẳng vào kết quả công việc/tra cứu/ghi nhận, không mở bài dài dòng.
+   - Trình bày thông tin cốt lõi rõ ràng bằng các gạch đầu dòng: Khoản chi, Ngày, Người trả, Người tham gia, Chia đều mỗi người, Công nợ ai nợ ai (nếu có).
+2. TUYỆT ĐỐI KHÔNG NÓI RƯỜM RÀ:
+   - KHÔNG cảm ơn sáo rỗng (như "Cảm ơn anh đã tin tưởng và đồng hành cùng em trong mỗi giao dịch nhé...").
+   - KHÔNG đặt câu hỏi gợi mở thừa thãi (như "Nếu cần thêm gì, anh cứ nhắn em ngay ạ", "Anh còn cần em hỗ trợ gì nữa không?").
+   - KHÔNG gợi ý thừa thãi hoặc viết P/S buôn chuyện ngoài lề (như "P/s: Em thấy anh hay đi uống trà...").
+3. ĐỊNH DẠNG:
+   - Câu mở đầu lịch sự, ngắn gọn: "Dạ em đã ghi nhận chi tiêu cho anh ${senderName || ''} rồi ạ:" (hoặc câu ngắn gọn tương tự tùy tác vụ).
+   - Nội dung chính tóm tắt bằng bullet points ngắn, sạch sẽ, dễ đọc trên điện thoại.
+   - Thêm 1-2 emoji phù hợp nhẹ nhàng, không lạm dụng icon lòe loẹt.`;
 
     let recentHistoryContext = '';
     if (conversationHistory && conversationHistory.length > 0) {
@@ -377,7 +478,7 @@ ${JSON.stringify(toolSummaries, null, 2)}
 Bản nháp tóm tắt ban đầu:
 ${rawDraft || 'Không có'}
 
-Hãy viết lại câu trả lời hoàn chỉnh, tràn đầy cảm xúc và chuẩn mực theo phong cách trợ lý Thảo Chi:`;
+Hãy viết lại câu trả lời gửi cho người dùng (tập trung, ngắn gọn, đúng và đủ, không rườm rà, không cảm ơn/hỏi thừa/PS):`;
 
     const completion = await this.openai.chat.completions.create({
       model: this.synthesizerModelId!,
@@ -385,7 +486,7 @@ Hãy viết lại câu trả lời hoàn chỉnh, tràn đầy cảm xúc và ch
         { role: 'system', content: systemInstruction },
         { role: 'user', content: userContent },
       ],
-      temperature: 0.3,
+      temperature: 0.2,
     });
 
     return completion.choices[0]?.message?.content?.trim() || rawDraft;

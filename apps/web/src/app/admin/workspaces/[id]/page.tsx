@@ -4,7 +4,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight, PencilSimple, Check, TelegramLogo, ChatCircleDots, ArrowClockwise, Users, CheckCircle } from '@phosphor-icons/react';
+import {
+  ArrowLeft, Trash, X, Plus, FloppyDisk, UserMinus, CaretDown, CaretRight,
+  PencilSimple, Check, TelegramLogo, ChatCircleDots, ArrowClockwise, Users,
+  CheckCircle, Eye, EyeSlash, Key, Lock, Sliders, Wrench, Sparkle, Globe,
+  Copy, MagnifyingGlass, Info, ShieldCheck
+} from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
 
 interface Workspace {
@@ -98,7 +103,7 @@ export default function WorkspaceDetailPage() {
   const router = useRouter();
   const workspaceId = params?.id as string;
 
-  const [activeTab, setActiveTab] = useState<'info' | 'groups' | 'tools' | 'users' | 'skills' | 'data'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'groups' | 'tools' | 'skills' | 'users'>('info');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -173,7 +178,7 @@ export default function WorkspaceDetailPage() {
           fetchZaloGroups(),
         ]);
       }
-      if (activeTab === 'tools' || activeTab === 'data') {
+      if (activeTab === 'tools') {
         await fetchTools();
         await fetchAllTools();
       }
@@ -635,9 +640,9 @@ export default function WorkspaceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/workspaces" className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-medium">
-        <ArrowLeft size={15} weight="bold" />
-        Back to Workspaces
+      <Link href="/admin/workspaces" className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+        <ArrowLeft size={16} weight="bold" />
+        Quay lại Danh sách Workspace
       </Link>
 
       <div className="bg-white rounded-lg border border-gray-200">
@@ -646,27 +651,46 @@ export default function WorkspaceDetailPage() {
           <p className="text-sm text-gray-500">{workspaceId}</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b bg-gray-50">
-          {['info', 'groups', 'users', 'skills', 'data'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={`px-6 py-3 font-medium text-sm focus:outline-none ${activeTab === tab
-                ? 'bg-white text-blue-600 border-t-2 border-t-blue-600'
-                : 'text-gray-500 hover:text-gray-700'
+        {/* Navigation Tabs */}
+        <div className="flex border-b bg-gray-50/80 px-4 overflow-x-auto gap-1">
+          {[
+            { id: 'info', label: 'Thông tin chung', icon: Info },
+            { id: 'groups', label: 'Kênh & Nhóm Chat', icon: ChatCircleDots, count: channelChats.length },
+            { id: 'tools', label: 'Công cụ & Biến tùy biến', icon: Wrench, count: tools.length },
+            { id: 'skills', label: 'Kỹ năng (Skills)', icon: Sparkle, count: skills.length },
+            { id: 'users', label: 'Thành viên & Quyền', icon: Users, count: users.length },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-5 py-3.5 font-medium text-xs sm:text-sm transition-all border-b-2 -mb-px whitespace-nowrap focus:outline-none ${
+                  isActive
+                    ? 'border-indigo-600 text-indigo-600 bg-white font-semibold shadow-2xs'
+                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-100/70'
                 }`}
-            >
-              {tab === 'data' ? 'Data & Tools' : tab === 'groups' ? 'Kênh & Nhóm Chat' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+              >
+                <Icon size={16} weight={isActive ? 'fill' : 'regular'} />
+                <span>{tab.label}</span>
+                {typeof tab.count === 'number' && tab.count > 0 && (
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                    isActive ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-200/70 text-gray-600'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="p-6">
           {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4">{error}</div>}
 
-          {/* DATA & TOOLS TAB */}
-          {activeTab === 'data' && (
+          {/* TOOLS & SCOPED CREDENTIALS TAB */}
+          {activeTab === 'tools' && (
             <WorkspaceDataToolsTab 
               workspaceId={workspaceId} 
               workspaceTools={tools} 
@@ -697,9 +721,9 @@ export default function WorkspaceDetailPage() {
                 />
               </div>
               {isAdmin && (
-                <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition">
                   <FloppyDisk size={16} weight="bold" />
-                  Save Changes
+                  Lưu Thay Đổi
                 </button>
               )}
             </form>
@@ -1003,17 +1027,17 @@ export default function WorkspaceDetailPage() {
                         <option value="MEMBER">MEMBER</option>
                         <option value="ADMIN">ADMIN</option>
                       </select>
-                      <button disabled={!userIdToAdd} className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
+                      <button disabled={!userIdToAdd} className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
                         <Plus size={15} weight="bold" />
-                        Add
+                        Gán vào Workspace
                       </button>
                     </form>
                   </div>
                   <div className="border-l pl-4 ml-2">
-                    <div className="block text-xs font-medium text-gray-500 mb-1">Or Create New</div>
-                    <button onClick={() => setShowCreateUser(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition whitespace-nowrap">
+                    <div className="block text-xs font-medium text-gray-500 mb-1">Hoặc Tạo Mới</div>
+                    <button onClick={() => setShowCreateUser(true)} className="flex items-center gap-1.5 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition whitespace-nowrap">
                       <Plus size={15} weight="bold" />
-                      Create User
+                      Tạo Người Dùng Mới
                     </button>
                   </div>
                 </div>
@@ -1022,30 +1046,30 @@ export default function WorkspaceDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-sm text-gray-500 border-b">
-                    <th className="pb-2">Name</th>
-                    <th className="pb-2">Role</th>
-                    <th className="pb-2">Joined</th>
-                    {isAdmin && <th className="pb-2">Action</th>}
+                    <th className="pb-2">Họ & Tên</th>
+                    <th className="pb-2">Vai trò</th>
+                    <th className="pb-2">Ngày tham gia</th>
+                    {isAdmin && <th className="pb-2 text-right">Thao tác</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
                     <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50">
                       <td className="py-3">
-                        <div className="font-medium">{u.full_name}</div>
-                        <div className="text-xs text-gray-400">{u.zalo_id}</div>
+                        <div className="font-medium text-gray-900">{u.full_name}</div>
+                        <div className="text-xs text-gray-400 font-mono">{u.zalo_id}</div>
                       </td>
                       <td className="py-3">
-                        <span className={`px-2 py-1 rounded text-xs ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100'}`}>
+                        <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}>
                           {u.role}
                         </span>
                       </td>
                       <td className="py-3 text-sm text-gray-500">{new Date(u.joined_at).toLocaleDateString()}</td>
                       {isAdmin && (
-                        <td className="py-3">
-                          <button onClick={() => handleRemoveUser(u.id)} title="Remove user" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">
+                        <td className="py-3 text-right">
+                          <button onClick={() => handleRemoveUser(u.id)} title="Gỡ khỏi Workspace" className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">
                             <UserMinus size={14} weight="bold" />
-                            Remove
+                            Gỡ bỏ
                           </button>
                         </td>
                       )}
@@ -1053,32 +1077,32 @@ export default function WorkspaceDetailPage() {
                   ))}
                 </tbody>
               </table>
-              {users.length === 0 && <p className="text-center py-4 text-gray-500">No users in this workspace.</p>}
+              {users.length === 0 && <p className="text-center py-4 text-gray-500">Chưa có thành viên nào trong Workspace này.</p>}
             </div>
           )}
 
           {/* SKILLS TAB */}
           {activeTab === 'skills' && (
             <div>
-              <div className="mb-4 text-sm text-gray-500">
-                Skills are processes taught by users directly in the Chat interface. You can link and unlink them here.
+              <div className="mb-4 text-xs sm:text-sm text-gray-500">
+                Kỹ năng (Skills) là các quy trình SOP và nghiệp vụ được định nghĩa hoặc dạy trực tiếp. Bạn có thể phân quyền kích hoạt các kỹ năng này cho Workspace tại đây.
               </div>
 
               {isAdmin && (
-                <form onSubmit={handleAddSkill} className="flex gap-2 mb-6 p-4 bg-gray-50 rounded">
+                <form onSubmit={handleAddSkill} className="flex gap-2 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                   <select
-                    className="border px-3 py-2 rounded flex-1"
+                    className="border border-gray-300 px-3 py-2 rounded-lg text-sm flex-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     value={skillIdToAdd}
                     onChange={e => setSkillIdToAdd(e.target.value)}
                   >
-                    <option value="">-- Select Skill to Add --</option>
+                    <option value="">-- Chọn Kỹ năng có sẵn để phân quyền cho Workspace --</option>
                     {availableSkills.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
-                  <button disabled={!skillIdToAdd} className="flex items-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
+                  <button disabled={!skillIdToAdd} className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
                     <Plus size={15} weight="bold" />
-                    Link Skill
+                    Gán Kỹ Năng
                   </button>
                 </form>
               )}
@@ -1452,7 +1476,7 @@ export default function WorkspaceDetailPage() {
 }
 
 // ---------------------------------------------------------------------------
-// WorkspaceDataToolsTab
+// WorkspaceDataToolsTab (Tool Permissions & Scoped Credentials)
 // ---------------------------------------------------------------------------
 
 interface ToolWithGroup extends Tool {
@@ -1461,6 +1485,47 @@ interface ToolWithGroup extends Tool {
     key: string;
     name: string;
   } | null;
+  parameters_schema?: Record<string, unknown>;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  status?: string;
+}
+
+function getToolMethodBadge(tool: ToolWithGroup, groupProtocol?: 'REST' | 'MCP') {
+  if (groupProtocol === 'MCP') {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 uppercase font-mono">
+        MCP
+      </span>
+    );
+  }
+  const key = (tool.key || '').toLowerCase();
+  if (key.includes('delete') || key.includes('remove') || key.includes('destroy')) {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 uppercase font-mono">
+        DELETE
+      </span>
+    );
+  }
+  if (key.includes('post') || key.includes('create') || key.includes('add') || key.includes('insert') || key.includes('send')) {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200 uppercase font-mono">
+        POST
+      </span>
+    );
+  }
+  if (key.includes('put') || key.includes('update') || key.includes('edit') || key.includes('patch')) {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200 uppercase font-mono">
+        PUT
+      </span>
+    );
+  }
+  return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase font-mono">
+      GET
+    </span>
+  );
 }
 
 function WorkspaceDataToolsTab({ 
@@ -1469,14 +1534,16 @@ function WorkspaceDataToolsTab({
   onToolChange,
   isAdmin
 }: { 
-  workspaceId: string, 
-  workspaceTools: Tool[],
-  onToolChange: () => void,
-  isAdmin: boolean
+  workspaceId: string;
+  workspaceTools: Tool[];
+  onToolChange: () => void;
+  isAdmin: boolean;
 }) {
   const [allToolGroups, setAllToolGroups] = useState<ToolGroup[]>([]);
   const [allTools, setAllTools] = useState<ToolWithGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [protocolFilter, setProtocolFilter] = useState<'ALL' | 'REST' | 'MCP'>('ALL');
 
   useEffect(() => {
     loadAllData();
@@ -1485,12 +1552,12 @@ function WorkspaceDataToolsTab({
   const loadAllData = async () => {
     try {
       setLoading(true);
-      const [groups, toolsData] = await Promise.all([
+      const [groups, toolsRes] = await Promise.all([
         fetchToolGroups(),
         fetch('/api/admin/tools?limit=1000').then(res => res.json())
       ]);
       setAllToolGroups(groups);
-      setAllTools(toolsData.data || []);
+      setAllTools(toolsRes.data || []);
     } catch (err) {
       console.error('Failed to fetch data', err);
     } finally {
@@ -1498,9 +1565,16 @@ function WorkspaceDataToolsTab({
     }
   };
 
-  if (loading) return <div className="text-center py-8 text-gray-500">Loading tools and groups...</div>;
+  if (loading) {
+    return (
+      <div className="text-center py-16">
+        <ArrowClockwise size={28} className="animate-spin text-indigo-600 mx-auto mb-3" />
+        <p className="text-sm text-gray-500 font-medium">Đang tải danh mục công cụ và cấu hình biến Scoped Vault...</p>
+      </div>
+    );
+  }
 
-  // Group tools by their group ID from Neo4j group_info
+  // Group tools by group ID
   const toolsByGroup = allTools.reduce((acc, tool) => {
     const groupId = tool.group_info?.id || 'common';
     if (!acc[groupId]) acc[groupId] = [];
@@ -1510,85 +1584,212 @@ function WorkspaceDataToolsTab({
 
   const commonTools = toolsByGroup['common'] || [];
 
+  // Filter groups and tools by search query and protocol
+  const filteredGroups = allToolGroups.filter((g) => {
+    const matchesProtocol = protocolFilter === 'ALL' || (g.protocol_type || 'REST') === protocolFilter;
+    if (!matchesProtocol) return false;
+
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const matchesGroup = g.name.toLowerCase().includes(q) || g.key.toLowerCase().includes(q);
+    const hasMatchingTools = (toolsByGroup[g.id] || []).some(
+      (t) => t.name.toLowerCase().includes(q) || t.key.toLowerCase().includes(q)
+    );
+    return matchesGroup || hasMatchingTools;
+  });
+
+  const filteredCommonTools = commonTools.filter((t) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return t.name.toLowerCase().includes(q) || t.key.toLowerCase().includes(q);
+  });
+
   return (
-    <div className="space-y-4">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Workspace Data & Tools Configuration</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Manage tools and their configuration data for this workspace.
-        </p>
+    <div className="space-y-6">
+      {/* Top Banner / Explanation */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl shadow-sm border border-slate-800">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300">
+              <Sliders size={18} weight="bold" />
+            </span>
+            <h2 className="text-base font-bold text-white tracking-wide">
+              Phân Quyền Công Cụ & Biến Tùy Biến (Scoped Vault)
+            </h2>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+            Cấu hình quyền hạn sử dụng từng API và khai báo các thông số bảo mật riêng (ví dụ: <code className="text-amber-300 font-mono">API_KEY</code>, <code className="text-amber-300 font-mono">BRANCH_ID</code>, <code className="text-amber-300 font-mono">BASE_URL</code>) cho Không gian này. AI Agent sẽ tự động nạp các biến này khi thực thi tác vụ.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-right">
+            <div className="text-xs text-slate-400">Đang kích hoạt</div>
+            <div className="text-lg font-bold text-emerald-400 font-mono">
+              {workspaceTools.length} <span className="text-xs text-slate-400 font-normal">/ {allTools.length} công cụ</span>
+            </div>
+          </div>
+          <Link
+            href="/admin/tool-groups"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition"
+          >
+            <span>Kho Công Cụ Master →</span>
+          </Link>
+        </div>
       </div>
 
-      {allToolGroups.map(group => (
-        <ToolGroupAccordion 
-          key={group.id} 
-          group={group} 
-          workspaceId={workspaceId}
-          toolsInGroup={toolsByGroup[group.id] || []}
-          workspaceTools={workspaceTools}
-          onToolChange={onToolChange}
-          isAdmin={isAdmin}
-        />
-      ))}
+      {/* Search & Protocol Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-gray-200">
+        <div className="relative flex-1">
+          <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Tìm kiếm công cụ theo tên, endpoint hoặc key..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50/50 focus:bg-white transition"
+          />
+        </div>
 
-      {/* Common Tools Section */}
-      <div className="mt-8 border-t pt-6">
-        <h3 className="text-md font-semibold text-gray-700 mb-4 px-2">Common Tools (No Group)</h3>
-        {commonTools.length === 0 ? (
-          <p className="text-sm text-gray-400 italic px-2">No common tools available.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {commonTools.map(tool => (
-              <ToolCard 
-                key={tool.id} 
-                tool={tool} 
-                workspaceId={workspaceId}
-                isAdded={workspaceTools.some(t => String(t.id) === String(tool.id))}
-                onToolChange={onToolChange}
-                isAdmin={isAdmin}
-              />
-            ))}
+        <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg shrink-0">
+          <button
+            type="button"
+            onClick={() => setProtocolFilter('ALL')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              protocolFilter === 'ALL'
+                ? 'bg-white text-gray-900 shadow-2xs font-semibold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Tất cả ({allToolGroups.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setProtocolFilter('REST')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              protocolFilter === 'REST'
+                ? 'bg-white text-blue-700 shadow-2xs font-semibold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            REST API
+          </button>
+          <button
+            type="button"
+            onClick={() => setProtocolFilter('MCP')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              protocolFilter === 'MCP'
+                ? 'bg-white text-purple-700 shadow-2xs font-semibold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Native MCP
+          </button>
+        </div>
+      </div>
+
+      {/* Tool Groups List */}
+      <div className="space-y-4">
+        {filteredGroups.map((group) => (
+          <ToolGroupConfigCard
+            key={group.id}
+            group={group}
+            workspaceId={workspaceId}
+            toolsInGroup={toolsByGroup[group.id] || []}
+            workspaceTools={workspaceTools}
+            onToolChange={onToolChange}
+            isAdmin={isAdmin}
+          />
+        ))}
+
+        {filteredGroups.length === 0 && (
+          <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300 p-6 text-gray-500">
+            <p className="text-sm font-medium">Không tìm thấy nhóm công cụ nào phù hợp với bộ lọc.</p>
           </div>
         )}
       </div>
+
+      {/* Common / Standalone Tools Section */}
+      {filteredCommonTools.length > 0 && (
+        <div className="mt-8 border-t border-gray-200 pt-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+              <Wrench size={16} className="text-gray-500" />
+              Công Cụ Độc Lập ({filteredCommonTools.length})
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Các công cụ chung không thuộc nhóm tích hợp cụ thể nào.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredCommonTools.map((tool) => {
+              const isAdded = workspaceTools.some((t) => String(t.id) === String(tool.id));
+              return (
+                <StandaloneToolCard
+                  key={tool.id}
+                  tool={tool}
+                  workspaceId={workspaceId}
+                  isAdded={isAdded}
+                  onToolChange={onToolChange}
+                  isAdmin={isAdmin}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ToolGroupAccordion({ 
-  group, 
-  workspaceId, 
-  toolsInGroup, 
+// ---------------------------------------------------------------------------
+// ToolGroupConfigCard: Modern high-density card with Master Switch,
+// Scoped Vault Credentials table & Endpoints list
+// ---------------------------------------------------------------------------
+
+function ToolGroupConfigCard({
+  group,
+  workspaceId,
+  toolsInGroup,
   workspaceTools,
   onToolChange,
-  isAdmin
-}: { 
-  group: ToolGroup, 
-  workspaceId: string, 
-  toolsInGroup: ToolWithGroup[],
-  workspaceTools: Tool[],
-  onToolChange: () => void,
-  isAdmin: boolean
+  isAdmin,
+}: {
+  group: ToolGroup;
+  workspaceId: string;
+  toolsInGroup: ToolWithGroup[];
+  workspaceTools: Tool[];
+  onToolChange: () => void;
+  isAdmin: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [data, setData] = useState<ToolGroupData[]>([]);
   const [loadingData, setLoadingData] = useState(false);
-  
+
+  // Scoped Data Form state
   const [showAddData, setShowAddData] = useState(false);
   const [addKey, setAddKey] = useState('');
   const [addValue, setAddValue] = useState('');
+  const [showAddValueSecret, setShowAddValueSecret] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
-  
+
+  // Edit Scoped Data state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editKey, setEditKey] = useState('');
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
 
+  // Masking state & feedback
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Group master toggle state
+  const [togglingMaster, setTogglingMaster] = useState(false);
+  const [togglingToolId, setTogglingToolId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (isOpen) {
-      loadData();
-    }
-  }, [isOpen]);
+    loadData();
+  }, [group.id, workspaceId]);
 
   const loadData = async () => {
     try {
@@ -1596,250 +1797,616 @@ function ToolGroupAccordion({
       const items = await getToolGroupData(group.id, workspaceId);
       setData(items);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load scoped data', err);
     } finally {
       setLoadingData(false);
     }
   };
 
+  // Calculation of active status
+  const activeCount = toolsInGroup.filter((t) =>
+    workspaceTools.some((wt) => String(wt.id) === String(t.id))
+  ).length;
+  const isFullyActive = toolsInGroup.length > 0 && activeCount === toolsInGroup.length;
+  const isPartiallyActive = activeCount > 0 && !isFullyActive;
+
+  // Toggle entire Tool Group
+  const handleToggleGroupMaster = async () => {
+    if (!isAdmin) return;
+    try {
+      setTogglingMaster(true);
+      if (isFullyActive || isPartiallyActive) {
+        if (!confirm(`Thu hồi toàn bộ quyền của nhóm "${group.name}" khỏi Workspace này?`)) return;
+        const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_group_id: group.id }),
+        });
+        const resJson = await res.json();
+        if (!resJson.success) throw new Error(resJson.error || 'Failed to revoke tool group');
+      } else {
+        const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_group_id: group.id }),
+        });
+        const resJson = await res.json();
+        if (!resJson.success) throw new Error(resJson.error || 'Failed to grant tool group');
+      }
+      onToolChange();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi cập nhật quyền nhóm công cụ');
+    } finally {
+      setTogglingMaster(false);
+    }
+  };
+
+  // Toggle single tool
+  const handleToggleSingleTool = async (tool: ToolWithGroup, currentlyAdded: boolean) => {
+    if (!isAdmin) return;
+    try {
+      setTogglingToolId(tool.id);
+      if (currentlyAdded) {
+        const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_id: tool.id }),
+        });
+        const resJson = await res.json();
+        if (!resJson.success) throw new Error(resJson.error || 'Failed to remove tool');
+      } else {
+        const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool_id: tool.id }),
+        });
+        const resJson = await res.json();
+        if (!resJson.success) throw new Error(resJson.error || 'Failed to add tool');
+      }
+      onToolChange();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi cập nhật quyền công cụ');
+    } finally {
+      setTogglingToolId(null);
+    }
+  };
+
+  // Add Scoped Data
   const handleAddData = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addKey.trim() || !addValue.trim()) return;
     try {
       setAddLoading(true);
-      await createToolGroupData(group.id, addKey.trim(), addValue.trim(), workspaceId);
+      await createToolGroupData(group.id, addKey.trim().toUpperCase(), addValue.trim(), workspaceId);
       await loadData();
       setAddKey('');
       setAddValue('');
       setShowAddData(false);
-    } catch (err) {
-      alert('Failed to add data');
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi thêm biến tùy biến');
     } finally {
       setAddLoading(false);
     }
   };
 
-  const handleDeleteData = async (dataId: string) => {
-    if (!confirm('Delete this data entry?')) return;
-    try {
-      await deleteToolGroupData(group.id, dataId);
-      await loadData();
-    } catch (err) {
-      alert('Failed to delete data');
-    }
-  };
-
-  const startEdit = (item: ToolGroupData) => {
-    setEditingId(item.id);
-    setEditKey(item.key);
-    setEditValue(item.value);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditKey('');
-    setEditValue('');
-  };
-
+  // Update Scoped Data
   const handleUpdateData = async (dataId: string) => {
     if (!editKey.trim() || !editValue.trim()) return;
     try {
       setEditLoading(true);
-      await updateToolGroupData(group.id, dataId, editKey.trim(), editValue.trim());
+      await updateToolGroupData(group.id, dataId, editKey.trim().toUpperCase(), editValue.trim());
       await loadData();
-      cancelEdit();
-    } catch (err) {
-      alert('Failed to update data');
+      setEditingId(null);
+      setEditKey('');
+      setEditValue('');
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi cập nhật biến');
     } finally {
       setEditLoading(false);
     }
   };
 
-  return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm mb-4">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className={`p-1.5 rounded-md ${isOpen ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-            {isOpen ? <CaretDown size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}
-          </div>
-          <div>
-            <span className="font-semibold text-gray-900">{group.name}</span>
-            <span className="ml-2 text-xs font-mono text-gray-400">{group.key}</span>
-          </div>
-        </div>
-        <div className="text-xs text-gray-400 capitalize">{group.status}</div>
-      </button>
+  // Delete Scoped Data
+  const handleDeleteData = async (dataId: string, keyName: string) => {
+    if (!confirm(`Xóa biến "${keyName}" khỏi Không gian làm việc này?`)) return;
+    try {
+      await deleteToolGroupData(group.id, dataId);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi xóa biến');
+    }
+  };
 
-      {isOpen && (
-        <div className="px-6 pb-6 border-t border-gray-100 pt-4 bg-gray-50/30">
-          {/* Tools Selection in this group */}
-          <div className="mb-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-3">Tools in this Group</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {toolsInGroup.map(tool => (
-                <ToolCard 
-                  key={tool.id} 
-                  tool={tool} 
-                  workspaceId={workspaceId}
-                  isAdded={workspaceTools.some(t => String(t.id) === String(tool.id))}
-                  onToolChange={onToolChange}
-                  isAdmin={isAdmin}
-                />
-              ))}
-              {toolsInGroup.length === 0 && (
-                <p className="text-xs text-gray-400 italic">No tools assigned to this group.</p>
+  const toggleVisibility = (id: string) => {
+    setVisibleKeys((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Quick suggestion chips
+  const SUGGESTED_KEYS = ['API_KEY', 'AUTH_TOKEN', 'BRANCH_ID', 'BASE_URL', 'TENANT_ID', 'CLIENT_SECRET'];
+
+  return (
+    <div
+      className={`border rounded-2xl overflow-hidden transition-all bg-white shadow-sm ${
+        isFullyActive
+          ? 'border-emerald-300 ring-1 ring-emerald-100'
+          : isPartiallyActive
+          ? 'border-amber-300 ring-1 ring-amber-100'
+          : 'border-gray-200'
+      }`}
+    >
+      {/* Group Card Header */}
+      <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-gray-50/90 via-white to-gray-50/50 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-1 rounded-lg hover:bg-gray-200/60 text-gray-500 transition"
+            title={isOpen ? 'Thu gọn' : 'Mở rộng'}
+          >
+            {isOpen ? <CaretDown size={16} weight="bold" /> : <CaretRight size={16} weight="bold" />}
+          </button>
+
+          <div>
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="font-bold text-gray-900 text-sm">{group.name}</span>
+              {group.protocol_type === 'MCP' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                  <Sparkle size={11} weight="fill" />
+                  Native MCP
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <Globe size={11} weight="bold" />
+                  REST API
+                </span>
+              )}
+              {isFullyActive ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {activeCount}/{toolsInGroup.length} Bật
+                </span>
+              ) : isPartiallyActive ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  {activeCount}/{toolsInGroup.length} Bật một phần
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500">
+                  0/{toolsInGroup.length} Chưa kích hoạt
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 font-mono">
+              <span>{group.key}</span>
+              {group.base_url && (
+                <>
+                  <span>•</span>
+                  <span className="text-gray-400 truncate max-w-xs">{group.base_url}</span>
+                </>
               )}
             </div>
           </div>
+        </div>
 
-          <div className="flex justify-between items-center mb-4 pt-4 border-t border-gray-100">
-            <h4 className="text-sm font-medium text-gray-700">Group Configuration Data</h4>
-            {isAdmin && (
-              <button 
-                onClick={() => setShowAddData(!showAddData)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
-              >
-                <Plus size={12} weight="bold" />
-                {showAddData ? 'Cancel' : 'Add Data'}
-              </button>
+        {/* Master Toggle & Actions */}
+        <div className="flex items-center justify-between sm:justify-end gap-4 pl-8 sm:pl-0">
+          <div className="flex items-center gap-2.5">
+            <div className="text-right">
+              <div className="text-xs font-bold text-gray-800">
+                {isFullyActive ? 'Toàn nhóm BẬT' : isPartiallyActive ? 'Bật một phần' : 'Toàn nhóm TẮT'}
+              </div>
+              <div className="text-[10px] text-gray-400">Master Switch</div>
+            </div>
+
+            <button
+              type="button"
+              disabled={!isAdmin || togglingMaster}
+              onClick={handleToggleGroupMaster}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                isFullyActive
+                  ? 'bg-emerald-600'
+                  : isPartiallyActive
+                  ? 'bg-amber-500'
+                  : 'bg-gray-300'
+              }`}
+              title={
+                isFullyActive
+                  ? 'Đang BẬT toàn bộ nhóm công cụ (Click để thu hồi)'
+                  : isPartiallyActive
+                  ? 'Đang bật một phần nhóm công cụ (Click để kích hoạt toàn bộ)'
+                  : 'Đang TẮT nhóm công cụ (Click để kích hoạt toàn bộ)'
+              }
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  isFullyActive ? 'translate-x-5' : isPartiallyActive ? 'translate-x-2.5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Group Card Expanded Content */}
+      {isOpen && (
+        <div className="p-5 space-y-6">
+          {/* SECTION A: Workspace Scoped Variables (Vault) */}
+          <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/80">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <Key size={14} className="text-amber-600" weight="bold" />
+                  <span>Biến Tùy Biến Không Gian (Scoped Vault)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800">
+                    {data.length} biến
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Các thông số xác thực riêng cho Workspace này (Agent tự động nạp vào tham số hoặc Header khi gọi Tool).
+                </p>
+              </div>
+
+              {isAdmin && !showAddData && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddData(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition"
+                >
+                  <Plus size={14} weight="bold" />
+                  <span>Thêm Biến Mới</span>
+                </button>
+              )}
+            </div>
+
+            {/* Quick Suggestions & Add Form */}
+            {showAddData && (
+              <form onSubmit={handleAddData} className="mb-4 p-4 bg-white border border-indigo-200 rounded-xl shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800">Khai báo biến mới:</span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[11px] text-gray-400 mr-1">Gợi ý:</span>
+                    {SUGGESTED_KEYS.map((k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setAddKey(k)}
+                        className="px-2 py-0.5 text-[10px] font-mono font-medium bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 rounded transition"
+                      >
+                        {k}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                      Tên biến (Key) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ví dụ: API_KEY, BRANCH_ID"
+                      className="w-full px-3 py-2 text-xs font-mono uppercase border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      value={addKey}
+                      onChange={(e) => setAddKey(e.target.value.toUpperCase())}
+                      disabled={addLoading}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-medium text-gray-600">
+                        Giá trị (Value) <span className="text-red-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddValueSecret(!showAddValueSecret)}
+                        className="text-[10px] text-gray-500 hover:text-gray-800 flex items-center gap-1"
+                      >
+                        {showAddValueSecret ? <EyeSlash size={12} /> : <Eye size={12} />}
+                        <span>{showAddValueSecret ? 'Ẩn' : 'Hiện'}</span>
+                      </button>
+                    </div>
+                    <input
+                      type={showAddValueSecret ? 'text' : 'password'}
+                      placeholder="Nhập giá trị bảo mật..."
+                      className="w-full px-3 py-2 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      value={addValue}
+                      onChange={(e) => setAddValue(e.target.value)}
+                      disabled={addLoading}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddData(false);
+                      setAddKey('');
+                      setAddValue('');
+                    }}
+                    className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addLoading || !addKey.trim() || !addValue.trim()}
+                    className="inline-flex items-center gap-1 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition shadow-xs"
+                  >
+                    <Check size={14} weight="bold" />
+                    <span>{addLoading ? 'Đang lưu...' : 'Lưu Biến'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Scoped Data List */}
+            {loadingData ? (
+              <div className="text-center py-3 text-xs text-gray-400">Đang tải biến...</div>
+            ) : data.length === 0 ? (
+              <div className="text-center py-4 bg-white/60 rounded-xl border border-dashed border-gray-200 text-xs text-gray-400 italic">
+                Chưa có biến cấu hình riêng nào cho nhóm công cụ này trong Workspace.
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase">
+                    <tr>
+                      <th className="px-3.5 py-2 text-left font-semibold w-1/3">Tên biến (Key)</th>
+                      <th className="px-3.5 py-2 text-left font-semibold">Giá trị cấu hình (Value)</th>
+                      {isAdmin && <th className="px-3.5 py-2 text-right font-semibold w-24">Thao tác</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.map((item) => {
+                      const isEditing = editingId === item.id;
+                      const isVisible = visibleKeys[item.id];
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50/70 transition">
+                          <td className="px-3.5 py-2.5 font-mono font-bold text-gray-800">
+                            {isEditing ? (
+                              <input
+                                className="w-full px-2 py-1 text-xs font-mono uppercase border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500"
+                                value={editKey}
+                                onChange={(e) => setEditKey(e.target.value.toUpperCase())}
+                                disabled={editLoading}
+                              />
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <Key size={13} className="text-amber-500" />
+                                <span>{item.key}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2.5 font-mono text-gray-600">
+                            {isEditing ? (
+                              <input
+                                className="w-full px-2 py-1 text-xs font-mono border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                disabled={editLoading}
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-slate-700 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
+                                  {isVisible ? item.value : '••••••••••••••••'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleVisibility(item.id)}
+                                  className="text-gray-400 hover:text-gray-700 transition p-1"
+                                  title={isVisible ? 'Ẩn giá trị' : 'Hiển thị giá trị'}
+                                >
+                                  {isVisible ? <EyeSlash size={14} /> : <Eye size={14} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(item.id, item.value)}
+                                  className="text-gray-400 hover:text-indigo-600 transition p-1"
+                                  title="Sao chép"
+                                >
+                                  {copiedId === item.id ? (
+                                    <span className="text-[10px] text-emerald-600 font-sans font-semibold">Đã chép!</span>
+                                  ) : (
+                                    <Copy size={14} />
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-3.5 py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateData(item.id)}
+                                      disabled={editLoading}
+                                      className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition"
+                                      title="Lưu"
+                                    >
+                                      <Check size={15} weight="bold" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingId(null)}
+                                      disabled={editLoading}
+                                      className="p-1 text-gray-400 hover:bg-gray-100 rounded transition"
+                                      title="Hủy"
+                                    >
+                                      <X size={15} weight="bold" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingId(item.id);
+                                        setEditKey(item.key);
+                                        setEditValue(item.value);
+                                      }}
+                                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                                      title="Chỉnh sửa"
+                                    >
+                                      <PencilSimple size={15} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteData(item.id, item.key)}
+                                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                      title="Xóa biến"
+                                    >
+                                      <Trash size={15} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 
-          {showAddData && (
-            <form onSubmit={handleAddData} className="mb-4 p-4 bg-white border border-blue-100 rounded-lg shadow-sm space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input 
-                  placeholder="Key" 
-                  className="px-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={addKey}
-                  onChange={e => setAddKey(e.target.value)}
-                  disabled={addLoading}
-                />
-                <input 
-                  placeholder="Value" 
-                  className="px-3 py-1.5 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={addValue}
-                  onChange={e => setAddValue(e.target.value)}
-                  disabled={addLoading}
-                />
+          {/* SECTION B: Endpoints & Tools Table */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-800 flex items-center gap-1.5">
+                  <Wrench size={14} className="text-indigo-600" />
+                  <span>Danh Sách Công Cụ Con ({toolsInGroup.length})</span>
+                </h4>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Bật hoặc tắt ngoại lệ từng endpoint cụ thể cho Không gian này.
+                </p>
               </div>
-              <div className="flex justify-end">
-                <button 
-                  type="submit" 
-                  disabled={addLoading || !addKey || !addValue}
-                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {addLoading ? 'Saving...' : 'Save Data'}
-                </button>
-              </div>
-            </form>
-          )}
+            </div>
 
-          {loadingData ? (
-            <div className="text-center py-4 text-xs text-gray-400">Loading data...</div>
-          ) : data.length === 0 ? (
-            <div className="text-center py-4 text-xs text-gray-400 italic">No data entries for this group in this workspace.</div>
-          ) : (
-            <table className="w-full text-xs">
-              <thead className="bg-gray-100 text-gray-500 uppercase">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Key</th>
-                  <th className="px-3 py-2 text-left font-semibold">Value</th>
-                  {isAdmin && <th className="px-3 py-2 text-right font-semibold">Action</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {data.map(item => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-mono text-gray-700">
-                      {editingId === item.id ? (
-                        <input 
-                          className="w-full px-2 py-1 border rounded"
-                          value={editKey}
-                          onChange={e => setEditKey(e.target.value)}
-                          disabled={editLoading}
-                        />
-                      ) : item.key}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">
-                      {editingId === item.id ? (
-                        <input 
-                          className="w-full px-2 py-1 border rounded"
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          disabled={editLoading}
-                        />
-                      ) : item.value}
-                    </td>
-                    {isAdmin && (
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-2">
-                          {editingId === item.id ? (
-                            <>
-                              <button 
-                                onClick={() => handleUpdateData(item.id)}
-                                disabled={editLoading}
-                                className="text-green-600 hover:text-green-800 transition"
-                                title="Save"
+            {toolsInGroup.length === 0 ? (
+              <div className="text-center py-6 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 italic">
+                Chưa có công cụ nào được liên kết với nhóm này.
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase">
+                    <tr>
+                      <th className="px-3.5 py-2.5 text-left font-semibold w-24">Giao thức</th>
+                      <th className="px-3.5 py-2.5 text-left font-semibold">Tên & Endpoint / Key</th>
+                      <th className="px-3.5 py-2.5 text-left font-semibold hidden md:table-cell">Mô tả</th>
+                      <th className="px-3.5 py-2.5 text-right font-semibold w-40">Phân quyền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {toolsInGroup.map((tool) => {
+                      const isAdded = workspaceTools.some((t) => String(t.id) === String(tool.id));
+                      const isToggling = togglingToolId === tool.id;
+                      return (
+                        <tr
+                          key={tool.id}
+                          className={`transition ${
+                            isAdded ? 'hover:bg-emerald-50/40 bg-white' : 'hover:bg-gray-50 bg-gray-50/40 opacity-75'
+                          }`}
+                        >
+                          <td className="px-3.5 py-3">
+                            {getToolMethodBadge(tool, group.protocol_type)}
+                          </td>
+                          <td className="px-3.5 py-3">
+                            <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                              <Link
+                                href={`/admin/tools/${tool.id}`}
+                                className="hover:text-indigo-600 transition"
                               >
-                                <Check size={14} weight="bold" />
-                              </button>
-                              <button 
-                                onClick={cancelEdit}
-                                disabled={editLoading}
-                                className="text-gray-400 hover:text-gray-600 transition"
-                                title="Cancel"
+                                {tool.name}
+                              </Link>
+                            </div>
+                            <div className="text-[11px] font-mono text-gray-500 mt-0.5 truncate max-w-sm">
+                              {tool.key}
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-3 text-gray-500 hidden md:table-cell">
+                            <div className="truncate max-w-xs">{tool.description || '—'}</div>
+                          </td>
+                          <td className="px-3.5 py-3 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-semibold ${
+                                  isAdded ? 'text-emerald-700' : 'text-gray-400'
+                                }`}
                               >
-                                <X size={14} weight="bold" />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button 
-                                onClick={() => startEdit(item)}
-                                className="text-blue-500 hover:text-blue-700 transition"
-                                title="Edit"
-                              >
-                                <PencilSimple size={14} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteData(item.id)}
-                                className="text-red-500 hover:text-red-700 transition"
-                                title="Delete"
-                              >
-                                <Trash size={14} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                                {isAdded ? 'Kích hoạt' : 'Hạn chế'}
+                              </span>
+
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleToggleSingleTool(tool, isAdded)}
+                                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                                    isAdded ? 'bg-emerald-600' : 'bg-gray-300'
+                                  }`}
+                                  title={
+                                    isAdded
+                                      ? 'Đang kích hoạt (Click để tắt)'
+                                      : 'Đang bị hạn chế (Click để bật)'
+                                  }
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                      isAdded ? 'translate-x-4' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function ToolCard({ 
-  tool, 
-  workspaceId, 
-  isAdded, 
+// ---------------------------------------------------------------------------
+// StandaloneToolCard
+// ---------------------------------------------------------------------------
+
+function StandaloneToolCard({
+  tool,
+  workspaceId,
+  isAdded,
   onToolChange,
-  isAdmin
-}: { 
-  tool: Tool, 
-  workspaceId: string, 
-  isAdded: boolean, 
-  onToolChange: () => void,
-  isAdmin: boolean
+  isAdmin,
+}: {
+  tool: ToolWithGroup;
+  workspaceId: string;
+  isAdded: boolean;
+  onToolChange: () => void;
+  isAdmin: boolean;
 }) {
   const [loading, setLoading] = useState(false);
 
@@ -1847,55 +2414,78 @@ function ToolCard({
     try {
       setLoading(true);
       if (isAdded) {
-        if (!confirm(`Remove "${tool.name}" from workspace?`)) return;
+        if (!confirm(`Thu hồi công cụ "${tool.name}" khỏi Workspace?`)) return;
         const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tool_id: tool.id })
+          body: JSON.stringify({ tool_id: tool.id }),
         });
-        if (!(await res.json()).success) {
-          throw new Error('Failed to remove tool');
-        }
+        if (!(await res.json()).success) throw new Error('Failed to remove tool');
       } else {
         const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tool_id: tool.id })
+          body: JSON.stringify({ tool_id: tool.id }),
         });
         const resData = await res.json();
-        if (!resData.success) {
-          throw new Error(resData.error || 'Failed to add tool');
-        }
+        if (!resData.success) throw new Error(resData.error || 'Failed to add tool');
       }
       onToolChange();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Action failed');
+    } catch (err: any) {
+      alert(err.message || 'Lỗi cập nhật quyền công cụ');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className={`p-3 rounded-lg border transition flex items-center justify-between ${
-      isAdded ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'
-    }`}>
+    <div
+      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+        isAdded
+          ? 'bg-emerald-50/40 border-emerald-200 shadow-2xs'
+          : 'bg-white border-gray-200 hover:border-gray-300'
+      }`}
+    >
       <div>
-        <div className="text-sm font-semibold text-gray-900">{tool.name}</div>
-        <div className="text-[10px] font-mono text-gray-400">{tool.key}</div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          {getToolMethodBadge(tool)}
+          <span className={`text-[10px] font-semibold ${isAdded ? 'text-emerald-700' : 'text-gray-400'}`}>
+            {isAdded ? 'Đang bật' : 'Chưa bật'}
+          </span>
+        </div>
+        <div className="text-xs font-bold text-gray-900 line-clamp-1">{tool.name}</div>
+        <div className="text-[10px] font-mono text-gray-400 truncate mt-0.5">{tool.key}</div>
+        {tool.description && (
+          <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">{tool.description}</div>
+        )}
       </div>
-      {isAdmin && (
-        <button 
-          onClick={handleToggle}
-          disabled={loading}
-          className={`px-2 py-1 rounded text-[10px] font-bold transition ${
-            isAdded 
-              ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-          }`}
+
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+        <Link
+          href={`/admin/tools/${tool.id}`}
+          className="text-[10px] text-indigo-600 hover:underline"
         >
-          {loading ? '...' : (isAdded ? 'REMOVE' : 'ADD')}
-        </button>
-      )}
+          Chi tiết →
+        </Link>
+        {isAdmin && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleToggle}
+            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+              isAdded ? 'bg-emerald-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                isAdded ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
+

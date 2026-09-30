@@ -295,9 +295,10 @@ export default function ToolGroupDetailPage() {
           </div>
           <Link
             href={`/admin/tools/new?group_id=${id}`}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold transition"
           >
-            + Add Tool
+            <Plus size={14} weight="bold" />
+            <span>Thêm Công cụ</span>
           </Link>
         </div>
 

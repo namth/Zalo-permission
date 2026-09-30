@@ -312,12 +312,12 @@ export default function ZaloGroupDetailPage() {
                                     <option key={u.id} value={u.id}>{u.full_name} ({u.zalo_id})</option>
                                 ))}
                             </select>
-                            <button disabled={!userIdToAdd} className="bg-green-600 text-white px-4 py-2 rounded disabled:bg-gray-400">+ Add Member</button>
+                            <button disabled={!userIdToAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:bg-gray-300 transition">Thêm Thành viên</button>
                         </form>
                     </div>
                     <div className="border-l pl-4 ml-2">
-                        <div className="block text-xs font-medium text-gray-500 mb-1">Or Create New</div>
-                        <button onClick={() => setShowCreateUser(true)} className="bg-blue-600 text-white px-4 py-2 rounded whitespace-nowrap">Create User</button>
+                        <div className="block text-xs font-medium text-gray-500 mb-1">Hoặc Tạo Mới</div>
+                        <button onClick={() => setShowCreateUser(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition">Tạo Người dùng</button>
                     </div>
                 </div>
 
