@@ -25,7 +25,7 @@ export class VisionAgent {
       },
     });
 
-    this.modelId = modelId || process.env.VISION_MODEL_ID || 'google/gemini-2.0-flash';
+    this.modelId = modelId || process.env.VISION_MODEL_ID || 'google/gemini-2.0-flash-001';
   }
 
   /**

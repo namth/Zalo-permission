@@ -39,7 +39,7 @@ export class RouterAgent {
       },
     });
 
-    this.modelId = modelId || process.env.ROUTER_MODEL_ID || 'google/gemini-2.0-flash';
+    this.modelId = modelId || process.env.ROUTER_MODEL_ID || 'google/gemini-2.0-flash-001';
   }
 
   /**

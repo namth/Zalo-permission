@@ -59,7 +59,7 @@ export async function GET() {
         agent: {
           name: 'Thảo Chi',
           company: 'Công Ty Công Nghệ INOVA',
-          routerModel: process.env.ROUTER_MODEL_ID || 'google/gemini-2.0-flash',
+          routerModel: process.env.ROUTER_MODEL_ID || 'google/gemini-2.0-flash-001',
           workerModel: process.env.WORKER_MODEL_ID || 'openai/gpt-4o-mini',
           synthesizerModel: process.env.SYNTHESIZER_MODEL_ID || 'deepseek/deepseek-chat',
           inboundStream: 'stream:inbound_messages',

@@ -640,7 +640,7 @@ export default function WorkflowPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600">🟣 Router LLM:</span>
                         <div className="text-right">
-                          <code className="bg-cyan-100 text-cyan-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'google/gemini-2.0-flash'}</code>
+                          <code className="bg-cyan-100 text-cyan-900 px-1 py-0.5 rounded text-[11px]">{data?.agent.routerModel || 'google/gemini-2.0-flash-001'}</code>
                           <span className="text-gray-500 text-[10px] ml-1">(~$0.0001)</span>
                         </div>
                       </div>
