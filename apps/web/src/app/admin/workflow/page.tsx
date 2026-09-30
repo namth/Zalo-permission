@@ -157,7 +157,7 @@ export default function WorkflowPage() {
       subtitle: 'Quản lý phiên hội thoại nhóm 10 phút, tránh chen ngang làm loãng việc',
       tag: 'Phiên Hội Thoại & Hàng Đợi',
       tech: 'Redis Session Key (TTL: 600s) & Redis Streams (stream:inbound_messages)',
-      desc: 'Kiểm tra trạng thái COLD/WARM của nhóm chat. Trong trạng thái COLD, nếu không có mention (@Thảo Chi, "Chi ơi...") -> Bỏ qua lập tức để không làm loãng việc, không tốn AI token ($0) và không ghi rác vào audit log. Khi có mention -> Kích hoạt phiên WARM trong 10 phút.',
+      desc: 'Kiểm tra cấu hình và trạng thái COLD/WARM của nhóm chat. Nếu nhóm BẬT "Luôn trả lời" -> Luôn xử lý mọi tin nhắn/câu hỏi. Nếu TẮT (mặc định) và nhóm đang ở trạng thái COLD mà không có mention (@Thảo Chi, "Chi ơi...") -> Bỏ qua lập tức để không làm loãng việc, không tốn AI token ($0) và không ghi rác vào audit log. Khi có mention -> Kích hoạt phiên WARM trong 10 phút.',
       inputs: ['InboundChatMessage từ Channel Gateway'],
       outputs: ['Redis Stream Message ID & Consumer ACK sau khi hoàn tất'],
       codeRef: 'apps/agent-worker/src/session.ts & channel-manager.ts',

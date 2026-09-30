@@ -119,3 +119,67 @@ export async function setColdSession(
     console.warn(`[ChatSession] Failed to set cold session for ${sessionKey}:`, err);
   }
 }
+
+/**
+ * Lấy cài đặt Always Respond (Luôn trả lời) của nhóm chat
+ * Cache trên Redis (TTL 300s), fallback query Postgres channel_chats
+ */
+export async function getChatAlwaysRespond(
+  redis: Redis,
+  platform: string,
+  platformChatId: string,
+  prismaClient: any
+): Promise<boolean> {
+  const cacheKey = `agent:chat:always_respond:${platform}:${platformChatId}`;
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached !== null) {
+      return cached === '1';
+    }
+  } catch (err) {
+    console.warn(`[ChatSession] Redis error on alwaysRespond cache:`, err);
+  }
+
+  // Fallback query database
+  try {
+    const chat = await prismaClient.channelChat.findUnique({
+      where: {
+        platform_platformChatId: {
+          platform,
+          platformChatId: String(platformChatId),
+        },
+      },
+      select: {
+        alwaysRespond: true,
+      },
+    });
+
+    const isAlways = Boolean(chat?.alwaysRespond);
+    try {
+      await redis.set(cacheKey, isAlways ? '1' : '0', 'EX', 300);
+    } catch {}
+    return isAlways;
+  } catch (dbErr) {
+    console.warn(`[ChatSession] DB error reading alwaysRespond:`, dbErr);
+    return false;
+  }
+}
+
+/**
+ * Cập nhật cache Always Respond trên Redis
+ */
+export async function setChatAlwaysRespond(
+  redis: Redis,
+  platform: string,
+  platformChatId: string,
+  alwaysRespond: boolean
+): Promise<void> {
+  const cacheKey = `agent:chat:always_respond:${platform}:${platformChatId}`;
+  try {
+    await redis.set(cacheKey, alwaysRespond ? '1' : '0', 'EX', 86400);
+    console.log(`[ChatSession] ⚙️ Set alwaysRespond=${alwaysRespond} for ${platform}:${platformChatId}`);
+  } catch (err) {
+    console.warn(`[ChatSession] Failed to set alwaysRespond cache for ${cacheKey}:`, err);
+  }
+}
+

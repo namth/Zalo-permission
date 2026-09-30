@@ -104,6 +104,7 @@ model ChannelChat {
   title          String
   chatType       String       @default("GROUP") @map("chat_type")
   isActive       Boolean      @default(true) @map("is_active")
+  alwaysRespond  Boolean      @default(false) @map("always_respond")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

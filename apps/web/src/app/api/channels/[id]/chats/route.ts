@@ -27,6 +27,7 @@ export async function GET(
       title: c.title,
       chat_type: c.chatType,
       is_active: c.isActive,
+      always_respond: Boolean(c.alwaysRespond),
       workspace_id: c.workspaceId,
       workspace_name: c.workspace?.name || null,
       created_at: c.createdAt,
@@ -156,7 +157,7 @@ export async function PATCH(
   try {
     const accountId = params.id;
     const body = await req.json();
-    const { chat_id, workspace_id, title, is_active } = body;
+    const { chat_id, workspace_id, title, is_active, always_respond } = body;
 
     if (!chat_id) {
       return NextResponse.json(
@@ -183,6 +184,7 @@ export async function PATCH(
         workspaceId: workspace_id !== undefined ? (workspace_id || null) : undefined,
         title: title !== undefined ? String(title).trim() : undefined,
         isActive: is_active !== undefined ? Boolean(is_active) : undefined,
+        alwaysRespond: always_respond !== undefined ? Boolean(always_respond) : undefined,
       },
       include: {
         workspace: { select: { id: true, name: true } },
@@ -204,12 +206,14 @@ export async function PATCH(
       `
           : ''
       }
+      ${always_respond !== undefined ? 'SET c.always_respond = $always_respond' : ''}
       RETURN c.id AS id
     `;
 
     await runCypher(cypher, {
       id: chat_id,
       workspace_id: targetWsId,
+      always_respond: updated.alwaysRespond,
     }).catch((e) => console.warn('[Neo4j update warning]:', e));
 
     return NextResponse.json({
@@ -221,6 +225,7 @@ export async function PATCH(
         title: updated.title,
         chat_type: updated.chatType,
         is_active: updated.isActive,
+        always_respond: Boolean(updated.alwaysRespond),
         workspace_id: updated.workspaceId,
         workspace_name: updated.workspace?.name || null,
         created_at: updated.createdAt,

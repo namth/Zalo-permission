@@ -16,6 +16,7 @@ export interface RouterAgentOptions {
   conversationHistory?: ConversationHistoryMessage[];
   isGroup?: boolean;
   isWarmSession?: boolean;
+  alwaysRespond?: boolean;
   quotedMessage?: QuotedMessageInfo;
   visualSummary?: string;
   openRouterApiKey?: string;
@@ -55,6 +56,7 @@ export class RouterAgent {
       conversationHistory,
       isGroup = false,
       isWarmSession = false,
+      alwaysRespond = false,
       quotedMessage,
       visualSummary,
     } = options;
@@ -94,6 +96,7 @@ ${JSON.stringify(toolGroupsSummary, null, 2)}
 CHAT CONTEXT:
 - Platform Mode: ${isGroup ? 'GROUP CHAT' : 'DIRECT 1-ON-1 CHAT'}
 - Warm Session Active: ${isWarmSession ? 'YES (The user recently talked with you)' : 'NO'}
+- Always Respond Setting: ${alwaysRespond ? 'ENABLED (Always answer every question in this chat by default)' : 'DISABLED'}
 
 RULES:
 1. If the user's request matches the purpose or trigger intents of any available Skill, set "is_skill_matched": true, and provide "matched_skill_id" and "matched_skill_key".
@@ -101,7 +104,8 @@ RULES:
 3. If the request is purely generic small talk or greetings without any actionable task or data request, set "intent": "chitchat", "is_skill_matched": false, "recommended_tool_groups": [], "requires_tools": false.
 4. "requires_tools": Set to true if fulfilling the request requires calling external tools or APIs (expense, debt, balances, database queries).
 5. "is_addressed_to_agent":
-   - If this is a Group Chat: Determine whether the message is directed to the assistant (Thảo Chi) or if it's casual chatter between other human members. If the user is asking you a question, continuing a task, or giving instructions -> true. If talking to another member or generic chat not requesting anything from the bot -> false.
+   - If Always Respond Setting is ENABLED: Default to true for any questions, requests, or general inquiries. Set to false only if the user explicitly addresses another person or says something totally unrelated to the bot/tasks.
+   - If Always Respond Setting is DISABLED and this is a Group Chat: Determine whether the message is directed to the assistant (Thảo Chi) or if it's casual chatter between other human members. If the user is asking you a question, continuing a task, or giving instructions -> true. If talking to another member or generic chat not requesting anything from the bot -> false.
    - If Direct 1-on-1: Always true.
 6. Output STRICT JSON only conforming to the schema:
 {

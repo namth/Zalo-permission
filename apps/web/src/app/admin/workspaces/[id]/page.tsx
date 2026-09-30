@@ -39,6 +39,7 @@ interface WorkspaceChannelChat {
   title: string;
   chat_type: string;
   is_active: boolean;
+  always_respond?: boolean;
   created_at: string;
 }
 
@@ -332,6 +333,43 @@ export default function WorkspaceDetailPage() {
       }
     } catch (err: any) {
       alert('Lỗi kết nối: ' + err.message);
+    }
+  const [updatingChatId, setUpdatingChatId] = useState<string | null>(null);
+
+  const handleToggleAlwaysRespond = async (chatId: string, nextValue: boolean) => {
+    try {
+      setUpdatingChatId(chatId);
+      // Optimistic update
+      setChannelChats((prev) =>
+        prev.map((c) => (c.id === chatId ? { ...c, always_respond: nextValue } : c))
+      );
+
+      const res = await fetch(`/api/admin/workspaces/${workspaceId}/channel-chats`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          always_respond: nextValue,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        // Rollback
+        setChannelChats((prev) =>
+          prev.map((c) => (c.id === chatId ? { ...c, always_respond: !nextValue } : c))
+        );
+        alert(data.error || 'Không thể cập nhật cấu hình nhóm chat');
+      }
+    } catch (err: any) {
+      console.error('Error toggling always_respond:', err);
+      // Rollback
+      setChannelChats((prev) =>
+        prev.map((c) => (c.id === chatId ? { ...c, always_respond: !nextValue } : c))
+      );
+      alert('Lỗi kết nối: ' + err.message);
+    } finally {
+      setUpdatingChatId(null);
     }
   };
 
@@ -728,28 +766,50 @@ export default function WorkspaceDetailPage() {
                   </form>
                 )}
 
+                {/* Tip banner for Group Chat responsiveness */}
+                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-950 flex items-start gap-2.5">
+                  <span className="text-base">💡</span>
+                  <div>
+                    <p className="font-semibold">Cơ chế phản hồi trong nhóm chat:</p>
+                    <p className="text-indigo-800 text-[11px] mt-0.5 leading-relaxed">
+                      • <strong>Mặc định (Chế độ Tiêu chuẩn):</strong> Bot chỉ trả lời khi được gọi tên (<em>@Thảo Chi</em>, <em>Chi ơi...</em>) và duy trì phiên hoạt động 10 phút.<br/>
+                      • <strong>Bật công tắc "Luôn trả lời":</strong> Bot sẽ chủ động lắng nghe và trả lời mọi câu hỏi, yêu cầu trong nhóm mà không cần thành viên phải tag tên.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="space-y-2.5">
                   {channelChats.map((chat) => (
                     <div
                       key={chat.id}
-                      className="flex items-center justify-between p-3.5 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition shadow-sm"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition shadow-sm"
                     >
                       <div className="flex items-center gap-3">
                         {chat.platform === 'TELEGRAM' ? (
-                          <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center shrink-0">
                             <TelegramLogo size={18} weight="fill" />
                           </div>
                         ) : (
-                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
                             Zalo
                           </div>
                         )}
                         <div>
-                          <div className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                          <div className="font-semibold text-gray-900 text-sm flex items-center flex-wrap gap-2">
                             <span>{chat.title}</span>
                             <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-mono">
                               {chat.chat_type}
                             </span>
+                            {chat.always_respond ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                ⚡ Luôn trả lời
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-mono">
+                                ❄️ Cần tag tên
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 font-mono mt-0.5 flex items-center gap-2">
                             <span>ID: {chat.platform_chat_id}</span>
@@ -759,16 +819,50 @@ export default function WorkspaceDetailPage() {
                         </div>
                       </div>
 
-                      {isAdmin && (
-                        <button
-                          onClick={() => handleRemoveChannelChat(chat.id, chat.title)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition font-medium"
-                          title="Gỡ nhóm chat khỏi workspace"
-                        >
-                          <X size={14} weight="bold" />
-                          Gỡ khỏi Workspace
-                        </button>
-                      )}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                        {/* Setting: Luôn trả lời (Always Respond) */}
+                        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-gray-200 bg-gray-50/80 hover:bg-gray-100/80 transition">
+                          <div className="flex flex-col text-right select-none">
+                            <span className="text-[11px] font-semibold text-gray-800">
+                              Luôn trả lời
+                            </span>
+                            <span className={`text-[10px] ${chat.always_respond ? 'text-emerald-600 font-semibold' : 'text-gray-400 font-normal'}`}>
+                              {chat.always_respond ? 'Mọi câu hỏi (ON)' : 'Cần tag tên (OFF)'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!isAdmin || updatingChatId === chat.id}
+                            onClick={() => handleToggleAlwaysRespond(chat.id, !chat.always_respond)}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                              chat.always_respond ? 'bg-emerald-600' : 'bg-gray-300'
+                            }`}
+                            title={
+                              chat.always_respond
+                                ? 'Đang BẬT: Agent luôn trả lời mọi câu hỏi trong nhóm mà không cần tag/mention tên.'
+                                : 'Đang TẮT: Agent chỉ trả lời khi được tag tên (@Thảo Chi, Chi ơi...) hoặc trong phiên WARM 10 phút.'
+                            }
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                chat.always_respond ? 'translate-x-4' : 'translate-x-0'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleRemoveChannelChat(chat.id, chat.title)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition font-medium"
+                            title="Gỡ nhóm chat khỏi workspace"
+                          >
+                            <X size={14} weight="bold" />
+                            <span className="hidden md:inline">Gỡ</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
 

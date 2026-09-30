@@ -42,6 +42,7 @@ export async function GET(
         title: c.title,
         chat_type: c.chatType,
         is_active: c.isActive,
+        always_respond: Boolean(c.alwaysRespond),
         workspace_id: c.workspaceId,
         workspace_name: c.workspace?.name || null,
         is_assigned_to_current: c.workspaceId === workspaceId,
@@ -71,6 +72,7 @@ export async function GET(
       title: c.title,
       chat_type: c.chatType,
       is_active: c.isActive,
+      always_respond: Boolean(c.alwaysRespond),
       created_at: c.createdAt,
     }));
 
@@ -231,6 +233,7 @@ export async function POST(
         title: updated.title,
         chat_type: updated.chatType,
         is_active: updated.isActive,
+        always_respond: Boolean(updated.alwaysRespond),
         account_name: updated.account?.accountName,
         workspace_id: updated.workspaceId,
         workspace_name: updated.workspace?.name,
@@ -240,6 +243,77 @@ export async function POST(
     console.error('[API /api/admin/workspaces/:id/channel-chats POST] Error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to assign channel chat to workspace' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+): Promise<NextResponse> {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const workspaceId = params.id;
+    const body = await req.json();
+    const { chat_id, always_respond, is_active } = body;
+
+    if (!chat_id) {
+      return NextResponse.json({ success: false, error: 'chat_id is required' }, { status: 400 });
+    }
+
+    const chat = await prisma.channelChat.findFirst({
+      where: { id: chat_id, workspaceId },
+    });
+
+    if (!chat) {
+      return NextResponse.json(
+        { success: false, error: 'Chat not found in this workspace' },
+        { status: 404 }
+      );
+    }
+
+    const updated = await prisma.channelChat.update({
+      where: { id: chat_id },
+      data: {
+        alwaysRespond: always_respond !== undefined ? Boolean(always_respond) : undefined,
+        isActive: is_active !== undefined ? Boolean(is_active) : undefined,
+      },
+      include: {
+        account: { select: { accountName: true } },
+      },
+    });
+
+    // Sync to Neo4j
+    if (always_respond !== undefined) {
+      await runCypher(
+        `MATCH (c:ChannelChat { id: $id }) SET c.always_respond = $always_respond RETURN c.id`,
+        { id: chat_id, always_respond: updated.alwaysRespond }
+      ).catch(() => {});
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Cập nhật cấu hình nhóm chat thành công',
+      data: {
+        id: updated.id,
+        platform: updated.platform,
+        platform_chat_id: updated.platformChatId,
+        title: updated.title,
+        chat_type: updated.chatType,
+        is_active: updated.isActive,
+        always_respond: Boolean(updated.alwaysRespond),
+        account_name: updated.account?.accountName,
+      },
+    });
+  } catch (error) {
+    console.error('[API /api/admin/workspaces/:id/channel-chats PATCH] Error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update channel chat setting' },
       { status: 500 }
     );
   }

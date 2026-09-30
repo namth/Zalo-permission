@@ -17,7 +17,7 @@ import {
   decryptJson,
 } from '@omniagent/database';
 import { getRedisClient, OUTBOUND_STREAM } from './redis.js';
-import { getChatSession, refreshWarmSession, checkMention } from './session.js';
+import { getChatSession, refreshWarmSession, checkMention, getChatAlwaysRespond } from './session.js';
 
 export class MessageDispatcher {
   private routerAgent: RouterAgent;
@@ -39,16 +39,20 @@ export class MessageDispatcher {
     const isGroup = Boolean(message.isGroup || String(message.platformChatId) !== String(message.senderId));
     const isMentioned = checkMention(message.text);
     const session = await getChatSession(redis, message.platform, message.platformChatId);
+    const alwaysRespond = isGroup
+      ? await getChatAlwaysRespond(redis, message.platform, message.platformChatId, prisma)
+      : false;
 
     // BỘ LỌC TRẠNG THÁI COLD / WARM TRONG NHÓM CHAT:
-    // Nếu trong nhóm chat và Bot đang ở trạng thái COLD mà người dùng KHÔNG mention/gọi tên Bot
+    // Nếu nhóm được cấu hình "Luôn trả lời" (alwaysRespond = true), Bot sẽ luôn xử lý mọi tin nhắn/câu hỏi.
+    // Nếu tắt setting và Bot đang ở trạng thái COLD mà người dùng KHÔNG mention/gọi tên Bot
     // -> Bỏ qua lập tức để tránh làm loãng hội thoại, không tốn AI token và không ghi rác vào audit log.
-    if (isGroup && !session.isWarm && !isMentioned) {
+    if (isGroup && !alwaysRespond && !session.isWarm && !isMentioned) {
       console.log(`[Dispatcher] ❄️ [COLD State] Ignored group chatter in ${message.platformChatId} (not addressed to Thảo Chi): "${message.text.slice(0, 40)}"`);
       return;
     }
 
-    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} (${session.isWarm ? '🔥 WARM' : '⚡ COLD->WARM'}) by user: ${message.senderName || message.senderId}`);
+    console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} (${alwaysRespond ? '⚡ ALWAYS-RESPOND' : session.isWarm ? '🔥 WARM' : '⚡ COLD->WARM'}) by user: ${message.senderName || message.senderId}`);
 
     // 1. Resolve Workspace via Neo4j Graph (ChannelChat or ZaloGroup)
     const wsLookupQuery = `
@@ -346,6 +350,7 @@ export class MessageDispatcher {
       conversationHistory,
       isGroup,
       isWarmSession: session.isWarm,
+      alwaysRespond,
       quotedMessage: message.quotedMessage,
       visualSummary,
     });
@@ -353,12 +358,13 @@ export class MessageDispatcher {
     console.log(`[Dispatcher] Router Decision:`, routerDecision);
 
     // Kiểm tra xem tin nhắn có hướng đến Agent không trong phiên warm của nhóm
-    if (isGroup && routerDecision.isAddressedToAgent === false && !isMentioned) {
+    // (Nếu bật Always Respond thì luôn phản hồi trừ khi explicitly không hướng đến agent và không mention)
+    if (isGroup && !alwaysRespond && routerDecision.isAddressedToAgent === false && !isMentioned) {
       console.log(`[Dispatcher] 🔇 Ignored message in warm group session (addressed to other members): "${message.text.slice(0, 40)}"`);
       return; // Không xen ngang cuộc trò chuyện giữa các thành viên, không ghi audit log
     }
 
-    // Nếu tin nhắn hướng đến bot, kích hoạt hoặc gia hạn phiên WARM thêm 10 phút
+    // Nếu tin nhắn hướng đến bot (hoặc nhóm bật Always Respond), kích hoạt hoặc gia hạn phiên WARM thêm 10 phút
     await refreshWarmSession(redis, message.platform, message.platformChatId, message.senderId, message.senderName);
 
     let matchedSkill: SkillDefinition | null = null;
