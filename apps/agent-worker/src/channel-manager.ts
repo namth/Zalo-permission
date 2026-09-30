@@ -200,21 +200,22 @@ export class ChannelGatewayManager {
                   accountId: string;
                   platformChatId: string;
                   text: string;
+                  mediaUrls?: string[];
                 };
 
-                console.log(`[ChannelManager] Sending outbound response to ${payload.platform} chat ${payload.platformChatId}...`);
+                console.log(`[ChannelManager] Sending outbound response to ${payload.platform} chat ${payload.platformChatId} (attachments: ${payload.mediaUrls?.length || 0})...`);
 
                 if (payload.platform === 'TELEGRAM') {
                   const adapter = this.telegramAdapters.get(payload.accountId) || Array.from(this.telegramAdapters.values())[0];
                   if (adapter) {
-                    await adapter.sendMessage(payload.platformChatId, payload.text);
+                    await adapter.sendMessage(payload.platformChatId, payload.text, payload.mediaUrls);
                   } else {
                     console.warn(`[ChannelManager] No Telegram adapter found for account ${payload.accountId}`);
                   }
                 } else if (payload.platform === 'ZALO') {
                   const adapter = this.zaloAdapters.get(payload.accountId) || Array.from(this.zaloAdapters.values())[0];
                   if (adapter) {
-                    await adapter.sendMessage(payload.platformChatId, payload.text);
+                    await adapter.sendMessage(payload.platformChatId, payload.text, undefined, payload.mediaUrls);
                   }
                 }
               }

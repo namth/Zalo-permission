@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import { Zalo, ThreadType, LoginQRCallbackEventType, type API, type Credentials } from 'zca-js';
 import { prisma, encryptData, decryptData } from '@omniagent/database';
 import type { InboundChatMessage } from '@omniagent/core';
@@ -35,6 +39,37 @@ export interface ZaloAccountConfig {
   authType: 'QR_SESSION' | 'OA_SECRET';
   credentials: Record<string, any>;
   onMessageReceived?: (msg: InboundChatMessage) => Promise<void>;
+}
+
+/**
+ * Tải ảnh từ URL về file tạm trên ổ đĩa để zca-js upload làm attachment
+ */
+async function downloadImageToTempFile(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) {
+      console.warn(`[ZaloAdapter] Failed to fetch image ${url}: status ${res.status}`);
+      return null;
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    let ext = '.png';
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = '.jpg';
+    else if (contentType.includes('webp')) ext = '.webp';
+    else if (contentType.includes('gif')) ext = '.gif';
+    else if (url.includes('.jpg') || url.includes('.jpeg')) ext = '.jpg';
+    else if (url.includes('.webp')) ext = '.webp';
+
+    const hash = crypto.randomBytes(8).toString('hex');
+    const tempPath = path.join(os.tmpdir(), `zalo_media_${Date.now()}_${hash}${ext}`);
+    await fs.promises.writeFile(tempPath, buffer);
+    return tempPath;
+  } catch (err) {
+    console.warn(`[ZaloAdapter] Error downloading image from ${url}:`, err);
+    return null;
+  }
 }
 
 export class ZaloChannelAdapter {
@@ -172,19 +207,58 @@ export class ZaloChannelAdapter {
   }
 
   /**
-   * Gửi tin nhắn trả lời về nhóm Zalo hoặc Direct Chat
+   * Gửi tin nhắn trả lời về nhóm Zalo hoặc Direct Chat (hỗ trợ gửi kèm ảnh như VietQR, hình ảnh hóa đơn)
    */
-  async sendMessage(platformChatId: string, text: string, chatType: ThreadType = ThreadType.Group): Promise<void> {
+  async sendMessage(
+    platformChatId: string, 
+    text: string, 
+    chatType: ThreadType = ThreadType.Group,
+    mediaUrls?: string[]
+  ): Promise<void> {
     if (!this.api) {
       console.warn(`[ZaloAdapter] Cannot send message: API instance is not initialized for ${this.accountId}`);
       return;
     }
 
+    const tempFiles: string[] = [];
+
     try {
-      console.log(`[ZaloAdapter] Sending response to Zalo Thread ${platformChatId}: ${text.slice(0, 50)}...`);
-      await this.api.sendMessage(text, platformChatId, chatType);
+      if (mediaUrls && mediaUrls.length > 0) {
+        for (const url of mediaUrls) {
+          const tempPath = await downloadImageToTempFile(url);
+          if (tempPath) tempFiles.push(tempPath);
+        }
+      }
+
+      if (tempFiles.length > 0) {
+        console.log(`[ZaloAdapter] Sending response with ${tempFiles.length} photo attachment(s) to Zalo Thread ${platformChatId}...`);
+        await this.api.sendMessage(
+          {
+            msg: text,
+            attachments: tempFiles,
+          },
+          platformChatId,
+          chatType
+        );
+      } else {
+        console.log(`[ZaloAdapter] Sending text response to Zalo Thread ${platformChatId}: ${text.slice(0, 50)}...`);
+        await this.api.sendMessage(text, platformChatId, chatType);
+      }
     } catch (err: any) {
       console.error(`[ZaloAdapter] Failed to send message to Zalo Thread ${platformChatId}:`, err?.message || err);
+      // Fallback text-only nếu gửi attachment gặp lỗi
+      if (tempFiles.length > 0) {
+        try {
+          await this.api.sendMessage(text, platformChatId, chatType);
+        } catch (fallbackErr) {
+          console.error(`[ZaloAdapter] Fallback text send also failed:`, fallbackErr);
+        }
+      }
+    } finally {
+      // Dọn dẹp file tạm sau khi gửi xong
+      for (const f of tempFiles) {
+        fs.promises.unlink(f).catch(() => {});
+      }
     }
   }
 

@@ -95,10 +95,29 @@ export class TelegramChannelAdapter {
   }
 
   /**
-   * Gửi tin nhắn trả lời về nhóm chat
+   * Gửi tin nhắn trả lời về nhóm chat (hỗ trợ gửi kèm ảnh như VietQR, hình ảnh hóa đơn)
    */
-  async sendMessage(platformChatId: string, text: string): Promise<void> {
-    await this.bot.api.sendMessage(platformChatId, text);
+  async sendMessage(platformChatId: string, text: string, mediaUrls?: string[]): Promise<void> {
+    if (mediaUrls && mediaUrls.length > 0) {
+      let isCaptionSent = false;
+      for (const url of mediaUrls) {
+        try {
+          if (!isCaptionSent && text && text.length <= 1024) {
+            await this.bot.api.sendPhoto(platformChatId, url, { caption: text });
+            isCaptionSent = true;
+          } else {
+            await this.bot.api.sendPhoto(platformChatId, url);
+          }
+        } catch (photoErr) {
+          console.warn(`[TelegramAdapter] Failed to send photo ${url}:`, photoErr);
+        }
+      }
+      if (isCaptionSent) return;
+    }
+
+    if (text) {
+      await this.bot.api.sendMessage(platformChatId, text);
+    }
   }
 
   /**

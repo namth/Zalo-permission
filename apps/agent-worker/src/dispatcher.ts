@@ -3,6 +3,7 @@ import {
   RouterAgent,
   WorkerAgent,
   VisionAgent,
+  extractImageUrls,
   type InboundChatMessage,
   type SkillDefinition,
   type ToolGroupDefinition,
@@ -462,13 +463,15 @@ export class MessageDispatcher {
     }
   }
 
-  private async sendOutbound(inbound: InboundChatMessage, text: string): Promise<void> {
+  private async sendOutbound(inbound: InboundChatMessage, text: string, mediaUrls?: string[]): Promise<void> {
     const redis = getRedisClient();
+    const urls = (mediaUrls && mediaUrls.length > 0) ? mediaUrls : extractImageUrls(text);
     const payload = {
       platform: inbound.platform,
       accountId: inbound.accountId,
       platformChatId: inbound.platformChatId,
       text,
+      mediaUrls: urls.length > 0 ? urls : undefined,
       timestamp: Date.now(),
     };
     await redis.xadd(OUTBOUND_STREAM, '*', 'data', JSON.stringify(payload));
