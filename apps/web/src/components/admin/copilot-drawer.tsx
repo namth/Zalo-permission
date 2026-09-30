@@ -13,7 +13,10 @@ import {
   ShieldCheck,
   Check,
   Cpu,
-  Trash
+  Trash,
+  ArrowsOut,
+  ArrowsIn,
+  Minus
 } from '@phosphor-icons/react';
 
 interface CopilotMessageItem {
@@ -46,6 +49,17 @@ export function CopilotDrawer() {
   const [loading, setLoading] = useState(false);
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
 
+  // Dimensions & resizing (Default wider: 580px, taller: 640px)
+  const DEFAULT_WIDTH = 580;
+  const DEFAULT_HEIGHT = 640;
+  const MIN_WIDTH = 420;
+  const MIN_HEIGHT = 360;
+
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -57,6 +71,21 @@ export function CopilotDrawer() {
         setIsOpen(false);
       } else {
         setIsOpen(true);
+      }
+
+      const savedWidth = localStorage.getItem('omniagent_copilot_width');
+      const savedHeight = localStorage.getItem('omniagent_copilot_height');
+      if (savedWidth) {
+        const parsedW = parseInt(savedWidth, 10);
+        if (!isNaN(parsedW)) {
+          setWidth(Math.max(MIN_WIDTH, Math.min(window.innerWidth - 32, parsedW)));
+        }
+      }
+      if (savedHeight) {
+        const parsedH = parseInt(savedHeight, 10);
+        if (!isNaN(parsedH)) {
+          setHeight(Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 32, parsedH)));
+        }
       }
     } catch {
       // ignore
@@ -70,6 +99,88 @@ export function CopilotDrawer() {
     } catch {
       // ignore
     }
+  };
+
+  const handleToggleMaximize = () => {
+    setIsMaximized(prev => !prev);
+  };
+
+  const handleStartResize = (e: React.MouseEvent, direction: 'top' | 'left' | 'top-left') => {
+    e.preventDefault();
+    setIsResizing(true);
+    setIsMaximized(false);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = width;
+    const startHeight = height;
+
+    let latestHeight = startHeight;
+    let latestWidth = startWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (direction === 'top' || direction === 'top-left') {
+        const deltaY = startY - moveEvent.clientY;
+        const maxHeight = window.innerHeight - 32;
+        latestHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+        setHeight(latestHeight);
+      }
+      if (direction === 'left' || direction === 'top-left') {
+        const deltaX = startX - moveEvent.clientX;
+        const maxWidth = window.innerWidth - 32;
+        latestWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, startWidth + deltaX));
+        setWidth(latestWidth);
+      }
+    };
+
+    const onMouseUp = () => {
+      setIsResizing(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      try {
+        localStorage.setItem('omniagent_copilot_height', latestHeight.toString());
+        localStorage.setItem('omniagent_copilot_width', latestWidth.toString());
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleTouchStartResize = (e: React.TouchEvent, direction: 'top') => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    setIsResizing(true);
+    setIsMaximized(false);
+
+    const startY = touch.clientY;
+    const startHeight = height;
+    let latestHeight = startHeight;
+
+    const onTouchMove = (moveEvent: TouchEvent) => {
+      const curTouch = moveEvent.touches[0];
+      if (!curTouch) return;
+      const deltaY = startY - curTouch.clientY;
+      const maxHeight = window.innerHeight - 32;
+      latestHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+      setHeight(latestHeight);
+    };
+
+    const onTouchEnd = () => {
+      setIsResizing(false);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      try {
+        localStorage.setItem('omniagent_copilot_height', latestHeight.toString());
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', onTouchEnd);
   };
 
   // Load chat history from localStorage
@@ -269,14 +380,52 @@ export function CopilotDrawer() {
         </button>
       )}
 
-      {/* 2. SLIDE-OVER RIGHT SIDEBAR DRAWER (NO BACKDROP BLUR) */}
+      {/* 2. RESIZABLE FLOATING CHAT BOX */}
       <div
-        className={`fixed top-0 right-0 h-full w-[430px] max-w-[92vw] bg-white z-40 shadow-2xl border-l border-gray-200 flex flex-col transition-transform duration-300 ease-in-out transform ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+        style={{
+          width: isMaximized ? 'min(880px, calc(100vw - 32px))' : `${width}px`,
+          height: isMaximized ? 'calc(100vh - 32px)' : `${height}px`,
+          maxWidth: 'calc(100vw - 24px)',
+          maxHeight: 'calc(100vh - 24px)',
+        }}
+        className={`fixed bottom-4 right-4 bg-white z-40 shadow-2xl rounded-2xl border border-slate-300/90 flex flex-col overflow-hidden transition-all ${
+          isResizing ? 'select-none transition-none' : 'duration-200 ease-out'
+        } ${
+          isOpen
+            ? 'opacity-100 scale-100 pointer-events-auto translate-y-0'
+            : 'opacity-0 scale-95 pointer-events-none translate-y-8'
         }`}
       >
+        {/* Top edge resize handle (drag up / down to adjust height) */}
+        <div
+          onMouseDown={(e) => handleStartResize(e, 'top')}
+          onTouchStart={(e) => handleTouchStartResize(e, 'top')}
+          onDoubleClick={handleToggleMaximize}
+          className="group absolute top-0 left-0 right-0 h-3.5 z-50 cursor-ns-resize flex items-center justify-center hover:bg-indigo-500/25 active:bg-indigo-500/40 transition-colors select-none"
+          title="Kéo lên/xuống để chỉnh chiều cao (Nhấp đúp để phóng to/thu nhỏ)"
+        >
+          <div className="w-12 h-1 bg-white/40 group-hover:bg-yellow-300 group-hover:w-16 group-active:bg-yellow-400 rounded-full transition-all shadow-sm" />
+        </div>
+
+        {/* Left edge resize handle (drag left / right to adjust width) */}
+        <div
+          onMouseDown={(e) => handleStartResize(e, 'left')}
+          className="group absolute top-0 left-0 bottom-0 w-2.5 z-50 cursor-ew-resize hover:bg-indigo-500/25 active:bg-indigo-500/40 transition-colors select-none"
+          title="Kéo sang trái/phải để chỉnh độ rộng"
+        />
+
+        {/* Top-left corner resize handle */}
+        <div
+          onMouseDown={(e) => handleStartResize(e, 'top-left')}
+          className="absolute top-0 left-0 w-4 h-4 z-50 cursor-nwse-resize hover:bg-yellow-400/50 rounded-tl-2xl transition-colors select-none"
+          title="Kéo góc để chỉnh cả chiều cao và chiều rộng"
+        />
+
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0">
+        <div
+          onDoubleClick={handleToggleMaximize}
+          className="px-5 py-3.5 border-b border-gray-100 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between flex-shrink-0 select-none cursor-default"
+        >
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 text-yellow-300">
               <Sparkle size={20} weight="fill" />
@@ -295,6 +444,17 @@ export function CopilotDrawer() {
 
           <div className="flex items-center gap-1">
             <button
+              onClick={handleToggleMaximize}
+              title={isMaximized ? 'Thu nhỏ về kích thước tùy chỉnh' : 'Phóng to'}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
+            >
+              {isMaximized ? (
+                <ArrowsIn size={16} weight="bold" />
+              ) : (
+                <ArrowsOut size={16} weight="bold" />
+              )}
+            </button>
+            <button
               onClick={handleClearChat}
               title="Làm mới cuộc trò chuyện"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
@@ -303,10 +463,10 @@ export function CopilotDrawer() {
             </button>
             <button
               onClick={() => handleToggleOpen(false)}
-              title="Đóng Drawer"
+              title="Thu nhỏ / Đóng"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition"
             >
-              <X size={18} weight="bold" />
+              <Minus size={18} weight="bold" />
             </button>
           </div>
         </div>
