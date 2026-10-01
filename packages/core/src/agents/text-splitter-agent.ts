@@ -37,26 +37,28 @@ export class TextSplitterAgent {
       return [this.cleanSingleSentence(rawLines[0])];
     }
 
-    const systemPrompt = `Bạn là một AI Agent có nhiệm vụ xử lý văn bản. Hãy đọc đoạn văn bản đầu vào và thực hiện các bước sau để trả về một mảng các chuỗi đã được làm sạch.
+    const systemPrompt = `Bạn là một AI Agent có nhiệm vụ xử lý văn bản tin nhắn hội thoại cho ứng dụng chat (Zalo/Telegram). Hãy đọc đoạn văn bản đầu vào và tách thành một mảng các tin nhắn ngắn đã được làm sạch và chuẩn hóa.
 
 #### Mục tiêu:
-Chuyển đổi một đoạn văn bản thô thành một mảng các chuỗi. Mỗi chuỗi trong mảng phải là một câu hoàn chỉnh, được làm sạch và chuẩn hóa theo các quy tắc sau.
+Chuyển đổi một đoạn văn bản thô thành một mảng JSON các chuỗi tin nhắn. Mỗi chuỗi trong mảng là một tin nhắn sẽ được gửi tới người dùng theo thứ tự.
 
 #### Quy tắc xử lý:
 
-1. **Tách câu:** Tách văn bản thành các câu dựa trên các dấu xuống dòng (\\n). Coi mỗi dòng là một câu riêng biệt.
+1. **ĐỐI VỚI DẠNG THÔNG TIN DANH SÁCH (CỰC KỲ QUAN TRỌNG):**
+   * Khi văn bản chứa thông tin dạng danh sách liệt kê (ví dụ: danh sách website, danh sách sản phẩm, dịch vụ, hóa đơn, công nợ, nhiệm vụ, thành viên, các dòng bắt đầu bằng -, *, • hoặc số thứ tự 1., 2., v.v.):
+   * **BẮT BUỘC HIỂN THỊ DẠNG LIST XUỐNG DÒNG (\\n). TUYỆT ĐỐI KHÔNG VIẾT HOẶC GỘP THÀNH 1 HÀNG NGANG BẰNG DẤU PHẨY.**
+   * Giữ nguyên cấu trúc từng mục trên một dòng riêng biệt và giữ nguyên dấu gạch đầu dòng hoặc số thứ tự (ví dụ: "- website1\\n- website2\\n- website3").
+   * Khối danh sách này phải nằm trong MỘT chuỗi duy nhất trong mảng trả về, các mục ngăn cách nhau bởi ký tự xuống dòng \\n.
 
-2. **Gộp câu liên quan:** Nếu số lượng câu từ 5 câu trở lên và có các dòng liên tiếp có mối liên hệ chặt chẽ về ngữ nghĩa hoặc thuộc cùng một ý (ví dụ: liệt kê các gạch đầu dòng của cùng một chủ đề), hãy gộp chúng lại thành một chuỗi duy nhất. Sử dụng dấu phẩy (,) để nối các phần của câu được gộp lại. **Quan trọng**: không được thay đổi nội dung các dòng.
+2. **ĐỐI VỚI CÂU VĂN HỘI THOẠI THÔNG THƯỜNG (Chào hỏi, dẫn dắt, giải thích):**
+   * Tách thành các câu ngắn độc lập dựa trên dấu chấm ngắt câu hoặc dấu xuống dòng.
+   * Chuyển chữ cái đầu tiên thành chữ thường (lowercase) trừ tên riêng người hoặc địa danh (ví dụ: "dạ em đã lấy danh sách cho anh Nam Trần ạ").
+   * Xóa khoảng trắng thừa ở đầu và cuối câu.
+   * Xóa dấu chấm (.), phẩy (,), chấm phẩy (;) ở cuối mỗi câu hội thoại ngắn.
 
-3. **Làm sạch và chuẩn hóa:**
-   * **Loại bỏ ký tự đặc biệt:** Xóa tất cả các ký tự đặc biệt ở đầu mỗi câu (ví dụ: **, -, *, +, 1., 2., v.v.).
-   * **Bỏ viết hoa đầu câu:** Chuyển chữ cái đầu tiên của mỗi câu thành chữ thường (lowercase) ngoại trừ tên người hoặc tên riêng địa danh.
-   * **Xóa khoảng trắng thừa:** Loại bỏ tất cả các khoảng trắng thừa ở đầu và cuối mỗi câu.
-   * **Loại bỏ dấu câu cuối cùng:** Xóa các dấu chấm (.), phẩy (,), chấm phẩy (;), hoặc bất kỳ dấu câu nào khác ở cuối mỗi câu.
-
-4. **Định dạng đầu ra:**
-   * Trả về DUY NHẤT một mảng JSON các chuỗi: ["câu 1", "câu 2", ...]. Tuyệt đối không bọc trong markdown code block, không thêm văn bản giải thích.
-   * Mỗi phần tử trong mảng là một câu đã được xử lý hoàn chỉnh.
+3. **Định dạng đầu ra:**
+   * Trả về DUY NHẤT một mảng JSON các chuỗi: ["tin nhắn 1", "tin nhắn 2", ...].
+   * Tuyệt đối không bọc trong markdown code block, không thêm văn bản giải thích.
    * Không có chuỗi rỗng trong mảng.`;
 
     try {
@@ -94,7 +96,7 @@ Chuyển đổi một đoạn văn bản thô thành một mảng các chuỗi. 
   private cleanSingleSentence(s: string): string {
     let clean = s.trim();
 
-    // 1. Xóa ký tự đặc biệt ở đầu câu: **, -, *, +, 1., •, v.v.
+    // 1. Xóa ký tự đặc biệt ở đầu câu: **, -, *, +, 1., •, v.v. (chỉ áp dụng cho câu hội thoại đơn lẻ)
     clean = clean.replace(/^(?:[-*+•\d.)]\s*)+/g, '').trim();
     clean = clean.replace(/^\*\*/, '').trim();
 
@@ -124,28 +126,33 @@ Chuyển đổi một đoạn văn bản thô thành một mảng các chuỗi. 
 
     if (rawLines.length === 0) return [];
 
-    const cleanedLines = rawLines.map((line) => this.cleanSingleSentence(line)).filter((l) => l.length > 0);
+    const isListItem = (line: string) =>
+      /^[-*+•\d.)]/.test(line) ||
+      /^[a-zA-Z0-9-]+\.[a-z]{2,}/.test(line);
 
-    // Gộp câu liên quan nếu có từ 5 câu trở lên
-    if (cleanedLines.length >= 5) {
-      const grouped: string[] = [];
-      let currentGroup: string[] = [];
+    const results: string[] = [];
+    let currentList: string[] = [];
 
-      for (const line of cleanedLines) {
-        if (line.includes(':') && currentGroup.length > 0) {
-          grouped.push(currentGroup.join(', '));
-          currentGroup = [line];
-        } else if (currentGroup.length > 0 && currentGroup.length < 3) {
-          currentGroup.push(line);
-        } else {
-          if (currentGroup.length > 0) grouped.push(currentGroup.join(', '));
-          currentGroup = [line];
+    for (const line of rawLines) {
+      if (isListItem(line)) {
+        let cleanItem = line.replace(/^[+*•]\s*/, '- ');
+        if (!cleanItem.startsWith('- ') && !/^\d+\.\s*/.test(cleanItem)) {
+          cleanItem = `- ${cleanItem}`;
         }
+        currentList.push(cleanItem);
+      } else {
+        if (currentList.length > 0) {
+          results.push(currentList.join('\n'));
+          currentList = [];
+        }
+        results.push(this.cleanSingleSentence(line));
       }
-      if (currentGroup.length > 0) grouped.push(currentGroup.join(', '));
-      return grouped;
     }
 
-    return cleanedLines;
+    if (currentList.length > 0) {
+      results.push(currentList.join('\n'));
+    }
+
+    return results.filter((r) => r.trim().length > 0);
   }
 }
