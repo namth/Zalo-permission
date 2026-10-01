@@ -174,3 +174,52 @@ Kế hoạch được chia nhỏ thành 5 Milestone tuần tự với các Ticke
   * UI Component: Slide-over Right Sidebar Drawer (`w-[400px]`), trigger button góc phải, Action Preview Card kèm 1-Click Confirm.
 * **Tiêu chuẩn nghiệm thu (DoD):** Admin có thể ra lệnh bằng văn bản tự nhiên để thêm MCP server, gán quyền Workspace hoặc học skill mới qua Action Preview Card.
 
+---
+
+## 🎯 Milestone 6: Inbound Webhooks & Async Callback Gateway (`FEAT-WORKSPACE-WEBHOOKS`)
+
+### [TASK-601] Cập nhật Database & Neo4j Models cho Webhook
+* **Mục tiêu:** Tạo các bảng và quan hệ phục vụ Webhooks, Firebase credentials và Webhook Sessions.
+* **Chi tiết công việc:**
+  * Thêm models `WorkspaceWebhook`, `WorkspaceFirebaseConfig`, `WebhookSession` vào `packages/database/prisma/schema.prisma`.
+  * Cập nhật `AuditLog` với `callbackStatus`, `callbackType`, `callbackTarget`, `retryCount`.
+  * Chạy `prisma migrate dev --name feat_workspace_webhooks`.
+  * Tạo ràng buộc và node `(:WorkspaceWebhook)-[:BELONGS_TO]->(:Workspace)` trong Neo4j.
+* **Tiêu chuẩn nghiệm thu (DoD):** Migration chạy thành công, unit test kết nối và ghi nhận bảng mới pass 100%.
+
+### [TASK-602] Xây dựng Inbound Webhook Gateway Endpoint
+* **Mục tiêu:** Tiếp nhận HTTP request từ Mobile App / Web bên ngoài và đưa vào hàng đợi.
+* **Chi tiết công việc:**
+  * Tạo API Route `POST /api/v1/workspaces/[id]/webhooks/[webhook_id]`.
+  * Xác thực Secret Token (Header `Authorization: Bearer ...` hoặc `X-Webhook-Secret`).
+  * Chuẩn hóa `session_id` (tự sinh `wh_{wh_id}_{sender_id}` nếu thiếu).
+  * Đẩy payload vào Redis Stream `stream:inbound_messages` với platform `WEBHOOK`.
+  * Trả về ngay `202 Accepted` kèm `job_id`, `session_id`.
+* **Tiêu chuẩn nghiệm thu (DoD):** cURL test gửi request nhận đúng mã 202 Accepted, tin nhắn hiển thị trong Redis Stream.
+
+### [TASK-603] Xây dựng Quản lý Ngữ cảnh Hội thoại Đa lượt (WebhookSession Service)
+* **Mục tiêu:** Lưu và khôi phục lịch sử chat cho từng phiên gọi Webhook.
+* **Chi tiết công việc:**
+  * Tạo service `packages/core/src/sessions/webhook-session.ts`.
+  * Hàm `getSessionHistory(webhookId, sessionId)` lấy $N$ tin nhắn gần nhất nạp vào prompt cho Router & Worker Agent.
+  * Hàm `appendSessionMessage(webhookId, sessionId, senderId, message)` lưu hội thoại sau khi hoàn thành.
+* **Tiêu chuẩn nghiệm thu (DoD):** Thử nghiệm gửi 2 câu hỏi liên tiếp có liên quan, Agent hiểu đúng ngữ cảnh câu trước.
+
+### [TASK-604] Xây dựng Bộ điều phối Outbound Callback (HTTP POST & Firebase FCM)
+* **Mục tiêu:** Gửi kết quả xử lý của Agent về phía ứng dụng bên ngoài một cách tin cậy.
+* **Chi tiết công việc:**
+  * HTTP POST Callback: Thực thi POST kết quả về `callback.url` kèm cơ chế Exponential Backoff Retry (3 lần: 2s, 10s, 30s) khi gặp lỗi kết nối/5xx.
+  * Firebase FCM Push: Tích hợp Firebase Admin SDK, giải mã Service Account từ `WorkspaceFirebaseConfig` và gửi Data Message/Notification tới `callback.fcm_token`.
+  * Cập nhật trạng thái `callbackStatus` vào `audit_logs`.
+* **Tiêu chuẩn nghiệm thu (DoD):** Mock server nhận được callback HTTP, thiết bị nhận được thông báo FCM thành công.
+
+### [TASK-605] Xây dựng Giao diện Quản lý Webhooks & Firebase trên Web Dashboard
+* **Mục tiêu:** Cung cấp UI quản trị Webhook và cấu hình Firebase cho từng Workspace.
+* **Chi tiết công việc:**
+  * Tạo tab "Webhooks" trong màn hình `/workspaces/[id]`.
+  * Bảng danh sách Webhooks (URL, Secret Masked, Switch toggle, Regenerate Secret, Delete).
+  * Modal "Tạo Webhook Mới" hiển thị Secret Token 1 lần duy nhất kèm snippet cURL mẫu.
+  * Modal/Drawer "Cấu hình Firebase FCM" hỗ trợ drag & drop file `serviceAccountKey.json`.
+* **Tiêu chuẩn nghiệm thu (DoD):** Quản trị viên thao tác tạo, copy token, bật tắt Webhook và lưu Firebase config thành công trên UI.
+
+

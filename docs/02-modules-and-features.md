@@ -66,6 +66,10 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
   * Bật/tắt Skills cho Workspace.
   * Bật/tắt Tool Groups cho Workspace.
   * Bật/tắt ngoại lệ từng Tool đơn lẻ bên trong Tool Group.
+* **Quản lý Inbound Webhooks & Firebase:**
+  * Khởi tạo nhiều Webhook endpoint cho từng Workspace (`/api/v1/workspaces/{id}/webhooks/{wh_id}`).
+  * Quản lý Secret Token xác thực Inbound cho Mobile App & Web bên thứ ba.
+  * Cấu hình Firebase Cloud Messaging (FCM) credentials mã hóa AES-256-GCM ở cấp Workspace để đẩy thông báo về Mobile App.
 
 ---
 
@@ -79,8 +83,9 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
 ---
 
 ### Phân hệ 5: Multi-Agent Engine (Bộ máy Điều phối & Thực thi)
-* **Inbound Gateway:** Đưa tin nhắn chat từ Telegram/Zalo vào hàng đợi Redis Streams `stream:inbound_messages`.
-* **Tenant Resolver:** Truy vấn Neo4j từ `platform_chat_id` $\rightarrow$ Xác định `workspace_id`.
+* **Inbound Gateway:** Đưa tin nhắn từ Telegram/Zalo hoặc Inbound Webhooks HTTP POST vào hàng đợi Redis Streams `stream:inbound_messages`.
+* **Tenant Resolver:** Truy vấn Neo4j từ `platform_chat_id` hoặc `webhook_id` $\rightarrow$ Xác định `workspace_id`.
+* **Session Manager:** Quản lý ngữ cảnh hội thoại đa lượt qua `platform_chat_id` (Zalo/Tele) hoặc `session_id` (Webhook).
 * **Router Agent:**
   * Dùng LLM nhẹ & nhanh (`google/gemini-2.0-flash` qua OpenRouter).
   * Phân loại ý định $\rightarrow$ So khớp với các Skill được kích hoạt trong Workspace.
@@ -94,12 +99,14 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
     3. *Act:* Gọi Tool đã được resolve thông tin Auth & Scoped Variables.
     4. *Observe:* Đọc kết quả API trả về.
     5. *Final Answer:* Tổng hợp câu trả lời tự nhiên.
-* **Outbound Gateway:** Đưa tin nhắn ra `stream:outbound_messages` và gửi về nhóm chat gốc.
+* **Outbound Gateway & Callback Engine:**
+  * Kênh Chat: Đưa tin nhắn ra `stream:outbound_messages` và gửi về nhóm chat Zalo/Telegram gốc.
+  * Kênh Webhook: Bắn HTTP POST Callback tới client với cơ chế Retry Exponential Backoff (3 lần), hoặc gửi Push Notification về Mobile App qua Firebase FCM.
 
 ---
 
 ### Phân hệ 6: Audit & Tracing
-* Lưu vết toàn bộ chuỗi sự kiện: Tin nhắn vào $\rightarrow$ Ý định nhận diện $\rightarrow$ Skill/Tool đã cấp $\rightarrow$ Chuỗi suy nghĩ (Thought process) $\rightarrow$ Các API đã gọi kèm input/output $\rightarrow$ Thời gian phản hồi (Latency) $\rightarrow$ Trạng thái (Success/Error).
+* Lưu vết toàn bộ chuỗi sự kiện: Tin nhắn vào $\rightarrow$ Ý định nhận diện $\rightarrow$ Skill/Tool đã cấp $\rightarrow$ Chuỗi suy nghĩ (Thought process) $\rightarrow$ Các API đã gọi kèm input/output $\rightarrow$ Thời gian phản hồi (Latency) $\rightarrow$ Trạng thái (Success/Error/Callback Failed).
 
 ---
 
@@ -112,6 +119,15 @@ Hệ thống được cấu thành từ 6 phân hệ nghiệp vụ chính:
   3. `skill_management`: Dạy skill mới bằng ngôn ngữ tự nhiên, tạo System Prompt và liên kết Tool.
   4. `system_diagnostics`: Tra cứu Audit log và kiểm tra trạng thái kênh Zalo/Telegram.
 * **Cơ chế An toàn (Human-in-the-Loop):** Render Action Preview Card yêu cầu Admin bấm xác nhận trước khi thực thi mọi thao tác thay đổi dữ liệu; tự động ghi vết `audit_logs` với `action_type = 'COPILOT_ACTION'`.
+
+---
+
+### Phân hệ 8: Inbound Webhooks & Async Callback Gateway (`FEAT-WORKSPACE-WEBHOOKS`)
+* **Mở rộng Kênh Giao tiếp:** Cung cấp Endpoint RESTful cho Mobile App, Website hoặc hệ thống vệ tinh bên thứ ba gọi vào Agent.
+* **Xác thực Bảo mật:** Secret Token sinh tự động theo từng Webhook, hỗ trợ xác thực Bearer Token / Header `X-Webhook-Secret`.
+* **Hội thoại Đa lượt:** Hỗ trợ `session_id` để Agent duy trì bộ nhớ ngữ cảnh hỏi đáp liên tục, tự sinh session nếu client không cung cấp.
+* **Dynamic Callback Delivery:** Hỗ trợ callback bất đồng bộ linh hoạt qua HTTP POST (kèm retry) hoặc Firebase FCM Push Notification.
+
 
 ---
 

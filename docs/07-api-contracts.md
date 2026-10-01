@@ -396,3 +396,84 @@ Tất cả các API quản trị nội bộ đều tuân theo chuẩn RESTful JS
 }
 ```
 
+---
+
+## 6. Phân hệ Inbound Webhooks & Async Callback (`FEAT-WORKSPACE-WEBHOOKS`)
+
+### 6.1. Nhận Tin nhắn Inbound từ Client Bên Ngoài (Mobile App / Web)
+* **Endpoint:** `POST /api/v1/workspaces/{workspace_id}/webhooks/{webhook_id}`
+* **Xác thực:** Header `Authorization: Bearer <secret_token>` hoặc `X-Webhook-Secret: <secret_token>`
+* **Request Payload (HTTP Callback):**
+```json
+{
+  "prompt": "Kiểm tra tồn kho sản phẩm ABC",
+  "sender_id": "user_mobile_0901234567",
+  "session_id": "sess_order_check_01",
+  "callback": {
+    "type": "HTTP_POST",
+    "url": "https://api.my-app.com/v1/agent/callback"
+  }
+}
+```
+* **Request Payload (Firebase FCM Push):**
+```json
+{
+  "prompt": "Kiểm tra đơn hàng DH-9981",
+  "sender_id": "user_mobile_0901234567",
+  "callback": {
+    "type": "FIREBASE_FCM",
+    "fcm_token": "eK3lZ...fcm_registration_token_here..."
+  }
+}
+```
+* **Response Status:** `202 Accepted`
+* **Response Payload:**
+```json
+{
+  "success": true,
+  "message": "Message accepted and queued for agent processing",
+  "data": {
+    "job_id": "job_9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "session_id": "sess_order_check_01",
+    "status": "QUEUED",
+    "received_at": "2026-10-01T12:00:00Z"
+  }
+}
+```
+
+### 6.2. Cấu trúc JSON Outbound Callback Gửi về Client
+* **Phương thức:** HTTP `POST` đến `callback.url` (hoặc FCM Data Payload).
+* **Payload:**
+```json
+{
+  "event": "agent.response",
+  "job_id": "job_9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "session_id": "sess_order_check_01",
+  "sender_id": "user_mobile_0901234567",
+  "user_prompt": "Kiểm tra tồn kho sản phẩm ABC",
+  "response": "Sản phẩm ABC hiện còn 15 chiếc trong kho chi nhánh Hà Nội.",
+  "status": "SUCCESS",
+  "error": null,
+  "metadata": {
+    "workspace_id": "ws_hanoi_uuid",
+    "webhook_id": "wh_mobile_uuid",
+    "audit_log_id": "audit_log_uuid",
+    "execution_time_ms": 1420,
+    "completed_at": "2026-10-01T12:00:01.420Z"
+  }
+}
+```
+
+### 6.3. Quản lý Webhooks của Workspace (Dashboard APIs)
+* **Lấy danh sách:** `GET /api/workspaces/{id}/webhooks`
+* **Tạo mới Webhook:** `POST /api/workspaces/{id}/webhooks` (Body: `{ "name": "...", "description": "..." }`)
+* **Làm mới Secret:** `POST /api/workspaces/{id}/webhooks/{webhook_id}/regenerate-secret`
+* **Bật/Tắt:** `PATCH /api/workspaces/{id}/webhooks/{webhook_id}` (Body: `{ "is_active": boolean }`)
+* **Xóa:** `DELETE /api/workspaces/{id}/webhooks/{webhook_id}`
+
+### 6.4. Cấu hình Firebase FCM của Workspace (Dashboard APIs)
+* **Lấy cấu hình hiện tại:** `GET /api/workspaces/{id}/firebase-config`
+* **Cập nhật cấu hình:** `PUT /api/workspaces/{id}/firebase-config` (Body: `{ "project_id": "...", "client_email": "...", "service_account_json": "..." }`)
+* **Kiểm tra kết nối Firebase:** `POST /api/workspaces/{id}/firebase-config/test`
+
+

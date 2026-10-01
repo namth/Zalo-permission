@@ -12,6 +12,20 @@ generator client {
 enum PlatformType {
   TELEGRAM
   ZALO
+  WEBHOOK
+}
+
+enum CallbackStatus {
+  NONE
+  PENDING
+  SUCCESS
+  FAILED
+  CALLBACK_FAILED
+}
+
+enum CallbackType {
+  HTTP_POST
+  FIREBASE_FCM
 }
 
 enum ChannelAccountStatus {
@@ -73,6 +87,8 @@ model Workspace {
 
   channelChats         ChannelChat[]
   workspaceToolConfigs WorkspaceToolConfig[]
+  webhooks             WorkspaceWebhook[]
+  firebaseConfig       WorkspaceFirebaseConfig?
   auditLogs            AuditLog[]
 
   @@map("workspaces")
@@ -205,25 +221,83 @@ model WorkspaceToolConfig {
 }
 
 model AuditLog {
-  id             String        @id @default(uuid()) @db.Uuid
-  workspaceId    String?       @db.Uuid @map("workspace_id")
-  chatId         String?       @db.Uuid @map("chat_id")
+  id             String          @id @default(uuid()) @db.Uuid
+  workspaceId    String?         @db.Uuid @map("workspace_id")
+  chatId         String?         @db.Uuid @map("chat_id")
+  webhookId      String?         @db.Uuid @map("webhook_id")
   platform       PlatformType?
-  senderId       String?       @map("sender_id")
-  userPrompt     String?       @db.Text @map("user_prompt")
-  detectedIntent String?       @map("detected_intent")
-  matchedSkillId String?       @db.Uuid @map("matched_skill_id")
-  executionPlan  Json?         @default("[]") @map("execution_plan")
-  toolCalls      Json?         @default("[]") @map("tool_calls")
-  finalResponse  String?       @db.Text @map("final_response")
-  status         AuditStatus   @default(SUCCESS)
-  latencyMs      Int?         @map("latency_ms")
-  createdAt      DateTime     @default(now()) @map("created_at")
+  senderId       String?         @map("sender_id")
+  userPrompt     String?         @db.Text @map("user_prompt")
+  detectedIntent String?         @map("detected_intent")
+  matchedSkillId String?         @db.Uuid @map("matched_skill_id")
+  executionPlan  Json?           @default("[]") @map("execution_plan")
+  toolCalls      Json?           @default("[]") @map("tool_calls")
+  finalResponse  String?         @db.Text @map("final_response")
+  status         AuditStatus     @default(SUCCESS)
+  callbackStatus CallbackStatus? @default(NONE) @map("callback_status")
+  callbackType   CallbackType?   @map("callback_type")
+  callbackTarget String?         @db.Text @map("callback_target")
+  retryCount     Int             @default(0) @map("retry_count")
+  latencyMs      Int?            @map("latency_ms")
+  createdAt      DateTime        @default(now()) @map("created_at")
 
-  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  channelChat  ChannelChat? @relation(fields: [chatId], references: [id], onDelete: SetNull)
-  matchedSkill Skill?       @relation(fields: [matchedSkillId], references: [id], onDelete: SetNull)
+  workspace    Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  channelChat  ChannelChat?      @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  webhook      WorkspaceWebhook? @relation(fields: [webhookId], references: [id], onDelete: SetNull)
+  matchedSkill Skill?            @relation(fields: [matchedSkillId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+  @@index([webhookId, createdAt])
   @@map("audit_logs")
 }
+
+model WorkspaceWebhook {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid @map("workspace_id")
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  secretToken String   @db.VarChar(255) @map("secret_token")
+  isActive    Boolean  @default(true) @map("is_active")
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions  WebhookSession[]
+  auditLogs AuditLog[]
+
+  @@index([workspaceId])
+  @@map("workspace_webhooks")
+}
+
+model WorkspaceFirebaseConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @unique @db.Uuid @map("workspace_id")
+  projectId            String   @db.VarChar(100) @map("project_id")
+  clientEmail          String   @db.VarChar(255) @map("client_email")
+  encryptedCredentials String   @db.Text @map("encrypted_credentials")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_firebase_configs")
+}
+
+model WebhookSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  webhookId    String   @db.Uuid @map("webhook_id")
+  sessionId    String   @db.VarChar(128) @map("session_id")
+  senderId     String   @db.VarChar(128) @map("sender_id")
+  messages     Json     @default("[]")
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  webhook WorkspaceWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, sessionId])
+  @@index([webhookId, senderId])
+  @@map("webhook_sessions")
+}
+

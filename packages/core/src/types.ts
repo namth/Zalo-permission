@@ -1,4 +1,4 @@
-export type PlatformType = 'TELEGRAM' | 'ZALO';
+export type PlatformType = 'TELEGRAM' | 'ZALO' | 'WEBHOOK';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
@@ -7,6 +7,30 @@ export type AuthType = 'NONE' | 'BEARER' | 'API_KEY' | 'BASIC' | 'CUSTOM_HEADERS
 export type ProtocolType = 'REST' | 'MCP';
 
 export type McpTransportType = 'SSE' | 'STREAMABLE_HTTP' | 'DIRECT_HTTP';
+
+export interface WebhookCallbackConfig {
+  type: 'HTTP_POST' | 'FIREBASE_FCM';
+  url?: string;
+  fcmToken?: string;
+}
+
+export interface InboundChatMessage {
+  platform: PlatformType;
+  accountId?: string;
+  platformChatId: string;
+  senderId: string;
+  senderName?: string;
+  messageId: string;
+  text: string;
+  isGroup?: boolean;
+  quotedMessage?: QuotedMessageInfo;
+  mediaUrls?: string[];
+  timestamp: number;
+  workspaceId?: string;
+  webhookId?: string;
+  sessionId?: string;
+  callback?: WebhookCallbackConfig;
+}
 
 export interface ToolGroupDefinition {
   id: string;
@@ -73,19 +97,7 @@ export interface QuotedMessageInfo {
   mediaUrl?: string;
 }
 
-export interface InboundChatMessage {
-  platform: PlatformType;
-  accountId: string;
-  platformChatId: string;
-  senderId: string;
-  senderName?: string;
-  messageId: string;
-  text: string;
-  isGroup?: boolean;
-  quotedMessage?: QuotedMessageInfo;
-  mediaUrls?: string[];
-  timestamp: number;
-}
+
 
 export interface RouterDecision {
   intent: string;

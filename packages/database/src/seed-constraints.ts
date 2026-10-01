@@ -5,6 +5,7 @@ dotenv.config();
 
 const CONSTRAINTS = [
   'CREATE CONSTRAINT unique_workspace_id IF NOT EXISTS FOR (w:Workspace) REQUIRE w.id IS UNIQUE',
+  'CREATE CONSTRAINT unique_workspace_webhook_id IF NOT EXISTS FOR (wh:WorkspaceWebhook) REQUIRE wh.id IS UNIQUE',
   'CREATE CONSTRAINT unique_channel_chat_id IF NOT EXISTS FOR (c:ChannelChat) REQUIRE c.id IS UNIQUE',
   'CREATE CONSTRAINT unique_channel_chat_platform IF NOT EXISTS FOR (c:ChannelChat) REQUIRE (c.platform, c.platform_chat_id) IS UNIQUE',
   'CREATE CONSTRAINT unique_tool_group_id IF NOT EXISTS FOR (tg:ToolGroup) REQUIRE tg.id IS UNIQUE',
@@ -28,8 +29,11 @@ export async function seedNeo4jConstraints(): Promise<void> {
   console.log('--- Neo4j Constraints Initialized Successfully ---');
 }
 
+import { fileURLToPath } from 'url';
+import path from 'path';
+
 // Auto-run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   seedNeo4jConstraints()
     .then(async () => {
       const driver = getNeo4jDriver();

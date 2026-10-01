@@ -8,7 +8,12 @@ PostgreSQL đảm nhiệm vai trò lưu trữ bền vững (System of Record), h
 erDiagram
     WORKSPACES ||--o{ CHANNEL_CHATS : owns
     WORKSPACES ||--o{ WORKSPACE_TOOL_CONFIGS : overrides
+    WORKSPACES ||--o{ WORKSPACE_WEBHOOKS : owns
+    WORKSPACES ||--o| WORKSPACE_FIREBASE_CONFIGS : configures
     WORKSPACES ||--o{ AUDIT_LOGS : records
+
+    WORKSPACE_WEBHOOKS ||--o{ WEBHOOK_SESSIONS : maintains
+    WORKSPACE_WEBHOOKS ||--o{ AUDIT_LOGS : records
 
     CHANNEL_ACCOUNTS ||--o{ CHANNEL_CHATS : provides
     
@@ -107,11 +112,44 @@ erDiagram
         timestamp updated_at
     }
 
+    WORKSPACE_WEBHOOKS {
+        uuid id PK
+        uuid workspace_id FK
+        string name
+        string description
+        string secret_token "Hashed/Encrypted"
+        boolean is_active
+        jsonb metadata
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    WORKSPACE_FIREBASE_CONFIGS {
+        uuid id PK
+        uuid workspace_id FK UK
+        string project_id
+        string client_email
+        text encrypted_credentials "AES-256-GCM"
+        boolean is_active
+        timestamp updated_at
+    }
+
+    WEBHOOK_SESSIONS {
+        uuid id PK
+        uuid webhook_id FK
+        string session_id
+        string sender_id
+        jsonb messages "Lịch sử hội thoại"
+        timestamp last_active_at
+        timestamp created_at
+    }
+
     AUDIT_LOGS {
         uuid id PK
         uuid workspace_id FK
-        uuid chat_id FK
-        string platform "TELEGRAM | ZALO"
+        uuid chat_id FK "Nullable"
+        uuid webhook_id FK "Nullable: Gắn với Webhook"
+        string platform "TELEGRAM | ZALO | WEBHOOK"
         string sender_id
         text user_prompt
         string detected_intent
@@ -120,6 +158,10 @@ erDiagram
         jsonb tool_calls "Chi tiết input/output từng tool"
         text final_response
         string status "SUCCESS | FAILED | REJECTED"
+        string callback_status "NONE | PENDING | SUCCESS | FAILED | CALLBACK_FAILED"
+        string callback_type "HTTP_POST | FIREBASE_FCM"
+        text callback_target
+        integer retry_count
         integer latency_ms
         timestamp created_at
     }
@@ -144,6 +186,20 @@ generator client {
 enum PlatformType {
   TELEGRAM
   ZALO
+  WEBHOOK
+}
+
+enum CallbackStatus {
+  NONE
+  PENDING
+  SUCCESS
+  FAILED
+  CALLBACK_FAILED
+}
+
+enum CallbackType {
+  HTTP_POST
+  FIREBASE_FCM
 }
 
 enum ChannelAccountStatus {
@@ -195,6 +251,8 @@ model Workspace {
 
   channelChats         ChannelChat[]
   workspaceToolConfigs WorkspaceToolConfig[]
+  webhooks             WorkspaceWebhook[]
+  firebaseConfig       WorkspaceFirebaseConfig?
   auditLogs            AuditLog[]
 
   @@map("workspaces")
@@ -316,27 +374,84 @@ model WorkspaceToolConfig {
   @@map("workspace_tool_configs")
 }
 
+model WorkspaceWebhook {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  secretToken String   @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions  WebhookSession[]
+  auditLogs AuditLog[]
+
+  @@index([workspaceId])
+  @@map("workspace_webhooks")
+}
+
+model WorkspaceFirebaseConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  workspaceId          String   @unique @db.Uuid
+  projectId            String   @db.VarChar(100)
+  clientEmail          String   @db.VarChar(255)
+  encryptedCredentials String   @db.Text
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_firebase_configs")
+}
+
+model WebhookSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  webhookId    String   @db.Uuid
+  sessionId    String   @db.VarChar(128)
+  senderId     String   @db.VarChar(128)
+  messages     Json     @default("[]")
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  webhook WorkspaceWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, sessionId])
+  @@index([webhookId, senderId])
+  @@map("webhook_sessions")
+}
+
 model AuditLog {
-  id             String      @id @default(uuid()) @db.Uuid
-  workspaceId    String?     @db.Uuid
-  chatId         String?     @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
+  workspaceId    String?         @db.Uuid
+  chatId         String?         @db.Uuid
+  webhookId      String?         @db.Uuid
   platform       PlatformType
   senderId       String
-  userPrompt     String      @db.Text
+  userPrompt     String          @db.Text
   detectedIntent String?
-  matchedSkillId String?     @db.Uuid
-  executionPlan  Json?       @default("[]")
-  toolCalls      Json?       @default("[]")
-  finalResponse  String?     @db.Text
-  status         AuditStatus @default(SUCCESS)
+  matchedSkillId String?         @db.Uuid
+  executionPlan  Json?           @default("[]")
+  toolCalls      Json?           @default("[]")
+  finalResponse  String?         @db.Text
+  status         AuditStatus     @default(SUCCESS)
+  callbackStatus CallbackStatus  @default(NONE)
+  callbackType   CallbackType?
+  callbackTarget String?         @db.Text
+  retryCount     Int             @default(0)
   latencyMs      Int?
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime        @default(now())
 
-  workspace    Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  channelChat  ChannelChat? @relation(fields: [chatId], references: [id], onDelete: SetNull)
-  matchedSkill Skill?       @relation(fields: [matchedSkillId], references: [id], onDelete: SetNull)
+  workspace    Workspace?        @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  channelChat  ChannelChat?      @relation(fields: [chatId], references: [id], onDelete: SetNull)
+  webhook      WorkspaceWebhook? @relation(fields: [webhookId], references: [id], onDelete: SetNull)
+  matchedSkill Skill?            @relation(fields: [matchedSkillId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+  @@index([webhookId, createdAt])
   @@map("audit_logs")
 }
 ```
@@ -350,12 +465,14 @@ Neo4j lưu trữ cấu trúc liên kết và giải quyết các bài toán phâ
 ### 3.1. Các Loại Node Labels:
 * `(:Workspace { id: String, name: String })`
 * `(:ChannelChat { id: String, platform: String, platform_chat_id: String })`
+* `(:WorkspaceWebhook { id: String, name: String, is_active: Boolean })`
 * `(:ToolGroup { id: String, key: String, name: String })`
 * `(:Tool { id: String, key: String, name: String })`
 * `(:Skill { id: String, key: String, name: String })`
 
 ### 3.2. Các Loại Quan hệ (Relationships):
 * `(:ChannelChat)-[:BELONGS_TO]->(:Workspace)`: Nhóm chat thuộc Workspace nào.
+* `(:WorkspaceWebhook)-[:BELONGS_TO]->(:Workspace)`: Webhook endpoint thuộc Workspace nào.
 * `(:Tool)-[:PART_OF]->(:ToolGroup)`: Tool API thuộc nhóm công cụ nào.
 * `(:Skill)-[:REQUIRES]->(:Tool)`: Skill cần Tool nào để hoạt động.
 * `(:Workspace)-[:CAN_USE]->(:Skill)`: Workspace được phép chạy Skill nào.
@@ -367,9 +484,14 @@ Neo4j lưu trữ cấu trúc liên kết và giải quyết các bài toán phâ
 
 ### 3.3. Các Câu lệnh Cypher Chuẩn (Production Cypher Queries)
 
-#### A. Tra cứu Workspace từ Tin nhắn Kênh:
+#### A. Tra cứu Workspace từ Tin nhắn Kênh hoặc Webhook:
 ```cypher
+// Tra cứu từ kênh chat Zalo / Telegram
 MATCH (c:ChannelChat { platform: $platform, platform_chat_id: $platform_chat_id })-[:BELONGS_TO]->(w:Workspace)
+RETURN w.id AS workspace_id, w.name AS workspace_name;
+
+// Tra cứu từ Webhook Inbound
+MATCH (wh:WorkspaceWebhook { id: $webhook_id, is_active: true })-[:BELONGS_TO]->(w:Workspace { is_active: true })
 RETURN w.id AS workspace_id, w.name AS workspace_name;
 ```
 
@@ -396,6 +518,7 @@ RETURN tg.id AS group_id, tg.key AS group_key, t.id AS tool_id, t.key AS tool_ke
 #### D. Tạo Khóa duy nhất (Constraints) trong Neo4j:
 ```cypher
 CREATE CONSTRAINT unique_workspace_id IF NOT EXISTS FOR (w:Workspace) REQUIRE w.id IS UNIQUE;
+CREATE CONSTRAINT unique_workspace_webhook_id IF NOT EXISTS FOR (wh:WorkspaceWebhook) REQUIRE wh.id IS UNIQUE;
 CREATE CONSTRAINT unique_channel_chat_id IF NOT EXISTS FOR (c:ChannelChat) REQUIRE c.id IS UNIQUE;
 CREATE CONSTRAINT unique_channel_chat_platform IF NOT EXISTS FOR (c:ChannelChat) REQUIRE (c.platform, c.platform_chat_id) IS UNIQUE;
 CREATE CONSTRAINT unique_tool_group_id IF NOT EXISTS FOR (tg:ToolGroup) REQUIRE tg.id IS UNIQUE;

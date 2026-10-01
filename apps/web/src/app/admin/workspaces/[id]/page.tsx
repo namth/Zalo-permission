@@ -11,6 +11,7 @@ import {
   Copy, MagnifyingGlass, Info, ShieldCheck
 } from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
+import { WorkspaceWebhooksTab } from './components/workspace-webhooks-tab';
 
 interface Workspace {
   id: string;
@@ -103,7 +104,7 @@ export default function WorkspaceDetailPage() {
   const router = useRouter();
   const workspaceId = params?.id as string;
 
-  const [activeTab, setActiveTab] = useState<'info' | 'groups' | 'tools' | 'skills' | 'users'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'groups' | 'tools' | 'skills' | 'users' | 'webhooks'>('info');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -659,6 +660,7 @@ export default function WorkspaceDetailPage() {
             { id: 'tools', label: 'Công cụ & Biến tùy biến', icon: Wrench, count: tools.length },
             { id: 'skills', label: 'Kỹ năng (Skills)', icon: Sparkle, count: skills.length },
             { id: 'users', label: 'Thành viên & Quyền', icon: Users, count: users.length },
+            { id: 'webhooks', label: 'Inbound Webhooks', icon: Globe },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1126,6 +1128,11 @@ export default function WorkspaceDetailPage() {
                 {skills.length === 0 && <p className="text-center py-8 text-gray-500 bg-gray-50 rounded">No skills linked.</p>}
               </div>
             </div>
+          )}
+
+          {/* INBOUND WEBHOOKS & FIREBASE FCM TAB */}
+          {activeTab === 'webhooks' && (
+            <WorkspaceWebhooksTab workspaceId={workspaceId} />
           )}
 
         </div>
