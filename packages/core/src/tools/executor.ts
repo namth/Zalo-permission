@@ -54,13 +54,32 @@ export class ToolExecutor {
       const rawBaseUrl = VariableInjector.injectString(group.baseUrl, scopedVariables);
       const authHeaders: Record<string, string> = {};
 
-      if (scopedVariables.AUTH_TOKEN || scopedVariables.API_KEY) {
-        const token = scopedVariables.AUTH_TOKEN || scopedVariables.API_KEY;
+      const token =
+        scopedVariables.AUTH_TOKEN ||
+        scopedVariables.API_KEY ||
+        scopedVariables.TOKEN ||
+        scopedVariables.BEARER_TOKEN ||
+        scopedVariables.API_TOKEN ||
+        scopedVariables.SECRET_KEY;
+
+      if (token) {
         authHeaders['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       } else if (group.defaultAuthConfig && typeof group.defaultAuthConfig === 'object') {
         const defaultToken = (group.defaultAuthConfig as any).token || (group.defaultAuthConfig as any).apiKey;
         if (defaultToken) {
           authHeaders['Authorization'] = defaultToken.startsWith('Bearer ') ? defaultToken : `Bearer ${defaultToken}`;
+        }
+      }
+
+      // Check for custom header variables in scopedVariables (e.g. X_API_KEY, HEADER_*)
+      for (const [vKey, vVal] of Object.entries(scopedVariables)) {
+        if (!vVal) continue;
+        const upper = vKey.toUpperCase();
+        if (upper === 'X_API_KEY' || upper === 'X-API-KEY') {
+          authHeaders['X-API-Key'] = vVal;
+        } else if (upper.startsWith('HEADER_')) {
+          const headerName = vKey.substring(7).replace(/_/g, '-');
+          authHeaders[headerName] = vVal;
         }
       }
 
@@ -123,15 +142,31 @@ export class ToolExecutor {
     // Áp dụng Authentication theo Auth Type
     switch (group.authType) {
       case 'BEARER': {
-        const token = scopedVariables.API_KEY || scopedVariables.TOKEN || scopedVariables.BEARER_TOKEN;
+        const token =
+          scopedVariables.AUTH_TOKEN ||
+          scopedVariables.API_KEY ||
+          scopedVariables.TOKEN ||
+          scopedVariables.BEARER_TOKEN ||
+          scopedVariables.API_TOKEN ||
+          scopedVariables.SECRET_KEY ||
+          (group.defaultAuthConfig && typeof group.defaultAuthConfig === 'object'
+            ? (group.defaultAuthConfig as any).token || (group.defaultAuthConfig as any).apiKey
+            : undefined);
         if (token) {
-          headers.Authorization = `Bearer ${token}`;
+          headers.Authorization = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
         }
         break;
       }
       case 'API_KEY': {
         const keyHeader = (group.defaultAuthConfig?.header_name as string) || 'X-API-Key';
-        const apiKey = scopedVariables.API_KEY || scopedVariables.KEY;
+        const apiKey =
+          scopedVariables.API_KEY ||
+          scopedVariables.KEY ||
+          scopedVariables.AUTH_TOKEN ||
+          scopedVariables.TOKEN ||
+          (group.defaultAuthConfig && typeof group.defaultAuthConfig === 'object'
+            ? (group.defaultAuthConfig as any).apiKey || (group.defaultAuthConfig as any).token
+            : undefined);
         if (apiKey) {
           headers[keyHeader] = apiKey;
         }

@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
-import { RouterAgent } from '../agents/router-agent.ts';
-import type { SkillDefinition, ToolGroupDefinition } from '../types.ts';
+import { RouterAgent } from '../agents/router-agent.js';
+import type { SkillDefinition, ToolGroupDefinition } from '../types.js';
 
 dotenv.config();
 

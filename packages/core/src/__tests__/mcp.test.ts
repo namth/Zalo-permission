@@ -1,6 +1,6 @@
 import assert from 'node:assert';
-import { McpConfigParser } from '../tools/mcp-parser.ts';
-import { McpToolExecutor } from '../tools/mcp-executor.ts';
+import { McpConfigParser } from '../tools/mcp-parser.js';
+import { McpToolExecutor } from '../tools/mcp-executor.js';
 
 console.log('Running MCP Unit Tests...\n');
 

@@ -1768,6 +1768,7 @@ function ToolGroupConfigCard({
 
   // Scoped Data Form state
   const [showAddData, setShowAddData] = useState(false);
+  const [showGuide, setShowGuide] = useState(true);
   const [addKey, setAddKey] = useState('');
   const [addValue, setAddValue] = useState('');
   const [showAddValueSecret, setShowAddValueSecret] = useState(false);
@@ -1928,7 +1929,7 @@ function ToolGroupConfigCard({
   };
 
   // Quick suggestion chips
-  const SUGGESTED_KEYS = ['API_KEY', 'AUTH_TOKEN', 'BRANCH_ID', 'BASE_URL', 'TENANT_ID', 'CLIENT_SECRET'];
+  const SUGGESTED_KEYS = ['AUTH_TOKEN', 'API_KEY', 'BRANCH_ID', 'BASE_URL', 'TENANT_ID', 'CLIENT_SECRET'];
 
   return (
     <div
@@ -2066,6 +2067,76 @@ function ToolGroupConfigCard({
               )}
             </div>
 
+            {/* Guide & Troubleshooting Banner */}
+            <div className="mb-4 rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50/90 to-indigo-50/40 p-3.5 text-xs text-blue-950 shadow-2xs">
+              <div
+                className="flex items-center justify-between cursor-pointer select-none"
+                onClick={() => setShowGuide(!showGuide)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 flex-shrink-0">
+                    <Info size={15} weight="bold" />
+                  </div>
+                  <span className="font-bold text-blue-900 text-xs">
+                    Hướng dẫn gắn Key xác thực &amp; Sửa lỗi 401 ({group.protocol_type === 'MCP' ? 'Native MCP' : 'REST API'})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-0.5 rounded hover:bg-blue-100/50 transition flex items-center gap-1"
+                >
+                  <span>{showGuide ? 'Thu gọn' : 'Xem chi tiết'}</span>
+                  {showGuide ? <CaretDown size={13} weight="bold" /> : <CaretRight size={13} weight="bold" />}
+                </button>
+              </div>
+
+              {showGuide && (
+                <div className="mt-3 pt-3 border-t border-blue-200/60 space-y-2 text-[11.5px] leading-relaxed text-blue-900">
+                  {group.protocol_type === 'MCP' ? (
+                    <>
+                      <p>
+                        <strong>❓ Gặp lỗi 401 Unauthorized khi Agent gọi Tool:</strong> MCP Server yêu cầu khóa xác thực bảo mật trước khi cho phép Agent truy vấn dữ liệu.
+                      </p>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-blue-200/60 space-y-1.5 font-sans">
+                        <div className="font-semibold text-indigo-950 flex items-center gap-1">
+                          <span>Các bước khắc phục ngay:</span>
+                        </div>
+                        <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                          <li>Bấm nút <strong>&quot;Thêm Biến Mới&quot;</strong> ở góc trên bên phải.</li>
+                          <li>
+                            Tại ô <strong>Tên biến (Key)</strong>: Nhập <code className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono font-bold">AUTH_TOKEN</code> (hoặc bấm chọn gợi ý <code className="bg-gray-100 px-1 rounded font-mono">AUTH_TOKEN</code> / <code className="bg-gray-100 px-1 rounded font-mono">API_KEY</code>).
+                          </li>
+                          <li>
+                            Tại ô <strong>Giá trị (Value)</strong>: Dán mã Secret Key / Token của bạn và bấm <strong>&quot;Lưu Biến&quot;</strong>.
+                          </li>
+                        </ol>
+                      </div>
+                      <p className="text-[11px] text-blue-800">
+                        ⚡ <strong>Cơ chế tự động:</strong> Khi thực thi bất kỳ tool nào thuộc nhóm <em>{group.name}</em>, hệ thống sẽ tự động gửi kèm Header: <br />
+                        <code className="bg-blue-100/90 text-blue-950 px-2 py-0.5 rounded font-mono text-[11px] inline-block mt-1">
+                          Authorization: Bearer &lt;AUTH_TOKEN&gt;
+                        </code>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        <strong>Cấu hình xác thực cho REST API:</strong> Bạn có thể cấu hình Token xác thực hoặc các biến môi trường riêng cho từng Không gian làm việc.
+                      </p>
+                      <div className="bg-white/80 p-2.5 rounded-lg border border-blue-200/60 space-y-1 text-slate-700">
+                        <p>
+                          • <strong>Token / API Key:</strong> Tạo biến <code className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono font-bold">API_KEY</code> hoặc <code className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono font-bold">AUTH_TOKEN</code>. Hệ thống sẽ tự động gán vào Header tương ứng.
+                        </p>
+                        <p>
+                          • <strong>Tham số tùy biến:</strong> Các biến như <code className="bg-gray-100 px-1 rounded font-mono font-bold">BRANCH_ID</code>, <code className="bg-gray-100 px-1 rounded font-mono font-bold">TENANT_ID</code>... sẽ được tự động điền vào URL (dạng <code className="bg-gray-100 px-1 rounded font-mono">&#123;param&#125;</code>) hoặc Body (dạng <code className="bg-gray-100 px-1 rounded font-mono">&#123;&#123;KEY&#125;&#125;</code>) khi gọi API.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Quick Suggestions & Add Form */}
             {showAddData && (
               <form onSubmit={handleAddData} className="mb-4 p-4 bg-white border border-indigo-200 rounded-xl shadow-xs space-y-3">
@@ -2086,6 +2157,13 @@ function ToolGroupConfigCard({
                   </div>
                 </div>
 
+                {['AUTH_TOKEN', 'API_KEY', 'TOKEN', 'BEARER_TOKEN', 'API_TOKEN', 'SECRET_KEY'].includes(addKey) && (
+                  <div className="text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                    <ShieldCheck size={14} weight="bold" />
+                    <span>Biến xác thực chuẩn: Sẽ tự động được gán vào Header <strong>Authorization: Bearer</strong> khi gọi Tool.</span>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-1">
@@ -2093,7 +2171,7 @@ function ToolGroupConfigCard({
                     </label>
                     <input
                       type="text"
-                      placeholder="Ví dụ: API_KEY, BRANCH_ID"
+                      placeholder="Ví dụ: AUTH_TOKEN, API_KEY, BRANCH_ID"
                       className="w-full px-3 py-2 text-xs font-mono uppercase border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                       value={addKey}
                       onChange={(e) => setAddKey(e.target.value.toUpperCase())}
