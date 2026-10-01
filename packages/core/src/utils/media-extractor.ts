@@ -26,3 +26,40 @@ export function extractImageUrls(input: string): string[] {
 
   return Array.from(urls);
 }
+
+/**
+ * Xóa bỏ phần nội dung có chứa link ảnh đã được trích xuất (link markdown ![alt](url), link raw VietQR, 
+ * và các dòng nhãn thừa như "- **Mã QR thanh toán:**") để chỉ gửi thông tin còn lại một cách ngắn gọn, súc tích.
+ */
+export function cleanTextAfterMediaExtraction(input: string, mediaUrls?: string[]): string {
+  if (!input) return '';
+  let cleaned = input;
+
+  // 1. Loại bỏ cú pháp markdown ảnh: ![alt](url)
+  cleaned = cleaned.replace(/!\[.*?\]\([^\s)]+\)/gi, '');
+
+  // 2. Loại bỏ link ảnh trực tiếp
+  const urlsToRemove = mediaUrls && mediaUrls.length > 0 ? mediaUrls : extractImageUrls(input);
+  for (const url of urlsToRemove) {
+    cleaned = cleaned.split(url).join('');
+  }
+
+  // 3. Loại bỏ các dòng tiêu đề/nhãn chỉ dùng để giới thiệu ảnh vừa bị xóa
+  const lines = cleaned.split('\n');
+  const filteredLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    // Khớp các dòng như "- **Mã QR thanh toán:**", "**Ảnh mã QR:**", "Mã QR:", "- Link ảnh:"
+    const isImageLabel = /^(?:[-*+•]\s*)?(?:\*\*)?(?:ảnh\s+)?(?:mã\s+)?(?:qr(?:\s+code)?|hình\s+ảnh|vietqr)(?:\s+thanh\s+toán)?(?:\s*[:*]+)*\s*$/i.test(trimmed);
+    if (isImageLabel) {
+      return false;
+    }
+    // Khớp các dòng chỉ còn lại dấu gạch đầu dòng hoặc dấu sao/hai chấm trơ trọi
+    if (/^(?:[-*+•]\s*)?(?:[*:\s]*)\s*$/.test(trimmed)) {
+      return false;
+    }
+    return true;
+  });
+
+  cleaned = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned;
+}

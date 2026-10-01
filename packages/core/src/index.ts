@@ -6,5 +6,6 @@ export * from './tools/mcp-executor.js';
 export * from './agents/router-agent.js';
 export * from './agents/worker-agent.js';
 export * from './agents/vision-agent.js';
+export * from './agents/text-splitter-agent.js';
 export * from './utils/media-extractor.js';
 

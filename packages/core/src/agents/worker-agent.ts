@@ -456,10 +456,11 @@ export class WorkerAgent {
    - KHÔNG cảm ơn sáo rỗng (như "Cảm ơn anh đã tin tưởng và đồng hành cùng em trong mỗi giao dịch nhé...").
    - KHÔNG đặt câu hỏi gợi mở thừa thãi (như "Nếu cần thêm gì, anh cứ nhắn em ngay ạ", "Anh còn cần em hỗ trợ gì nữa không?").
    - KHÔNG gợi ý thừa thãi hoặc viết P/S buôn chuyện ngoài lề (như "P/s: Em thấy anh hay đi uống trà...").
-3. ĐỊNH DẠNG:
-   - Câu mở đầu lịch sự, ngắn gọn: "Dạ em đã ghi nhận chi tiêu cho anh ${senderName || ''} rồi ạ:" (hoặc câu ngắn gọn tương tự tùy tác vụ).
+3. ĐỊNH DẠNG & EMOJI:
+   - Câu mở đầu lịch sự, ngắn gọn: "Dạ em đã ghi nhận cho anh ${senderName || ''} rồi ạ:" (hoặc câu ngắn gọn tương tự tùy tác vụ).
    - Nội dung chính tóm tắt bằng bullet points ngắn, sạch sẽ, dễ đọc trên điện thoại.
-   - Thêm 1-2 emoji phù hợp nhẹ nhàng, không lạm dụng icon lòe loẹt.`;
+   - TUYỆT ĐỐI KHÔNG lạm dụng emoji. Với công việc bình thường báo cáo hoạt động của tool, tra cứu thông tin thì KHÔNG cần thiết emoji, chỉ gửi emoji khi thật sự cần thiết thể hiện cảm xúc.
+   - Trả lời càng ngắn gọn, đúng trọng tâm càng tốt.`;
 
     let recentHistoryContext = '';
     if (conversationHistory && conversationHistory.length > 0) {
@@ -512,8 +513,8 @@ Người dùng vừa đưa ra yêu cầu cần thực thi công cụ hoặc tra 
 Hãy viết NGAY 1 câu phản hồi ngắn gọn (chỉ 1 câu, tối đa 15-20 từ) thông báo rằng em đã nhận được yêu cầu và bảo người dùng chờ em một chút trong khi em tiến hành thực hiện.
 Quy tắc:
 1. Luôn tự xưng "em", gọi người dùng là "anh ${senderName}" hoặc "chị ${senderName}".
-2. Văn phong tự nhiên, ấm áp, thêm emoji phù hợp (ví dụ: ✨, 😊, ạ).
-3. ĐI THẲNG VÀO HÀNH ĐỘNG (ví dụ: "Dạ anh ${senderName} chờ em một chút em lưu sổ chi tiêu ngay nhé ạ! ✨", hoặc "Dạ em đang tra cứu cho anh đây ạ!").
+2. Văn phong tự nhiên, lịch sự, KHÔNG lạm dụng emoji (công việc bình thường không cần emoji).
+3. ĐI THẲNG VÀO HÀNH ĐỘNG, TRẢ LỜI CÀNG NGẮN GỌN CÀNG TỐT (ví dụ: "Dạ anh ${senderName} chờ em một chút em lưu sổ chi tiêu ngay nhé ạ.", hoặc "Dạ em đang tra cứu cho anh đây ạ.").
 4. CHỈ TRẢ VỀ DUY NHẤT 1 CÂU NÓI, không giải thích gì thêm.`;
 
     const userContent = `Yêu cầu của ${senderName}: "${userPrompt}"
@@ -527,14 +528,14 @@ Gợi ý ban đầu: ${suggestedPreAck || 'Không có'}`;
           { role: 'system', content: systemInstruction },
           { role: 'user', content: userContent },
         ],
-        temperature: 0.5,
+        temperature: 0.3,
         max_tokens: 60,
       });
 
-      return completion.choices[0]?.message?.content?.trim() || `Dạ anh/chị chờ em một chút em xử lý ngay nhé ạ! ✨`;
+      return completion.choices[0]?.message?.content?.trim() || `Dạ anh/chị chờ em một chút em xử lý ngay nhé.`;
     } catch (err) {
       console.warn('[WorkerAgent] Failed to generate pre-ack with DeepSeek, using fallback:', err);
-      return `Dạ anh/chị chờ em một chút em kiểm tra và thực hiện ngay nhé ạ! ✨`;
+      return `Dạ anh/chị chờ em một chút em kiểm tra và thực hiện ngay nhé.`;
     }
   }
 }

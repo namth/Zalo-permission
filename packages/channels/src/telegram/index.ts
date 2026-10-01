@@ -95,28 +95,37 @@ export class TelegramChannelAdapter {
   }
 
   /**
-   * Gửi tin nhắn trả lời về nhóm chat (hỗ trợ gửi kèm ảnh như VietQR, hình ảnh hóa đơn)
+   * Gửi tin nhắn trả lời về nhóm chat
+   * Hỗ trợ gửi ảnh đính kèm (VietQR, hóa đơn) và tách thành các câu ngắn gửi lần lượt cách nhau 1s
    */
-  async sendMessage(platformChatId: string, text: string, mediaUrls?: string[]): Promise<void> {
+  async sendMessage(platformChatId: string, messages: string | string[], mediaUrls?: string[]): Promise<void> {
+    const messageList = Array.isArray(messages) ? messages : [messages];
+
+    // 1. Gửi ảnh trước nếu có
     if (mediaUrls && mediaUrls.length > 0) {
-      let isCaptionSent = false;
       for (const url of mediaUrls) {
         try {
-          if (!isCaptionSent && text && text.length <= 1024) {
-            await this.bot.api.sendPhoto(platformChatId, url, { caption: text });
-            isCaptionSent = true;
-          } else {
-            await this.bot.api.sendPhoto(platformChatId, url);
-          }
+          await this.bot.api.sendPhoto(platformChatId, url);
         } catch (photoErr) {
           console.warn(`[TelegramAdapter] Failed to send photo ${url}:`, photoErr);
         }
       }
-      if (isCaptionSent) return;
     }
 
-    if (text) {
-      await this.bot.api.sendMessage(platformChatId, text);
+    // 2. Gửi lần lượt từng câu ngắn cách nhau 1s
+    for (let i = 0; i < messageList.length; i++) {
+      const sentence = messageList[i]?.trim();
+      if (!sentence) continue;
+
+      if ((mediaUrls && mediaUrls.length > 0) || i > 0) {
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+
+      try {
+        await this.bot.api.sendMessage(platformChatId, sentence);
+      } catch (sendErr) {
+        console.warn(`[TelegramAdapter] Failed to send sentence to ${platformChatId}:`, sendErr);
+      }
     }
   }
 

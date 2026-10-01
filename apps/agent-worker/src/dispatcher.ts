@@ -3,7 +3,9 @@ import {
   RouterAgent,
   WorkerAgent,
   VisionAgent,
+  TextSplitterAgent,
   extractImageUrls,
+  cleanTextAfterMediaExtraction,
   type InboundChatMessage,
   type SkillDefinition,
   type ToolGroupDefinition,
@@ -24,11 +26,13 @@ export class MessageDispatcher {
   private routerAgent: RouterAgent;
   private workerAgent: WorkerAgent;
   private visionAgent: VisionAgent;
+  private textSplitterAgent: TextSplitterAgent;
 
   constructor() {
     this.routerAgent = new RouterAgent();
     this.workerAgent = new WorkerAgent();
     this.visionAgent = new VisionAgent();
+    this.textSplitterAgent = new TextSplitterAgent();
   }
 
   /**
@@ -465,12 +469,21 @@ export class MessageDispatcher {
 
   private async sendOutbound(inbound: InboundChatMessage, text: string, mediaUrls?: string[]): Promise<void> {
     const redis = getRedisClient();
+    // 1. Trích xuất URL hình ảnh (nếu có)
     const urls = (mediaUrls && mediaUrls.length > 0) ? mediaUrls : extractImageUrls(text);
+
+    // 2. Làm sạch văn bản: Xóa bỏ markdown ảnh và link URL ảnh
+    const cleanedText = cleanTextAfterMediaExtraction(text, urls);
+
+    // 3. Tách nhỏ thành các câu ngắn theo quy tắc (Workflow Bước 8)
+    const sentences = await this.textSplitterAgent.splitIntoSentences(cleanedText);
+
     const payload = {
       platform: inbound.platform,
       accountId: inbound.accountId,
       platformChatId: inbound.platformChatId,
-      text,
+      text: cleanedText,
+      messages: sentences.length > 0 ? sentences : [cleanedText],
       mediaUrls: urls.length > 0 ? urls : undefined,
       timestamp: Date.now(),
     };

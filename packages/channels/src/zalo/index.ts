@@ -72,6 +72,81 @@ async function downloadImageToTempFile(url: string): Promise<string | null> {
   }
 }
 
+/**
+ * Trích xuất kích thước ảnh (width, height) thuần Buffer từ header của PNG, JPEG, GIF, WEBP
+ */
+function getImageDimensions(buffer: Buffer): { width: number; height: number } {
+  // PNG
+  if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  // GIF
+  if (buffer.length >= 10 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  // JPEG
+  if (buffer.length >= 4 && buffer[0] === 0xFF && buffer[1] === 0xD8) {
+    let offset = 2;
+    while (offset < buffer.length - 8) {
+      if (buffer[offset] !== 0xFF) {
+        offset++;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      if (marker >= 0xC0 && marker <= 0xC3 && marker !== 0xC4) {
+        return {
+          height: buffer.readUInt16BE(offset + 5),
+          width: buffer.readUInt16BE(offset + 7),
+        };
+      }
+      const len = buffer.readUInt16BE(offset + 2);
+      offset += 2 + len;
+    }
+  }
+  // WEBP
+  if (buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+    const chunkType = buffer.toString('ascii', 12, 16);
+    if (chunkType === 'VP8 ') {
+      return {
+        width: buffer.readUInt16LE(26) & 0x3fff,
+        height: buffer.readUInt16LE(28) & 0x3fff,
+      };
+    } else if (chunkType === 'VP8L') {
+      const b0 = buffer[21], b1 = buffer[22], b2 = buffer[23], b3 = buffer[24];
+      const width = 1 + (((b1 & 0x3f) << 8) | b0);
+      const height = 1 + (((b3 & 0xf) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6));
+      return { width, height };
+    } else if (chunkType === 'VP8X') {
+      const width = 1 + buffer.readUIntLE(24, 3);
+      const height = 1 + buffer.readUIntLE(27, 3);
+      return { width, height };
+    }
+  }
+  return { width: 800, height: 800 };
+}
+
+/**
+ * Hàm cung cấp metadata ảnh cho zca-js theo yêu cầu từ phiên bản v2.0.0+
+ */
+async function customImageMetadataGetter(filePath: string): Promise<{ width: number; height: number; size: number }> {
+  try {
+    const stat = await fs.promises.stat(filePath);
+    const buffer = await fs.promises.readFile(filePath);
+    const dims = getImageDimensions(buffer);
+    return {
+      width: dims.width || 800,
+      height: dims.height || 800,
+      size: stat.size,
+    };
+  } catch {
+    return {
+      width: 800,
+      height: 800,
+      size: 1024,
+    };
+  }
+}
+
 export class ZaloChannelAdapter {
   private accountId: string;
   private config: ZaloAccountConfig;
@@ -95,6 +170,7 @@ export class ZaloChannelAdapter {
           selfListen: false,
           checkUpdate: false,
           logging: false,
+          imageMetadataGetter: customImageMetadataGetter,
         });
 
         const credentials = this.config.credentials as Credentials;
@@ -207,11 +283,12 @@ export class ZaloChannelAdapter {
   }
 
   /**
-   * Gửi tin nhắn trả lời về nhóm Zalo hoặc Direct Chat (hỗ trợ gửi kèm ảnh như VietQR, hình ảnh hóa đơn)
+   * Gửi tin nhắn trả lời về nhóm Zalo hoặc Direct Chat
+   * Hỗ trợ gửi ảnh đính kèm (VietQR, hóa đơn) và tách thành các câu ngắn gửi lần lượt cách nhau 1s
    */
   async sendMessage(
     platformChatId: string, 
-    text: string, 
+    messages: string | string[], 
     chatType: ThreadType = ThreadType.Group,
     mediaUrls?: string[]
   ): Promise<void> {
@@ -220,9 +297,11 @@ export class ZaloChannelAdapter {
       return;
     }
 
+    const messageList = Array.isArray(messages) ? messages : [messages];
     const tempFiles: string[] = [];
 
     try {
+      // 1. Tải ảnh về file tạm nếu có link media
       if (mediaUrls && mediaUrls.length > 0) {
         for (const url of mediaUrls) {
           const tempPath = await downloadImageToTempFile(url);
@@ -230,30 +309,34 @@ export class ZaloChannelAdapter {
         }
       }
 
+      // 2. Gửi ảnh đính kèm trước (nếu có)
       if (tempFiles.length > 0) {
-        console.log(`[ZaloAdapter] Sending response with ${tempFiles.length} photo attachment(s) to Zalo Thread ${platformChatId}...`);
+        console.log(`[ZaloAdapter] Sending ${tempFiles.length} photo attachment(s) to Zalo Thread ${platformChatId}...`);
         await this.api.sendMessage(
           {
-            msg: text,
+            msg: '',
             attachments: tempFiles,
           },
           platformChatId,
           chatType
         );
-      } else {
-        console.log(`[ZaloAdapter] Sending text response to Zalo Thread ${platformChatId}: ${text.slice(0, 50)}...`);
-        await this.api.sendMessage(text, platformChatId, chatType);
+      }
+
+      // 3. Gửi lần lượt từng câu ngắn cách nhau 1 khoảng thời gian (~1000ms)
+      for (let i = 0; i < messageList.length; i++) {
+        const sentence = messageList[i]?.trim();
+        if (!sentence) continue;
+
+        // Nếu đã có ảnh gửi trước hoặc là câu thứ 2 trở đi -> chờ 1s
+        if (tempFiles.length > 0 || i > 0) {
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+
+        console.log(`[ZaloAdapter] Sending sentence (${i + 1}/${messageList.length}) to Zalo Thread ${platformChatId}: "${sentence.slice(0, 50)}..."`);
+        await this.api.sendMessage(sentence, platformChatId, chatType);
       }
     } catch (err: any) {
       console.error(`[ZaloAdapter] Failed to send message to Zalo Thread ${platformChatId}:`, err?.message || err);
-      // Fallback text-only nếu gửi attachment gặp lỗi
-      if (tempFiles.length > 0) {
-        try {
-          await this.api.sendMessage(text, platformChatId, chatType);
-        } catch (fallbackErr) {
-          console.error(`[ZaloAdapter] Fallback text send also failed:`, fallbackErr);
-        }
-      }
     } finally {
       // Dọn dẹp file tạm sau khi gửi xong
       for (const f of tempFiles) {

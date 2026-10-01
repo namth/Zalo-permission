@@ -213,14 +213,14 @@ export default function WorkflowPage() {
       codeRef: 'packages/core/src/agents/worker-agent.ts (synthesizeWithPersona)',
     },
     'outbound': {
-      title: '8. Giao Vận & Kiểm Toán (Outbound Sender & Audit Trail)',
-      subtitle: 'Gửi kết quả về nhóm Zalo/Telegram & lưu trữ Audit Log',
-      tag: 'Giao Vận & Kiểm Toán',
-      tech: 'Redis Stream (stream:outbound_messages) & PostgreSQL audit_logs',
-      desc: 'Câu trả lời cuối cùng được đẩy vào stream:outbound_messages. Tiến trình Outbound Sender sử dụng đúng tài khoản kênh (Zalo/Telegram) để gửi lại vào nhóm chat. Đồng thời một bản ghi Audit Log được tạo với đầy đủ kế hoạch thực thi, latency và công cụ đã gọi.',
-      inputs: ['finalResponse, platformChatId, accountId, toolCalls, latencyMs'],
-      outputs: ['Tin nhắn Zalo/Telegram đến người dùng + Bản ghi Audit Log'],
-      codeRef: 'apps/agent-worker/src/channel-manager.ts & dispatcher.ts',
+      title: '8. Giao Vận & Tách Câu Ngắn (Text Splitter Agent & Outbound Sender)',
+      subtitle: 'Tách nhỏ phản hồi thành các câu ngắn tự nhiên, gửi tuần tự và lưu Audit Log',
+      tag: 'Giao Vận & Xử Lý Văn Bản',
+      tech: 'Text Splitter Agent (Gemini 2.5 Flash), Redis Stream (stream:outbound_messages) & PostgreSQL audit_logs',
+      desc: 'Phản hồi từ Agent 3 được làm sạch link ảnh, sau đó Text Splitter Agent tách nhỏ và chuẩn hóa thành các câu ngắn gọn, không lạm dụng emoji. Các câu được gửi lần lượt về nhóm chat Zalo/Telegram cách nhau 1s tạo cảm giác hội thoại tự nhiên như người thật. Đồng thời lưu Audit Log hoàn chỉnh.',
+      inputs: ['finalResponse, mediaUrls[], platformChatId, accountId, toolCalls, latencyMs'],
+      outputs: ['Ảnh đính kèm + Các câu ngắn gửi tuần tự cách 1s về Zalo/Telegram + Bản ghi Audit Log'],
+      codeRef: 'packages/core/src/agents/text-splitter-agent.ts & packages/channels/src/zalo/index.ts',
     },
   };
 
