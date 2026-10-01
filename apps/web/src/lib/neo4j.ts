@@ -469,6 +469,7 @@ export class Neo4jClient {
         `MATCH (tg:ToolGroup)
          WHERE tg.id = $idOrKey OR tg.key = $idOrKey
          MATCH (tg)-[:HAS_DATA]->(d:Data)
+         WHERE NOT (d)<-[:HAS_DATA]-(:Workspace)
          RETURN d.id as id, d.key as key, d.value as value, d.created_at as created_at
          ORDER BY d.created_at ASC`,
         { idOrKey: groupIdOrKey }

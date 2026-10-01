@@ -24,12 +24,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         logger.info(`[API] Fetching data for tool group ${tool_group_id} in workspace ${workspace_id}`);
 
-        const groupData = await neo4jClient.getToolGroupDataForWorkspace(tool_group_id, workspace_id);
+        const [masterData, wsData] = await Promise.all([
+            neo4jClient.getToolGroupData(tool_group_id),
+            neo4jClient.getToolGroupDataForWorkspace(tool_group_id, workspace_id),
+        ]);
         
+        const mergedObj: Record<string, string> = {};
+        masterData.forEach(d => { mergedObj[d.key] = d.value; });
+        wsData.forEach(d => { mergedObj[d.key] = d.value; });
+
         // Format to match agent/auth-and-resources: an array containing one object with all key-value pairs
-        const formattedData = groupData.length > 0 
-            ? [groupData.reduce((acc, d) => ({ ...acc, [d.key]: d.value }), {})]
-            : [];
+        const formattedData = Object.keys(mergedObj).length > 0 ? [mergedObj] : [];
 
         return NextResponse.json(
             {

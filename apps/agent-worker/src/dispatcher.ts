@@ -21,6 +21,8 @@ import {
 } from '@omniagent/database';
 import { getRedisClient, OUTBOUND_STREAM } from './redis.js';
 import { getChatSession, refreshWarmSession, checkMention, getChatAlwaysRespond } from './session.js';
+import { WebhookCallbackDispatcher } from './webhook-callback.js';
+import { WebhookSessionManager } from './webhook-session.js';
 
 export class MessageDispatcher {
   private routerAgent: RouterAgent;
@@ -41,12 +43,13 @@ export class MessageDispatcher {
   async dispatch(message: InboundChatMessage): Promise<void> {
     const startTime = Date.now();
     const redis = getRedisClient();
-    const isGroup = Boolean(message.isGroup || String(message.platformChatId) !== String(message.senderId));
-    const isMentioned = checkMention(message.text);
-    const session = await getChatSession(redis, message.platform, message.platformChatId);
-    const alwaysRespond = isGroup
+    const isWebhook = message.platform === 'WEBHOOK';
+    const isGroup = !isWebhook && Boolean(message.isGroup || String(message.platformChatId) !== String(message.senderId));
+    const isMentioned = isWebhook || checkMention(message.text);
+    const session = isWebhook ? { isWarm: true } : await getChatSession(redis, message.platform, message.platformChatId);
+    const alwaysRespond = isWebhook ? true : (isGroup
       ? await getChatAlwaysRespond(redis, message.platform, message.platformChatId, prisma)
-      : false;
+      : false);
 
     // BỘ LỌC TRẠNG THÁI COLD / WARM TRONG NHÓM CHAT:
     // Nếu nhóm được cấu hình "Luôn trả lời" (alwaysRespond = true), Bot sẽ luôn xử lý mọi tin nhắn/câu hỏi.
@@ -59,24 +62,44 @@ export class MessageDispatcher {
 
     console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} (${alwaysRespond ? '⚡ ALWAYS-RESPOND' : session.isWarm ? '🔥 WARM' : '⚡ COLD->WARM'}) by user: ${message.senderName || message.senderId}`);
 
-    // 1. Resolve Workspace via Neo4j Graph (ChannelChat or ZaloGroup)
-    const wsLookupQuery = `
-      MATCH (c:ChannelChat { platform: $platform, platform_chat_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
-      RETURN w.id AS workspace_id, w.name AS workspace_name
-      UNION
-      MATCH (g:ZaloGroup { thread_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
-      RETURN w.id AS workspace_id, w.name AS workspace_name
-      LIMIT 1
-    `;
-    const wsResult = await runCypher<{ workspace_id: string; workspace_name: string }>(wsLookupQuery, {
-      platform: message.platform,
-      chat_id: String(message.platformChatId),
-    }).catch((e) => {
-      console.warn('[Dispatcher] Neo4j workspace lookup notice:', e);
-      return [];
-    });
+    // 1. Resolve Workspace via Neo4j Graph or Inbound Webhook Payload
+    let workspaceId = message.workspaceId;
 
-    let workspaceId = wsResult?.[0]?.workspace_id;
+    if (!workspaceId && isWebhook && message.webhookId) {
+      const whResult = await runCypher<{ workspace_id: string; workspace_name: string }>(
+        `MATCH (wh:WorkspaceWebhook { id: $webhook_id })-[:BELONGS_TO]->(w:Workspace) RETURN w.id AS workspace_id, w.name AS workspace_name LIMIT 1`,
+        { webhook_id: message.webhookId }
+      ).catch(() => []);
+      workspaceId = whResult?.[0]?.workspace_id;
+
+      if (!workspaceId) {
+        const whInDb = await prisma.workspaceWebhook.findUnique({
+          where: { id: message.webhookId },
+          select: { workspaceId: true },
+        });
+        workspaceId = whInDb?.workspaceId;
+      }
+    }
+
+    if (!workspaceId && !isWebhook) {
+      const wsLookupQuery = `
+        MATCH (c:ChannelChat { platform: $platform, platform_chat_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
+        RETURN w.id AS workspace_id, w.name AS workspace_name
+        UNION
+        MATCH (g:ZaloGroup { thread_id: $chat_id })-[:BELONGS_TO]->(w:Workspace)
+        RETURN w.id AS workspace_id, w.name AS workspace_name
+        LIMIT 1
+      `;
+      const wsResult = await runCypher<{ workspace_id: string; workspace_name: string }>(wsLookupQuery, {
+        platform: message.platform,
+        chat_id: String(message.platformChatId),
+      }).catch((e) => {
+        console.warn('[Dispatcher] Neo4j workspace lookup notice:', e);
+        return [];
+      });
+
+      workspaceId = wsResult?.[0]?.workspace_id;
+    }
 
     if (!workspaceId) {
       // Fallback check PostgreSQL channel_chats
@@ -290,6 +313,51 @@ export class MessageDispatcher {
       }
     }
 
+    // Nạp thêm Biến Mặc Định (Master Group Data) và Biến Không Gian (Workspace Scoped Vault) từ Neo4j
+    if (allToolGroupIds.length > 0) {
+      try {
+        const allToolGroupKeys = groupsFromDb.map((g: any) => g.key).filter(Boolean);
+        const cypherQuery = `
+          MATCH (tg:ToolGroup)
+          WHERE tg.id IN $allToolGroupIds OR tg.key IN $allToolGroupKeys
+          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dMaster:Data)
+          WHERE NOT (dMaster)<-[:HAS_DATA]-(:Workspace)
+          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dWs:Data)<-[:HAS_DATA]-(w:Workspace {id: $workspaceId})
+          RETURN tg.id AS toolGroupId, tg.key AS toolGroupKey,
+                 collect(DISTINCT { key: dMaster.key, value: dMaster.value }) AS masterVars,
+                 collect(DISTINCT { key: dWs.key, value: dWs.value }) AS wsVars
+        `;
+        const neo4jData = await runCypher<any>(cypherQuery, { allToolGroupIds, allToolGroupKeys, workspaceId });
+        for (const row of neo4jData) {
+          // Resolve tool group id
+          const matchingGroup = groupsFromDb.find(
+            (g: any) => g.id === row.toolGroupId || g.key === row.toolGroupKey
+          );
+          const tgId = matchingGroup ? matchingGroup.id : row.toolGroupId;
+          if (!tgId) continue;
+
+          const currentVars = scopedVariablesMap.get(tgId) || {};
+          const merged: Record<string, string> = { ...currentVars };
+
+          // 1. Master variables (dùng chung cho mọi workspace)
+          if (Array.isArray(row.masterVars)) {
+            for (const item of row.masterVars) {
+              if (item && item.key && item.value) merged[item.key] = item.value;
+            }
+          }
+          // 2. Workspace Scoped variables (ưu tiên ghi đè master)
+          if (Array.isArray(row.wsVars)) {
+            for (const item of row.wsVars) {
+              if (item && item.key && item.value) merged[item.key] = item.value;
+            }
+          }
+          scopedVariablesMap.set(tgId, merged);
+        }
+      } catch (e) {
+        console.error('[Dispatcher] Failed to fetch Neo4j scoped variables:', e);
+      }
+    }
+
     const accessibleTools: ToolDefinition[] = toolsFromDb.map((t) => ({
       id: t.id,
       toolGroupId: t.toolGroupId || '',
@@ -304,22 +372,34 @@ export class MessageDispatcher {
       isActive: t.isActive,
     }));
 
-    // 3.1 Fetch Recent Conversation History from PostgreSQL audit_logs (up to 10 recent messages)
-    const recentAuditLogs = await prisma.auditLog.findMany({
-      where: {
-        workspaceId,
-        userPrompt: { not: null },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    }).catch(() => []);
+    // 3.1 Fetch Recent Conversation History
+    let conversationHistory: ConversationHistoryMessage[] = [];
 
-    const conversationHistory: ConversationHistoryMessage[] = recentAuditLogs
-      .reverse()
-      .flatMap((log) => [
-        ...(log.userPrompt ? [{ role: 'user' as const, content: log.userPrompt }] : []),
-        ...(log.finalResponse ? [{ role: 'assistant' as const, content: log.finalResponse }] : []),
-      ]);
+    if (isWebhook && message.webhookId) {
+      const activeSessionId = message.sessionId || message.platformChatId;
+      conversationHistory = await WebhookSessionManager.getSessionHistory(
+        message.webhookId,
+        activeSessionId
+      );
+      console.log(`[Dispatcher] Loaded ${conversationHistory.length} messages from WebhookSession for session ${activeSessionId}`);
+    } else {
+      const recentAuditLogs = await prisma.auditLog.findMany({
+        where: {
+          platform: message.platform,
+          workspaceId,
+          userPrompt: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }).catch(() => []);
+
+      conversationHistory = recentAuditLogs
+        .reverse()
+        .flatMap((log) => [
+          ...(log.userPrompt ? [{ role: 'user' as const, content: log.userPrompt }] : []),
+          ...(log.finalResponse ? [{ role: 'assistant' as const, content: log.finalResponse }] : []),
+        ]);
+    }
 
     // 3.2 PERCEPTION / VISION AGENT: Trích xuất hóa đơn, bill, ảnh chụp chuyển khoản nếu có ảnh
     let visualSummary = '';
@@ -439,16 +519,50 @@ export class MessageDispatcher {
     }
 
     const latencyMs = Date.now() - startTime;
+    const auditLogId = randomUUID();
 
-    // 6. Send Response to Outbound Stream
-    await this.sendOutbound(message, workerResult.finalResponse);
+    let callbackResult: any = {
+      callbackStatus: 'NONE',
+      callbackType: undefined,
+      callbackTarget: undefined,
+      retryCount: 0,
+    };
+
+    // 6. Send Response
+    if (isWebhook) {
+      // 6.1 Gửi Callback (HTTP POST hoặc Firebase FCM)
+      callbackResult = await WebhookCallbackDispatcher.sendCallback({
+        message,
+        finalResponse: workerResult.finalResponse,
+        workspaceId: workspaceId || '',
+        latencyMs,
+        auditLogId,
+      });
+
+      // 6.2 Cập nhật Lịch sử Hội thoại vào WebhookSession
+      if (message.webhookId) {
+        const activeSessionId = message.sessionId || message.platformChatId;
+        await WebhookSessionManager.saveSessionTurn({
+          webhookId: message.webhookId,
+          sessionId: activeSessionId,
+          senderId: message.senderId,
+          userPrompt: message.text,
+          assistantResponse: workerResult.finalResponse,
+          senderName: message.senderName,
+        });
+      }
+    } else {
+      // Gửi vào Redis Outbound Stream cho các Kênh chat (Zalo/Telegram)
+      await this.sendOutbound(message, workerResult.finalResponse);
+    }
 
     // 7. Record Audit Log in PostgreSQL
     try {
       await prisma.auditLog.create({
         data: {
-          id: randomUUID(),
+          id: auditLogId,
           workspaceId,
+          webhookId: isWebhook ? message.webhookId : null,
           platform: message.platform,
           senderId: message.senderId,
           userPrompt: enrichedPrompt,
@@ -458,10 +572,14 @@ export class MessageDispatcher {
           toolCalls: JSON.parse(JSON.stringify(this.maskToolCalls(workerResult.toolCalls))),
           finalResponse: workerResult.finalResponse,
           status: 'SUCCESS',
+          callbackStatus: callbackResult.callbackStatus as any,
+          callbackType: callbackResult.callbackType,
+          callbackTarget: callbackResult.callbackTarget,
+          retryCount: callbackResult.retryCount,
           latencyMs,
         },
       });
-      console.log(`[Dispatcher] Audit log saved. Total Latency: ${latencyMs}ms`);
+      console.log(`[Dispatcher] Audit log saved. Total Latency: ${latencyMs}ms (Callback: ${callbackResult.callbackStatus})`);
     } catch (logErr) {
       console.error('[Dispatcher] Failed to write audit log:', logErr);
     }

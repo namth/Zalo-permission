@@ -383,9 +383,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             // Fetch and Format Context Data
             if (tg.id !== 'general') {
                 try {
-                    const groupData = await neo4jClient.getToolGroupDataForWorkspace(tg.key, workspaceId);
-                    tg['context-data'] = groupData.length > 0 
-                        ? groupData.map(d => `- **${d.key}**: ${d.value}`).join('\n')
+                    const [masterData, wsData] = await Promise.all([
+                        neo4jClient.getToolGroupData(tg.key),
+                        neo4jClient.getToolGroupDataForWorkspace(tg.key, workspaceId),
+                    ]);
+                    const mergedMap = new Map<string, string>();
+                    masterData.forEach(d => mergedMap.set(d.key, d.value));
+                    wsData.forEach(d => mergedMap.set(d.key, d.value));
+                    tg['context-data'] = mergedMap.size > 0 
+                        ? Array.from(mergedMap.entries()).map(([k, v]) => `- **${k}**: ${v}`).join('\n')
                         : "";
                 } catch (err) {
                     logger.error(`[API] Failed to fetch data for tool group ${tg.key} in workspace ${workspaceId}: ${err}`);

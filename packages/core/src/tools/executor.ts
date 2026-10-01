@@ -60,7 +60,10 @@ export class ToolExecutor {
         scopedVariables.TOKEN ||
         scopedVariables.BEARER_TOKEN ||
         scopedVariables.API_TOKEN ||
-        scopedVariables.SECRET_KEY;
+        scopedVariables.SECRET_KEY ||
+        scopedVariables.X_API_KEY ||
+        scopedVariables['X-API-Key'] ||
+        scopedVariables['x-api-key'];
 
       if (token) {
         authHeaders['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
@@ -77,6 +80,9 @@ export class ToolExecutor {
         const upper = vKey.toUpperCase();
         if (upper === 'X_API_KEY' || upper === 'X-API-KEY') {
           authHeaders['X-API-Key'] = vVal;
+          if (!authHeaders['Authorization']) {
+            authHeaders['Authorization'] = vVal.startsWith('Bearer ') ? vVal : `Bearer ${vVal}`;
+          }
         } else if (upper.startsWith('HEADER_')) {
           const headerName = vKey.substring(7).replace(/_/g, '-');
           authHeaders[headerName] = vVal;
@@ -91,10 +97,28 @@ export class ToolExecutor {
       const mcpToolName = tool.mcpToolName || tool.name || tool.key;
       const timeout = (group.timeoutSeconds || 15) * 1000;
 
+      // Tự động nạp các biến scoped vào arguments nếu tool cần (ví dụ: owner_user_id, partner_id...)
+      const mergedArguments: Record<string, any> = { ...inputParameters };
+      for (const [varKey, varVal] of Object.entries(scopedVariables)) {
+        if (varVal === undefined || varVal === null || varVal === '') continue;
+        const lowerKey = varKey.toLowerCase();
+        // Bỏ qua các biến xác thực
+        if ([
+          'auth_token', 'api_key', 'token', 'bearer_token', 'secret_key',
+          'x_api_key', 'x-api-key', 'client_secret', 'jwt_secret'
+        ].includes(lowerKey)) {
+          continue;
+        }
+        if (mergedArguments[varKey] === undefined && mergedArguments[lowerKey] === undefined) {
+          const numVal = Number(varVal);
+          mergedArguments[lowerKey] = !isNaN(numVal) && String(numVal) === String(varVal).trim() ? numVal : varVal;
+        }
+      }
+
       return McpToolExecutor.execute({
         endpointUrl: rawBaseUrl,
         toolName: mcpToolName,
-        arguments: inputParameters,
+        arguments: mergedArguments,
         authHeaders,
         timeoutMs: timeout,
         toolId: tool.id,
