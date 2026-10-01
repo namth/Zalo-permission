@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Skill, fetchSkills } from './api';
 import { StatusBadge, TypeBadge } from './components';
-import { ArrowSquareOut } from '@phosphor-icons/react';
+import { ArrowSquareOut, Plus, Sparkle, TreeStructure } from '@phosphor-icons/react';
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -68,12 +68,20 @@ export default function SkillsPage() {
           <p className="text-gray-600 mt-2">View and manage user-learned skills and workflows</p>
         </div>
         <div className="flex gap-3">
+          <Link
+            href="/admin/skills/studio"
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-sm font-semibold shadow-sm transition flex items-center justify-center gap-1.5"
+          >
+            <Sparkle className="w-4 h-4 text-amber-300" />
+            Skill Studio (Huấn luyện SOP)
+          </Link>
           {isAdmin && (
             <Link
               href="/admin/skills/new"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition flex items-center justify-center"
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1.5"
             >
-              + Create Skill
+              <Plus className="w-4 h-4" />
+              Tạo Skill mới
             </Link>
           )}
           <Link
@@ -158,23 +166,52 @@ export default function SkillsPage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Description</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Quy trình (SOP)</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Category</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Owner</th>
+                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredSkills.map((skill) => (
                   <tr key={skill.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 text-sm text-gray-900 font-medium">
-                      <Link href={`/admin/skills/${skill.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
-                        {skill.name}
-                      </Link>
+                      <div className="flex flex-col">
+                        <Link href={`/admin/skills/${skill.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
+                          {skill.name}
+                        </Link>
+                        {skill.key && (
+                          <span className="text-[11px] text-gray-400 font-mono mt-0.5">{skill.key}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{skill.description}</td>
+                    <td className="px-6 py-4 text-sm">
+                      {Array.isArray(skill.sop_steps) && skill.sop_steps.length > 0 ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <TreeStructure className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                          SOP ({skill.sop_steps.length} bước)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                          ReAct Prompt
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm">
                       <span className="px-2 py-1 rounded bg-gray-100 text-gray-800 text-xs">{skill.category || 'None'}</span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{skill.owner_name}</td>
+                    <td className="px-6 py-4 text-sm text-right">
+                      <Link
+                        href={`/admin/skills/studio?id=${skill.id}`}
+                        className="inline-flex items-center px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md text-xs font-medium transition gap-1"
+                        title="Mở trong Skill Studio để phỏng vấn và sửa quy trình"
+                      >
+                        <Sparkle className="w-3.5 h-3.5" />
+                        Huấn luyện SOP
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

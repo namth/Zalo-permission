@@ -15,10 +15,16 @@ export const dynamic = 'force-dynamic';
 function mapRowToSkill(row: any) {
     return {
         id: row.id,
+        key: row.key,
         name: row.name,
         description: row.description,
         is_shared: row.is_shared,
         detail: row.detail,
+        system_prompt: row.system_prompt,
+        trigger_intents: row.trigger_intents || [],
+        required_tools: row.required_tools || [],
+        sop_steps: row.sop_steps || [],
+        execution_mode: row.execution_mode || 'FLEXIBLE_REACT',
         status: row.status,
         created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
         updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
@@ -33,10 +39,11 @@ export async function GET(
 ): Promise<NextResponse> {
     try {
         const result = await query(
-            `SELECT s.id, s.name, s.description, s.detail, s.is_shared,
-              s.status, s.created_at, s.updated_at
-       FROM skills s
-       WHERE s.id = $1`,
+            `SELECT s.id, s.key, s.name, s.description, s.detail, s.system_prompt,
+                    s.trigger_intents, s.required_tools, s.sop_steps, s.execution_mode,
+                    s.is_shared, s.status, s.created_at, s.updated_at
+             FROM skills s
+             WHERE s.id = $1`,
             [params.id]
         );
 
@@ -49,7 +56,6 @@ export async function GET(
         const relations = await neo4jClient.getSkillRelations(skill.id);
         skill.category = relations.category;
         skill.tools = relations.tools;
-
 
         return NextResponse.json({ success: true, data: skill }, { status: 200 });
     } catch (error) {
@@ -64,23 +70,61 @@ export async function PUT(
 ): Promise<NextResponse> {
     try {
         const body = await req.json();
-        const { name, description, detail, owner_id = null, workspace_id = null, is_shared = false, category, tools = [] } = body;
+        const {
+            name,
+            key,
+            description,
+            detail,
+            system_prompt,
+            trigger_intents,
+            required_tools,
+            sop_steps,
+            execution_mode,
+            owner_id = null,
+            workspace_id = null,
+            is_shared = false,
+            category,
+            tools = []
+        } = body;
 
         const currentUser = await getCurrentUser(req);
         
         // Get existing skill (metadata only)
-        const checkRes = await query('SELECT id FROM skills WHERE id = $1', [params.id]);
+        const checkRes = await query('SELECT id, key FROM skills WHERE id = $1', [params.id]);
         if (checkRes.rows.length === 0) {
             return NextResponse.json({ success: false, error: 'Skill not found' }, { status: 404 });
         }
 
         const targetOwnerId = owner_id || currentUser?.id;
+        const finalPrompt = system_prompt || detail || null;
 
         const result = await query(
-            `UPDATE skills SET name = $1, description = $2, detail = $3, is_shared = $4, updated_at = NOW()
-       WHERE id = $5
-       RETURNING *`,
-            [name, description || null, detail || null, is_shared, params.id]
+            `UPDATE skills SET
+               name = $1,
+               key = COALESCE($2, key),
+               description = $3,
+               detail = $4,
+               system_prompt = $4,
+               sop_steps = COALESCE($5, sop_steps),
+               execution_mode = COALESCE($6, execution_mode),
+               trigger_intents = COALESCE($7, trigger_intents),
+               required_tools = COALESCE($8, required_tools),
+               is_shared = $9,
+               updated_at = NOW()
+             WHERE id = $10
+             RETURNING *`,
+            [
+                name,
+                key || null,
+                description || null,
+                finalPrompt,
+                sop_steps ? JSON.stringify(sop_steps) : null,
+                execution_mode || null,
+                trigger_intents ? JSON.stringify(trigger_intents) : null,
+                required_tools || (tools && tools.length > 0 ? tools : null),
+                is_shared,
+                params.id
+            ]
         );
 
         if (result.rows.length === 0) {
@@ -113,7 +157,6 @@ export async function PUT(
         if (typeof category === 'string' && category) {
             await neo4jClient.setSkillCategory(skillId, category);
         }
-        // If category is null/empty, we might want to clear it, but setSkillCategory already handles it if we pass it
 
         const skill = mapRowToSkill(result.rows[0]);
         const relations = await neo4jClient.getSkillRelations(skill.id);

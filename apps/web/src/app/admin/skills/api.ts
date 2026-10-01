@@ -1,7 +1,8 @@
-// API client for skills admin endpoints
+import { SkillSopStep } from '@omniagent/core';
 
 export interface Skill {
   id: string;
+  key?: string;
   name: string;
   description?: string;
   owner_id: string;
@@ -10,6 +11,11 @@ export interface Skill {
   status: 'active' | 'archived' | 'disabled';
   type: 'user' | 'system';
   detail?: string;
+  system_prompt?: string;
+  trigger_intents?: string[];
+  required_tools?: string[];
+  sop_steps?: SkillSopStep[];
+  execution_mode?: 'DETERMINISTIC_SOP' | 'FLEXIBLE_REACT' | string;
   category?: string;
   tools?: {id: string, name: string}[];
   shared_to?: string[]; // workspace IDs

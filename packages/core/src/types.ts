@@ -64,6 +64,24 @@ export interface ToolDefinition {
   isActive: boolean;
 }
 
+export type SkillSopActionType =
+  | 'LLM_EXTRACT'
+  | 'TOOL_CALL'
+  | 'CONDITIONAL_TOOL'
+  | 'ASK_USER'
+  | 'SYNTHESIZE';
+
+export interface SkillSopStep {
+  stepId: number;
+  title: string;
+  actionType: SkillSopActionType;
+  toolKey?: string;
+  condition?: string;
+  inputMapping?: Record<string, string>;
+  fallbackStepId?: number;
+  description: string;
+}
+
 export interface SkillDefinition {
   id: string;
   key: string;
@@ -72,6 +90,8 @@ export interface SkillDefinition {
   systemPrompt: string;
   triggerIntents: string[];
   requiredTools: string[];
+  sopSteps?: SkillSopStep[];
+  executionMode?: 'DETERMINISTIC_SOP' | 'FLEXIBLE_REACT' | string;
   isActive: boolean;
 }
 

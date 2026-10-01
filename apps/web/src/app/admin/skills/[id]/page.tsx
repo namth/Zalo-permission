@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Skill, getSkillById, updateSkillStatus, deleteSkill, updateSkill, getCategories } from '../api';
 import { StatusBadge, TypeBadge, SkillSharingModal, SkillDeleteConfirmation } from '../components';
+import { Sparkle, TreeStructure } from '@phosphor-icons/react';
 
 export default function SkillDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -162,19 +163,26 @@ export default function SkillDetailPage({ params }: { params: { id: string } }) 
           <p className="text-gray-600 mt-2">{skill.description || 'No description provided'}</p>
         </div>
         <div className="flex space-x-2">
+          <Link
+            href={`/admin/skills/studio?id=${skill.id}`}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 transition flex items-center gap-1.5 font-medium shadow-sm text-sm"
+          >
+            <Sparkle className="w-4 h-4 text-amber-300" />
+            Huấn luyện trong Skill Studio
+          </Link>
           {!isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
             >
-              Edit Skill
+              Chỉnh sửa thông tin
             </button>
           )}
           <button
             onClick={() => setShowDeleteConfirm(true)}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-medium"
           >
-            Delete
+            Xóa
           </button>
         </div>
       </div>
@@ -388,6 +396,36 @@ export default function SkillDetailPage({ params }: { params: { id: string } }) 
                     </dd>
                   </div>
                   <div>
+                    <dt className="text-sm font-medium text-gray-500">Mã định danh (Key)</dt>
+                    <dd className="text-sm font-mono text-gray-900 mt-1">{skill.key || 'None'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Chế độ thi hành</dt>
+                    <dd className="text-sm mt-1">
+                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                        skill.execution_mode === 'DETERMINISTIC_SOP'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {skill.execution_mode || 'FLEXIBLE_REACT'}
+                      </span>
+                    </dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="text-sm font-medium text-gray-500">Mẫu câu kích hoạt (Trigger Intents)</dt>
+                    <dd className="mt-1 flex flex-wrap gap-1">
+                      {Array.isArray(skill.trigger_intents) && skill.trigger_intents.length > 0 ? (
+                        skill.trigger_intents.map((intent, idx) => (
+                          <span key={idx} className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs border border-blue-200">
+                            {intent}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-gray-400">Chưa thiết lập</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
                     <dt className="text-sm font-medium text-gray-500">Created</dt>
                     <dd className="text-sm text-gray-900 mt-1">{new Date(skill.created_at).toLocaleString()}</dd>
                   </div>
@@ -397,6 +435,51 @@ export default function SkillDetailPage({ params }: { params: { id: string } }) 
                   </div>
                 </dl>
               </div>
+
+              {/* SOP Steps Card */}
+              {Array.isArray(skill.sop_steps) && skill.sop_steps.length > 0 && (
+                <div className="bg-white p-6 rounded-lg border border-gray-200 space-y-4">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="font-semibold text-gray-900 flex items-center">
+                      <TreeStructure className="w-5 h-5 mr-2 text-emerald-600" />
+                      Quy Trình Thi Hành Chuẩn ({skill.sop_steps.length} bước SOP)
+                    </h3>
+                    <Link
+                      href={`/admin/skills/studio?id=${skill.id}`}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center"
+                    >
+                      <Sparkle className="w-3.5 h-3.5 mr-1" />
+                      Mở trong Studio để chỉnh sửa
+                    </Link>
+                  </div>
+                  <div className="space-y-3">
+                    {skill.sop_steps.map((step, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <span className="w-5 h-5 rounded-full bg-gray-800 text-white text-xs font-bold flex items-center justify-center">
+                              {step.stepId || idx + 1}
+                            </span>
+                            <span className="font-semibold text-gray-900">{step.title}</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                            {step.actionType}
+                          </span>
+                        </div>
+                        {step.description && (
+                          <p className="text-xs text-gray-600 pl-7">{step.description}</p>
+                        )}
+                        {step.toolKey && (
+                          <p className="text-xs text-emerald-700 font-mono pl-7">Tool: {step.toolKey}</p>
+                        )}
+                        {step.condition && (
+                          <p className="text-xs text-amber-700 font-mono pl-7">Điều kiện: {step.condition}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {skill.detail && (
                 <div className="bg-white p-6 rounded-lg border border-gray-200">

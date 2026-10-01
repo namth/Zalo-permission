@@ -21,6 +21,7 @@ export interface CopilotActionPreview {
     | 'ASSIGN_TOOL_GROUP_TO_WORKSPACE'
     | 'REMOVE_TOOL_FROM_WORKSPACE'
     | 'CREATE_SKILL'
+    | 'UPDATE_SKILL'
     | 'SYNC_MCP_TOOLS'
     | 'DELETE_TOOL_GROUP'
     | 'DELETE_TOOL';
@@ -63,8 +64,8 @@ Hệ thống sử dụng cơ sở dữ liệu kết hợp PostgreSQL (dữ liệ
 
 Nhiệm vụ của bạn:
 1. Hỗ trợ tra cứu thông tin Workspace, Tool Groups, Tools, Skills, và Audit Logs.
-2. Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (Thêm MCP Server, Gán quyền Workspace, Dạy Skill mới, Xóa/Thu hồi quyền, Đồng bộ Tool):
-   - Bạn PHẢI tra cứu trước thông tin (như ID của Workspace hoặc ToolGroup) nếu chưa rõ.
+2. Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (Thêm MCP Server, Gán quyền Workspace, Dạy Skill mới, Sửa Skill cũ, Xóa/Thu hồi quyền, Đồng bộ Tool):
+   - Bạn PHẢI tra cứu trước thông tin (như ID của Workspace hoặc ToolGroup hoặc Skill) nếu chưa rõ.
    - Bạn KHÔNG được tự ý thực thi ngay các hành động ghi/sửa/xóa, mà PHẢI gọi các tool "propose_*" tương ứng để tạo Action Preview Card cho Admin bấm xác nhận.
 3. Khi người dùng muốn xóa Tool Group hoặc Tool cá nhân:
    - Hãy tra cứu trước (dùng list_tool_groups hoặc list_tools_in_group) để lấy thông tin ID/Key chính xác.
@@ -76,12 +77,16 @@ Quy tắc:
 - Khi người dùng gửi link MCP hoặc JSON mcpServers: hãy dùng tool "inspect_mcp_source" để kiểm tra trước, sau đó đề xuất "propose_import_mcp".
 - Khi người dùng muốn gán tool vào workspace: tra cứu danh sách workspace ("list_workspaces") và danh sách tools ("list_tool_groups" hoặc "list_tools_in_group"), sau đó gọi "propose_assign_tool_to_workspace" hoặc "propose_assign_tool_group_to_workspace".
 - Khi người dùng yêu cầu xóa tool group hoặc tool: tìm kiếm ID/Key và gọi "propose_delete_tool_group" hoặc "propose_delete_tool".
-- Khi người dùng yêu cầu tạo Skill mới, dạy Skill mới, hoặc lưu quy trình/kịch bản thao tác thành Skill:
-  + Bạn BẮT BUỘC PHẢI tự động trích xuất hoặc đề xuất mã key (chữ thường, gạch dưới, ví dụ: them_chi_tieu), tên hiển thị (ví dụ: Thêm Chi Tiêu), mô tả tóm tắt, và biên soạn system_prompt chi tiết từng bước dựa trên toàn bộ quy trình mà người dùng đã mô tả.
-  + BẮT BUỘC PHẢI gọi tool "propose_create_skill". TUYỆT ĐỐI KHÔNG được chỉ hứa hẹn hoặc liệt kê bằng chữ suông "Tôi sẽ tạo..." hoặc yêu cầu người dùng phải tự điền lại các thông tin đó mà không gọi tool!
+- KHI NGƯỜI DÙNG YÊU CẦU SỬA SKILL CŨ / CẬP NHẬT SKILL / TINH CHỈNH QUY TRÌNH SKILL ĐÃ CÓ:
+  + BẮT BUỘC PHẢI tra cứu danh sách skill ("list_skills") để tìm đúng ID và Key của Skill hiện có (ví dụ: tìm Skill "Thêm Chi Tiêu" có key "them_chi_tieu" và ID tương ứng).
+  + BẮT BUỘC PHẢI gọi tool "propose_update_skill" với skill_id của skill hiện có.
+  + TUYỆT ĐỐI KHÔNG ĐƯỢC gọi "propose_create_skill" khi người dùng yêu cầu sửa skill cũ hoặc khi skill với key/tên đó đã tồn tại trong hệ thống!
+- KHI NGƯỜI DÙNG YÊU CẦU TẠO SKILL MỚI (chưa từng có):
+  + Tự động trích xuất hoặc đề xuất mã key (chữ thường, gạch dưới, ví dụ: them_chi_tieu), tên hiển thị (ví dụ: Thêm Chi Tiêu), mô tả tóm tắt, và biên soạn system_prompt chi tiết từng bước dựa trên toàn bộ quy trình mà người dùng đã mô tả.
+  + Gọi tool "propose_create_skill". TUYỆT ĐỐI KHÔNG được chỉ hứa hẹn bằng chữ suông mà không gọi tool!
 
 QUAN TRỌNG NHẤT VỀ GỌI TOOL:
-- Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (tạo skill, gán tool, thu hồi tool, import MCP, xóa tool...): Bạn PHẢI GỌI FUNCTION TOOL (trong trường tool_calls) NGAY LẬP TỨC để hệ thống hiển thị Action Preview Card cho Admin bấm xác nhận.
+- Khi người dùng muốn thực hiện hành động làm thay đổi dữ liệu (tạo skill, sửa skill, gán tool, thu hồi tool, import MCP, xóa tool...): Bạn PHẢI GỌI FUNCTION TOOL (trong trường tool_calls) NGAY LẬP TỨC để hệ thống hiển thị Action Preview Card cho Admin bấm xác nhận.
 - TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ trả về tin nhắn văn bản nói "Tôi sẽ gọi tool..." hay "Tôi sẽ tạo..." mà không phát lệnh gọi tool tương ứng!`;
   }
 
@@ -260,7 +265,7 @@ QUAN TRỌNG NHẤT VỀ GỌI TOOL:
         type: 'function',
         function: {
           name: 'propose_create_skill',
-          description: 'BẮT BUỘC GỌI TOOL NÀY khi người dùng yêu cầu tạo Skill, dạy Skill mới, hoặc biến một quy trình/kịch bản thành Skill cho AI Agent. Hãy tự động tổng hợp key, name, description và system_prompt chi tiết từng bước để gọi tool này tạo Action Preview Card cho Admin bấm xác nhận.',
+          description: 'BẮT BUỘC GỌI TOOL NÀY khi người dùng yêu cầu tạo Skill mới chưa từng có trong hệ thống. Hãy tự động tổng hợp key, name, description và system_prompt chi tiết từng bước để gọi tool này tạo Action Preview Card cho Admin bấm xác nhận.',
           parameters: {
             type: 'object',
             properties: {
@@ -271,6 +276,39 @@ QUAN TRỌNG NHẤT VỀ GỌI TOOL:
               workspace_id: { type: 'string', description: 'ID Workspace cần liên kết ngay (tùy chọn)' },
             },
             required: ['key', 'name', 'system_prompt'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'propose_update_skill',
+          description: 'BẮT BUỘC GỌI TOOL NÀY khi người dùng yêu cầu sửa, cập nhật, tinh chỉnh quy trình cho một Skill ĐÃ TỒN TẠI trong hệ thống (ví dụ: Thêm Chi Tiêu). Hãy tra cứu ID của skill (dùng list_skills), sau đó tổng hợp name, description, system_prompt và các bước sop_steps mới để gọi tool này tạo Action Preview Card cho Admin bấm xác nhận.',
+          parameters: {
+            type: 'object',
+            properties: {
+              skill_id: { type: 'string', description: 'ID (UUID) của Skill cần sửa đổi (lấy từ list_skills)' },
+              key: { type: 'string', description: 'Mã định danh duy nhất của Skill (ví dụ: them_chi_tieu)' },
+              name: { type: 'string', description: 'Tên hiển thị của Skill' },
+              description: { type: 'string', description: 'Mô tả tóm tắt kỹ năng' },
+              system_prompt: { type: 'string', description: 'System prompt chi tiết đã cập nhật' },
+              sop_steps: {
+                type: 'array',
+                description: 'Danh sách các bước SOP quy trình chi tiết',
+                items: {
+                  type: 'object',
+                  properties: {
+                    stepId: { type: 'number' },
+                    title: { type: 'string' },
+                    actionType: { type: 'string' },
+                    toolKey: { type: 'string' },
+                    condition: { type: 'string' },
+                    description: { type: 'string' },
+                  },
+                },
+              },
+            },
+            required: ['skill_id', 'name'],
           },
         },
       },
@@ -606,6 +644,22 @@ QUAN TRỌNG NHẤT VỀ GỌI TOOL:
           parameters: args,
         };
 
+      case 'propose_update_skill':
+        return {
+          action_id: actionId,
+          action_type: 'UPDATE_SKILL',
+          summary: `Cập nhật quy trình chuẩn (SOP) cho Skill "${args.name}" (${args.key || args.skill_id}).`,
+          details: {
+            'Hành động': 'Cập nhật Skill hiện có',
+            'Tên Skill': args.name,
+            'Mã Key': args.key || '—',
+            'Mô tả': args.description || 'Kỹ năng xử lý nghiệp vụ',
+            'Quy trình / SOP mới': args.system_prompt ? (args.system_prompt.length > 120 ? args.system_prompt.substring(0, 120) + '...' : args.system_prompt) : '—',
+            'Số bước SOP': args.sop_steps?.length ? `${args.sop_steps.length} bước` : 'Quy trình Prompt',
+          },
+          parameters: args,
+        };
+
       case 'propose_sync_mcp_tools':
         return {
           action_id: actionId,
@@ -888,6 +942,78 @@ QUAN TRỌNG NHẤT VỀ GỌI TOOL:
           success: true,
           message: `Đã tạo Skill mới "${name}" thành công!${workspace_id ? ' Đã gán vào Workspace.' : ''}`,
           data: { skill_id: skill.id },
+        };
+      }
+
+      if (actionType === 'UPDATE_SKILL') {
+        const { skill_id, key, name, description, system_prompt, sop_steps, required_tools, trigger_intents } = params;
+
+        // Tìm skill hiện có theo id hoặc key
+        const existing = await query(
+          `SELECT id, key, name, system_prompt FROM skills WHERE id::text = $1 OR key = $2 LIMIT 1`,
+          [skill_id || '00000000-0000-0000-0000-000000000000', (key || '').trim().toLowerCase()]
+        );
+
+        if (existing.rows.length === 0) {
+          throw new Error(`Không tìm thấy Skill với ID "${skill_id}" hoặc Key "${key}" để cập nhật.`);
+        }
+
+        const targetId = existing.rows[0].id;
+        const targetKey = existing.rows[0].key;
+        const finalPrompt = system_prompt || existing.rows[0].system_prompt;
+
+        const updateRes = await query(
+          `UPDATE skills SET
+             name = COALESCE($1, name),
+             description = COALESCE($2, description),
+             system_prompt = COALESCE($3, system_prompt),
+             detail = COALESCE($3, detail),
+             sop_steps = COALESCE($4, sop_steps),
+             required_tools = COALESCE($5, required_tools),
+             trigger_intents = COALESCE($6, trigger_intents),
+             updated_at = NOW()
+           WHERE id = $7
+           RETURNING id, key, name`,
+          [
+            name ? name.trim() : null,
+            description || null,
+            system_prompt || null,
+            sop_steps ? JSON.stringify(sop_steps) : null,
+            required_tools || null,
+            trigger_intents ? JSON.stringify(trigger_intents) : null,
+            targetId,
+          ]
+        );
+        const updated = updateRes.rows[0];
+
+        // Cập nhật Neo4j Skill Node
+        await neo4jClient.run(
+          `MERGE (s:Skill { id: $id })
+           SET s.name = $name,
+               s.systemPrompt = $systemPrompt,
+               s.updated_at = timestamp()
+           RETURN s`,
+          {
+            id: updated.id,
+            name: updated.name,
+            systemPrompt: finalPrompt,
+          }
+        );
+
+        await logAuditAction(
+          null,
+          null,
+          adminUserId,
+          'COPILOT_ACTION',
+          { action: 'UPDATE_SKILL', skill_id: updated.id, key: targetKey, name: updated.name },
+          { skill_id: updated.id, name: updated.name },
+          'SUCCESS'
+        );
+
+        return {
+          success: true,
+          message: `Đã cập nhật thành công Skill "${updated.name}" (${targetKey})!`,
+          data: { skill_id: updated.id, key: targetKey, name: updated.name },
         };
       }
 

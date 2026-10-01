@@ -236,7 +236,25 @@ export class WorkerAgent {
 `;
 
     if (matchedSkill) {
-      systemInstruction += `\n\n## QUY TRÌNH KỸ NĂNG CHUYÊN BIỆT (SKILL SOP - ${matchedSkill.name}):\n${matchedSkill.systemPrompt}\n`;
+      systemInstruction += `\n\n## QUY TRÌNH KỸ NĂNG CHUYÊN BIỆT (SKILL: ${matchedSkill.name}):\n`;
+      if (matchedSkill.systemPrompt) {
+        systemInstruction += `${matchedSkill.systemPrompt}\n\n`;
+      }
+      if (matchedSkill.sopSteps && matchedSkill.sopSteps.length > 0) {
+        systemInstruction += `### CÁC BƯỚC QUY TRÌNH CHUẨN (DETERMINISTIC SOP STEPS - BẮT BUỘC THỰC HIỆN ĐÚNG THỨ TỰ):\n`;
+        matchedSkill.sopSteps.forEach((step, idx) => {
+          systemInstruction += `${idx + 1}. [${step.actionType}] ${step.title}: ${step.description}`;
+          if (step.toolKey) systemInstruction += ` -> Gọi công cụ: \`${step.toolKey}\``;
+          if (step.condition) systemInstruction += ` (Điều kiện: ${step.condition})`;
+          systemInstruction += `\n`;
+        });
+        systemInstruction += `\nLƯU Ý THỰC THI SOP:
+- Bắt buộc tuân thủ chặt chẽ tuần tự các bước SOP trên.
+- [LLM_EXTRACT]: Trích xuất đầy đủ các tham số cần thiết từ câu nói của người dùng hoặc ngữ cảnh hội thoại.
+- [TOOL_CALL]: Gọi chính xác công cụ được chỉ định trong bước với các tham số đã trích xuất, không gọi công cụ thừa thãi.
+- [ASK_USER]: Nếu phát hiện thiếu tham số bắt buộc hoặc điều kiện thỏa mãn việc cần người dùng làm rõ, dừng lại và hỏi lịch sự ngắn gọn.
+- [SYNTHESIZE]: Sau khi hoàn thành các bước gọi công cụ, tổng hợp kết quả và phản hồi tự nhiên theo persona Thảo Chi.\n`;
+      }
     }
 
     const userMessageContent = senderName

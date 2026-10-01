@@ -13,10 +13,16 @@ export const dynamic = 'force-dynamic';
 function mapRowToSkill(row: any) {
     return {
         id: row.id,
+        key: row.key,
         name: row.name,
         description: row.description,
         is_shared: row.is_shared,
         detail: row.detail,
+        system_prompt: row.system_prompt,
+        trigger_intents: Array.isArray(row.trigger_intents) ? row.trigger_intents : [],
+        required_tools: Array.isArray(row.required_tools) ? row.required_tools : [],
+        sop_steps: Array.isArray(row.sop_steps) ? row.sop_steps : [],
+        execution_mode: row.execution_mode || 'FLEXIBLE_REACT',
         status: row.status,
         created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
         updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
@@ -73,7 +79,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
         const result = await query(
-            `SELECT s.id, s.name, s.description, s.detail, s.is_shared,
+            `SELECT s.id, s.key, s.name, s.description, s.detail, s.system_prompt, s.trigger_intents, s.required_tools, s.sop_steps, s.execution_mode, s.is_shared,
               s.status, s.created_at, s.updated_at
        FROM skills s
        ${whereClause}
@@ -125,7 +131,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
     try {
         const body = await req.json();
-        const { name, description, detail, owner_id = null, workspace_id = null, is_shared = false, category, tools = [] } = body;
+        const { 
+            name, 
+            key = null,
+            description, 
+            detail, 
+            system_prompt = null,
+            trigger_intents = [],
+            required_tools = [],
+            sop_steps = [],
+            execution_mode = 'FLEXIBLE_REACT',
+            owner_id = null, 
+            workspace_id = null, 
+            is_shared = false, 
+            category, 
+            tools = [] 
+        } = body;
 
         if (!name) {
             return NextResponse.json({ success: false, error: 'Name is required' }, { status: 400 });
@@ -138,12 +159,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ success: false, error: 'Owner ID is required and could not be determined' }, { status: 400 });
         }
 
-        // Insert into postgres (metadata only)
+        // Generated key if not provided
+        const finalKey = key || name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+        // Insert into postgres
         const result = await query(
-            `INSERT INTO skills (name, description, detail, is_shared, status, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-             RETURNING *`,
-            [name, description || null, detail || null, is_shared]
+            `INSERT INTO skills (
+                name, key, description, detail, system_prompt, trigger_intents, 
+                required_tools, sop_steps, execution_mode, is_shared, status, 
+                created_at, updated_at
+             ) VALUES (
+                $1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+             ) RETURNING *`,
+            [
+                name, 
+                finalKey, 
+                description || null, 
+                detail || null, 
+                system_prompt || null, 
+                JSON.stringify(trigger_intents || []), 
+                required_tools || [], 
+                JSON.stringify(sop_steps || []), 
+                execution_mode || 'FLEXIBLE_REACT', 
+                is_shared
+            ]
         );
 
         const skillId = result.rows[0].id;

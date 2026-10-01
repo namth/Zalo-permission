@@ -192,6 +192,8 @@ model Skill {
   systemPrompt   String?  @db.Text @map("system_prompt")
   triggerIntents Json?    @default("[]") @map("trigger_intents")
   requiredTools  String[] @default([]) @map("required_tools")
+  sopSteps       Json?    @default("[]") @map("sop_steps")
+  executionMode  String   @default("FLEXIBLE_REACT") @map("execution_mode")
   isShared       Boolean  @default(false) @map("is_shared")
   embedding      Json?
   status         String   @default("active")
