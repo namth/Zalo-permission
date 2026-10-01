@@ -101,9 +101,10 @@ export class TelegramChannelAdapter {
   async sendMessage(platformChatId: string, messages: string | string[], mediaUrls?: string[]): Promise<void> {
     const messageList = Array.isArray(messages) ? messages : [messages];
 
-    // 1. Gửi ảnh trước nếu có
+    // 1. Gửi ảnh trước nếu có (loại trừ link trùng lặp)
     if (mediaUrls && mediaUrls.length > 0) {
-      for (const url of mediaUrls) {
+      const uniqueUrls = Array.from(new Set(mediaUrls.map((u) => u.trim()).filter(Boolean)));
+      for (const url of uniqueUrls) {
         try {
           await this.bot.api.sendPhoto(platformChatId, url);
         } catch (photoErr) {

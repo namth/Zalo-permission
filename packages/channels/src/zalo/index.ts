@@ -301,9 +301,10 @@ export class ZaloChannelAdapter {
     const tempFiles: string[] = [];
 
     try {
-      // 1. Tải ảnh về file tạm nếu có link media
+      // 1. Tải ảnh về file tạm nếu có link media (loại trừ link trùng lặp)
       if (mediaUrls && mediaUrls.length > 0) {
-        for (const url of mediaUrls) {
+        const uniqueUrls = Array.from(new Set(mediaUrls.map((u) => u.trim()).filter(Boolean)));
+        for (const url of uniqueUrls) {
           const tempPath = await downloadImageToTempFile(url);
           if (tempPath) tempFiles.push(tempPath);
         }

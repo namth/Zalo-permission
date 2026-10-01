@@ -1,4 +1,12 @@
 /**
+ * Làm sạch URL, loại bỏ dấu ngoặc đơn hoặc dấu câu bị dính ở cuối URL do cú pháp markdown hoặc văn bản
+ */
+export function cleanUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  return rawUrl.trim().replace(/[),.;:!?\]]+$/, '');
+}
+
+/**
  * Trích xuất tất cả URL hình ảnh từ chuỗi văn bản (link VietQR, file ảnh .png/.jpg, markdown image)
  */
 export function extractImageUrls(input: string): string[] {
@@ -9,19 +17,19 @@ export function extractImageUrls(input: string): string[] {
   const mdRegex = /!\[.*?\]\((https?:\/\/[^\s)]+)\)/gi;
   let match: RegExpExecArray | null;
   while ((match = mdRegex.exec(input)) !== null) {
-    if (match[1]) urls.add(match[1]);
+    if (match[1]) urls.add(cleanUrl(match[1]));
   }
 
-  // 2. VietQR specific pattern (img.vietqr.io)
-  const vietQrRegex = /https:\/\/img\.vietqr\.io\/image\/[^\s"'<>]+/gi;
+  // 2. VietQR specific pattern (img.vietqr.io) - loại trừ ngoặc đơn và ngoặc vuông markdown
+  const vietQrRegex = /https:\/\/img\.vietqr\.io\/image\/[^\s"'<>)\]]+/gi;
   while ((match = vietQrRegex.exec(input)) !== null) {
-    urls.add(match[0]);
+    urls.add(cleanUrl(match[0]));
   }
 
   // 3. Direct image URLs ending with common image extensions
-  const directImgRegex = /https?:\/\/[^\s"'<>]+\.(?:png|jpg|jpeg|webp|gif)(?:\?[^\s"'<>]*)?/gi;
+  const directImgRegex = /https?:\/\/[^\s"'<>)\]]+\.(?:png|jpg|jpeg|webp|gif)(?:\?[^\s"'<>)\]]*)?/gi;
   while ((match = directImgRegex.exec(input)) !== null) {
-    urls.add(match[0]);
+    urls.add(cleanUrl(match[0]));
   }
 
   return Array.from(urls);
@@ -40,7 +48,8 @@ export function cleanTextAfterMediaExtraction(input: string, mediaUrls?: string[
 
   // 2. Loại bỏ link ảnh trực tiếp
   const urlsToRemove = mediaUrls && mediaUrls.length > 0 ? mediaUrls : extractImageUrls(input);
-  for (const url of urlsToRemove) {
+  for (const rawUrl of urlsToRemove) {
+    const url = cleanUrl(rawUrl);
     cleaned = cleaned.split(url).join('');
   }
 
