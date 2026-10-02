@@ -34,7 +34,7 @@ export async function GET(
 
     // Fetch tools belonging to this group from Postgres (tool_group_id) and Neo4j
     const toolsResult = await db.query(
-      `SELECT id, key, name, description, input_schema, output_schema, parameters_schema, status, created_at, updated_at
+      `SELECT id, key, name, description, method, path, parameters_schema, body_schema, response_schema, input_schema, output_schema, status, is_active, created_at, updated_at
        FROM tools WHERE tool_group_id = $1 ORDER BY name ASC`,
       [id]
     );
@@ -51,7 +51,7 @@ export async function GET(
       const toolIds = neo4jRes.records.map(r => r.get('tool_id'));
       if (toolIds.length > 0) {
         const fallbackResult = await db.query(
-          `SELECT id, key, name, description, input_schema, output_schema, parameters_schema, status, created_at, updated_at
+          `SELECT id, key, name, description, method, path, parameters_schema, body_schema, response_schema, input_schema, output_schema, status, is_active, created_at, updated_at
            FROM tools WHERE id = ANY($1) ORDER BY name ASC`,
           [toolIds]
         );

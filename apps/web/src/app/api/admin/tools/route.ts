@@ -19,36 +19,55 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const status = req.nextUrl.searchParams.get('status');
+    const groupId = req.nextUrl.searchParams.get('group_id') || req.nextUrl.searchParams.get('tool_group_id');
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '100', 10);
     const offset = parseInt(req.nextUrl.searchParams.get('offset') || '0', 10);
 
-    logger.info(`[API] GET /api/admin/tools - status: ${status || 'all'}, limit: ${limit}, offset: ${offset}`);
+    logger.info(`[API] GET /api/admin/tools - status: ${status || 'all'}, group: ${groupId || 'all'}, limit: ${limit}, offset: ${offset}`);
 
     const db = getDb();
-    let query = `SELECT id, key, name, description, tool_group_id, input_schema, output_schema, status, created_at, updated_at 
+    let query = `SELECT id, key, name, description, tool_group_id, method, path, 
+                        parameters_schema, body_schema, response_schema, input_schema, output_schema, 
+                        status, is_active, created_at, updated_at 
                  FROM tools`;
+    const conditions: string[] = [];
     const params: any[] = [];
 
     if (status) {
-      query += ` WHERE status = $1`;
+      conditions.push(`status = $${params.length + 1}`);
       params.push(status);
+    }
+
+    if (groupId) {
+      conditions.push(`tool_group_id = $${params.length + 1}::uuid`);
+      params.push(groupId);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
     const result = await db.query(query, params);
-    const countResult = await db.query(
-      status ? `SELECT COUNT(*) as total FROM tools WHERE status = $1` : `SELECT COUNT(*) as total FROM tools`,
-      status ? [status] : []
-    );
+    const countQuery = conditions.length > 0
+      ? `SELECT COUNT(*) as total FROM tools WHERE ${conditions.join(' AND ')}`
+      : `SELECT COUNT(*) as total FROM tools`;
+    const countResult = await db.query(countQuery, params.slice(0, conditions.length));
     const total = parseInt(countResult.rows[0].total, 10);
 
     // Get group mapping from PostgreSQL tool_groups
-    const pgGroupsRes = await db.query('SELECT id, key, name FROM tool_groups');
-    const pgGroupMap = new Map<string, { id: string; key: string; name: string }>();
+    const pgGroupsRes = await db.query('SELECT id, key, name, protocol_type, base_url FROM tool_groups');
+    const pgGroupMap = new Map<string, { id: string; key: string; name: string; protocol_type: string; base_url: string }>();
     for (const g of pgGroupsRes.rows) {
-      pgGroupMap.set(String(g.id), { id: String(g.id), key: g.key, name: g.name });
+      pgGroupMap.set(String(g.id), {
+        id: String(g.id),
+        key: g.key,
+        name: g.name,
+        protocol_type: g.protocol_type || 'REST',
+        base_url: g.base_url || '',
+      });
     }
 
     // Get group mapping from Neo4j (both BELONGS_TO_GROUP and CONTAINS)
@@ -64,11 +83,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       
       for (const record of neo4jRes.records) {
         const toolId = record.get('tool_id');
-        const groupId = record.get('group_id');
+        const rGroupId = record.get('group_id');
         
-        if (toolId && groupId) {
+        if (toolId && rGroupId) {
           groupMap.set(String(toolId), {
-            id: String(groupId),
+            id: String(rGroupId),
             key: record.get('group_key'),
             name: record.get('group_name')
           });
@@ -80,7 +99,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const data = result.rows.map((row: any) => {
       const rowId = String(row.id);
-      const group_info = groupMap.get(rowId) || (row.tool_group_id ? pgGroupMap.get(String(row.tool_group_id)) : null) || null;
+      const pgGroup = row.tool_group_id ? pgGroupMap.get(String(row.tool_group_id)) : null;
+      const neo4jGroup = groupMap.get(rowId);
+      const group_info = pgGroup || neo4jGroup || null;
       
       return {
         ...row,
@@ -118,9 +139,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json();
-    const { key, name, description, input_schema, output_schema, created_by, group_id } = body;
+    const { 
+      key, 
+      name, 
+      description, 
+      method, 
+      path, 
+      parameters_schema, 
+      body_schema, 
+      response_schema, 
+      input_schema, 
+      output_schema, 
+      created_by, 
+      group_id,
+      status,
+      is_active,
+    } = body;
 
-    logger.info(`[API] POST /api/admin/tools - tool: ${key}, group: ${group_id}`);
+    logger.info(`[API] POST /api/admin/tools - tool: ${key}, group: ${group_id}, method: ${method}`);
 
     // Validation
     if (!key || !name) {
@@ -171,19 +207,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       key,
       name,
       description,
-      input_schema,
-      output_schema,
+      input_schema || parameters_schema,
+      output_schema || response_schema,
       embedding,
       group_id,
-      created_by
+      created_by,
+      {
+        method: method || null,
+        path: path || null,
+        parameters_schema: parameters_schema || input_schema || null,
+        body_schema: body_schema || null,
+        response_schema: response_schema || output_schema || null,
+        status: status || 'active',
+        is_active: is_active !== undefined ? is_active : (status ? status === 'active' : true),
+      }
     );
 
     // Log audit
     const auditLogService = new AuditLogService(db);
     await auditLogService.createAuditLog({
-      workspace_id: null, // system-level action, no specific workspace
+      workspace_id: null,
       action_type: 'TOOL_CREATED',
-      input_data: { key, name },
+      input_data: { key, name, method, path, group_id },
       output_data: { tool_id: tool.id },
       status: 'SUCCESS',
     });

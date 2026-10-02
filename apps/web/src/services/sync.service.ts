@@ -574,25 +574,59 @@ export class ToolSyncService {
     output_schema?: any,
     embedding?: number[],
     group_id?: string,
-    created_by?: string
+    created_by?: string,
+    extraFields?: {
+      method?: string | null;
+      path?: string | null;
+      parameters_schema?: any;
+      body_schema?: any;
+      response_schema?: any;
+      status?: string;
+      is_active?: boolean;
+    }
   ) {
     const txn = new SyncTransaction();
     try {
       await txn.begin();
 
+      const method = extraFields?.method || null;
+      const path = extraFields?.path || null;
+      const parametersSchema = extraFields?.parameters_schema || input_schema || null;
+      const bodySchema = extraFields?.body_schema || null;
+      const responseSchema = extraFields?.response_schema || output_schema || null;
+      const status = extraFields?.status || 'active';
+      const isActive = extraFields?.is_active !== undefined ? extraFields.is_active : status === 'active';
+
       // 1. Create in PostgreSQL
       const pgResult = await txn.pgQuery(
-        `INSERT INTO tools (key, name, description, input_schema, output_schema, embedding, tool_group_id, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW(), NOW())
-         RETURNING id, key, name, description, input_schema, output_schema, embedding, tool_group_id, status, created_at, updated_at`,
+        `INSERT INTO tools (
+          key, name, description, method, path, 
+          parameters_schema, body_schema, response_schema, 
+          input_schema, output_schema, embedding, 
+          tool_group_id, status, is_active, created_at, updated_at
+        )
+        VALUES (
+          $1, $2, $3, $4::"HttpMethod", $5, 
+          $6::jsonb, $7::jsonb, $8::jsonb, 
+          $9::jsonb, $10::jsonb, $11::jsonb, 
+          $12, $13, $14, NOW(), NOW()
+        )
+        RETURNING id, key, name, description, method, path, parameters_schema, body_schema, response_schema, input_schema, output_schema, embedding, tool_group_id, status, is_active, created_at, updated_at`,
         [
           key,
           name,
           description || null,
-          input_schema ? JSON.stringify(input_schema) : null,
-          output_schema ? JSON.stringify(output_schema) : null,
+          method,
+          path,
+          parametersSchema ? JSON.stringify(parametersSchema) : null,
+          bodySchema ? JSON.stringify(bodySchema) : null,
+          responseSchema ? JSON.stringify(responseSchema) : null,
+          input_schema ? JSON.stringify(input_schema) : (parametersSchema ? JSON.stringify(parametersSchema) : null),
+          output_schema ? JSON.stringify(output_schema) : (responseSchema ? JSON.stringify(responseSchema) : null),
           embedding ? JSON.stringify(embedding) : null,
           group_id || null,
+          status,
+          isActive,
         ]
       );
 
@@ -657,10 +691,16 @@ export class ToolSyncService {
     updates: {
       name?: string;
       description?: string;
+      method?: string | null;
+      path?: string | null;
+      parameters_schema?: any;
+      body_schema?: any;
+      response_schema?: any;
       input_schema?: any;
       output_schema?: any;
       embedding?: number[];
       status?: string;
+      is_active?: boolean;
       group_id?: string | null;
     },
     updated_by?: string
@@ -681,21 +721,45 @@ export class ToolSyncService {
         fields.push(`description = $${paramIndex++}`);
         values.push(updates.description);
       }
+      if (updates.method !== undefined) {
+        fields.push(`method = $${paramIndex++}::"HttpMethod"`);
+        values.push(updates.method || null);
+      }
+      if (updates.path !== undefined) {
+        fields.push(`path = $${paramIndex++}`);
+        values.push(updates.path || null);
+      }
+      if (updates.parameters_schema !== undefined) {
+        fields.push(`parameters_schema = $${paramIndex++}::jsonb`);
+        values.push(updates.parameters_schema ? JSON.stringify(updates.parameters_schema) : null);
+      }
+      if (updates.body_schema !== undefined) {
+        fields.push(`body_schema = $${paramIndex++}::jsonb`);
+        values.push(updates.body_schema ? JSON.stringify(updates.body_schema) : null);
+      }
+      if (updates.response_schema !== undefined) {
+        fields.push(`response_schema = $${paramIndex++}::jsonb`);
+        values.push(updates.response_schema ? JSON.stringify(updates.response_schema) : null);
+      }
       if (updates.input_schema !== undefined) {
-        fields.push(`input_schema = $${paramIndex++}`);
+        fields.push(`input_schema = $${paramIndex++}::jsonb`);
         values.push(updates.input_schema ? JSON.stringify(updates.input_schema) : null);
       }
       if (updates.output_schema !== undefined) {
-        fields.push(`output_schema = $${paramIndex++}`);
+        fields.push(`output_schema = $${paramIndex++}::jsonb`);
         values.push(updates.output_schema ? JSON.stringify(updates.output_schema) : null);
       }
       if (updates.embedding !== undefined) {
-        fields.push(`embedding = $${paramIndex++}`);
+        fields.push(`embedding = $${paramIndex++}::jsonb`);
         values.push(updates.embedding ? JSON.stringify(updates.embedding) : null);
       }
       if (updates.status !== undefined) {
         fields.push(`status = $${paramIndex++}`);
         values.push(updates.status);
+      }
+      if (updates.is_active !== undefined) {
+        fields.push(`is_active = $${paramIndex++}`);
+        values.push(updates.is_active);
       }
       if (updates.group_id !== undefined) {
         fields.push(`tool_group_id = $${paramIndex++}`);
@@ -717,7 +781,7 @@ export class ToolSyncService {
           `UPDATE tools
            SET ${fields.join(', ')}
            WHERE id = $${paramIndex}
-           RETURNING id, key, name, description, tool_group_id, input_schema, output_schema, embedding, status, created_at, updated_at`,
+           RETURNING id, key, name, description, method, path, parameters_schema, body_schema, response_schema, input_schema, output_schema, embedding, tool_group_id, status, is_active, created_at, updated_at`,
           values
         );
 

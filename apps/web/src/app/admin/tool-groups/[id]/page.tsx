@@ -9,6 +9,7 @@ import {
   syncMcpTools
 } from '../api';
 import { deleteTool } from '../../tools/api';
+import { MethodBadge } from '../../tools/components';
 import {
   ArrowLeft, Trash, PencilSimple, Check, X, Plus, ArrowsClockwise, ShieldCheck,
   Key, Info, Sparkle, Globe, Eye, EyeSlash, Copy, CaretDown, CaretRight
@@ -317,6 +318,7 @@ export default function ToolGroupDetailPage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Key</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Name</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Endpoint / Lời gọi</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Description</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Thao tác</th>
@@ -330,6 +332,20 @@ export default function ToolGroupDetailPage() {
                       <Link href={`/admin/tools/${tool.id}`} className="text-blue-600 hover:text-blue-800 hover:underline">
                         {tool.name}
                       </Link>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {group?.protocol_type === 'MCP' ? (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                          tools/call
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <MethodBadge method={tool.method || 'GET'} />
+                          <code className="text-xs font-mono text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                            {tool.path || '/'}
+                          </code>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{tool.description || '—'}</td>
                     <td className="px-6 py-4 text-sm">

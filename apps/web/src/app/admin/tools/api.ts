@@ -5,13 +5,21 @@ export interface Tool {
   key: string;
   name: string;
   description?: string;
-  input_schema?: Record<string, any>;
-  output_schema?: Record<string, any>;
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | null;
+  path?: string | null;
+  parameters_schema?: Record<string, any> | null;
+  body_schema?: Record<string, any> | null;
+  response_schema?: Record<string, any> | null;
+  input_schema?: Record<string, any> | null;
+  output_schema?: Record<string, any> | null;
   status: 'active' | 'deprecated' | 'disabled';
+  is_active?: boolean;
   group_info?: {
     id: string;
     key: string;
     name: string;
+    protocol_type?: 'REST' | 'MCP' | string;
+    base_url?: string;
   } | null;
   group_id?: string | null;
   created_at: string;
@@ -31,8 +39,13 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-export async function fetchTools(): Promise<Tool[]> {
-  const response = await fetch('/api/admin/tools');
+export async function fetchTools(filters?: { status?: string; group_id?: string }): Promise<Tool[]> {
+  const query = new URLSearchParams();
+  if (filters?.status) query.append('status', filters.status);
+  if (filters?.group_id) query.append('group_id', filters.group_id);
+
+  const url = `/api/admin/tools${query.toString() ? '?' + query.toString() : ''}`;
+  const response = await fetch(url);
   const data = await response.json() as ApiResponse<Tool[]>;
 
   if (!response.ok || !data.success) {

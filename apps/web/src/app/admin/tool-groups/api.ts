@@ -23,9 +23,15 @@ export interface ToolInGroup {
   key: string;
   name: string;
   description?: string;
+  method?: string | null;
+  path?: string | null;
   parameters_schema?: Record<string, unknown>;
+  body_schema?: Record<string, unknown>;
+  response_schema?: Record<string, unknown>;
   input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
   status: string;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
