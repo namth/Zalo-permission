@@ -9,15 +9,24 @@ const SECRET = new TextEncoder().encode(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Define protected paths
-  const isProtectedPath = pathname.startsWith('/admin');
+  // Backward compatibility: redirect any legacy /admin/... to /...
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    const newPath = pathname.replace(/^\/admin/, '') || '/';
+    return NextResponse.redirect(new URL(newPath, request.url));
+  }
+
+  const isApi = pathname.startsWith('/api');
   const isProtectedApi = pathname.startsWith('/api/admin');
+  const isPublicPath = pathname === '/login' || pathname === '/register';
+
+  // Protected frontend path is any non-api, non-public path
+  const isProtectedPath = !isApi && !isPublicPath;
 
   if (!isProtectedPath && !isProtectedApi) {
     return NextResponse.next();
   }
 
-    // 2. Check for auth token (Cookie or Authorization header)
+  // Check for auth token (Cookie or Authorization header)
   let token = request.cookies.get(COOKIE_NAME)?.value;
 
   if (!token) {
@@ -37,14 +46,14 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    // 3. Verify token
+    // Verify token
     let role: string | null = null;
     let userPayload: any = null;
 
     if (token.startsWith('zp_')) {
       // Fixed API Token - Verify via internal API
-      // Use localhost to avoid SSL/DNS issues with public origin inside Docker
-      const internalOrigin = 'http://127.0.0.1:3000';
+      const port = process.env.PORT || '7140';
+      const internalOrigin = `http://127.0.0.1:${port}`;
       try {
         const verifyRes = await fetch(`${internalOrigin}/api/auth/verify-api-token`, {
           method: 'POST',
@@ -60,7 +69,7 @@ export async function middleware(request: NextRequest) {
           }
         }
       } catch (err) {
-        console.error('Middleare API token fetch error:', err);
+        console.error('Middleware API token fetch error:', err);
       }
     } else {
       // Standard JWT Token
@@ -73,25 +82,27 @@ export async function middleware(request: NextRequest) {
       throw new Error('Unauthorized');
     }
 
-    // 4. Role-based access control for Frontend
+    // Role-based access control for Frontend
     if (isProtectedPath) {
       const adminOnlyPaths = [
-        '/admin/dashboard',
-        '/admin/users',
-        '/admin/tools',
-        '/admin/tool-groups'
+        '/dashboard',
+        '/users',
+        '/tools',
+        '/tool-groups'
       ];
       
-      const isRestrictedForUser = adminOnlyPaths.some(path => pathname.startsWith(path));
+      const isRestrictedForUser = adminOnlyPaths.some(
+        path => pathname === path || pathname.startsWith(path + '/')
+      );
       
       if (role !== 'admin' && isRestrictedForUser) {
         // Redirect non-admin to Workspaces
-        return NextResponse.redirect(new URL('/admin/workspaces', request.url));
+        return NextResponse.redirect(new URL('/workspaces', request.url));
       }
 
-      // Special case: /admin without subpath usually goes to dashboard
-      if (role !== 'admin' && pathname === '/admin') {
-        return NextResponse.redirect(new URL('/admin/workspaces', request.url));
+      // Special case: / for non-admin
+      if (role !== 'admin' && pathname === '/') {
+        return NextResponse.redirect(new URL('/workspaces', request.url));
       }
     }
 
@@ -107,7 +118,15 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-// See "Matching Paths" below to learn more
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*'],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - assets (.svg, .png, .jpg, etc.)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };

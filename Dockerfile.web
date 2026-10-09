@@ -1,0 +1,19 @@
+FROM node:22-bookworm-slim
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=7140
+ENV HOSTNAME="0.0.0.0"
+
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/apps/web/.next/server/libquery_engine-linux-arm64-openssl-3.0.x.so.node
+
+COPY apps/web/.next/standalone ./
+COPY apps/web/public ./apps/web/public
+COPY apps/web/.next/static ./apps/web/.next/static
+
+EXPOSE 7140
+
+CMD ["node", "apps/web/server.js"]

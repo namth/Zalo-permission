@@ -10,25 +10,29 @@ declare global {
 
 export function getPrismaClient(): PrismaClient {
   ensureEnvLoaded();
-  if (global.prismaGlobal) {
-    return global.prismaGlobal;
+  const globalRef = (globalThis as any);
+  if (globalRef.prismaGlobal) {
+    return globalRef.prismaGlobal;
+  }
+
+  let dbUrl = process.env.DATABASE_URL;
+  if (dbUrl && !dbUrl.includes('connection_limit=')) {
+    const separator = dbUrl.includes('?') ? '&' : '?';
+    dbUrl = `${dbUrl}${separator}connection_limit=3&pool_timeout=15`;
   }
 
   const client = new PrismaClient({
-    datasources: process.env.DATABASE_URL
+    datasources: dbUrl
       ? {
           db: {
-            url: process.env.DATABASE_URL,
+            url: dbUrl,
           },
         }
       : undefined,
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    global.prismaGlobal = client;
-  }
-
+  globalRef.prismaGlobal = client;
   return client;
 }
 

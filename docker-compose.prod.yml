@@ -1,0 +1,50 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: omniagent-web
+    restart: unless-stopped
+    ports:
+      - "7140:7140"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=7140
+      - HOSTNAME=0.0.0.0
+      - APP_URL=https://zalo.inova.io.vn
+      - NEXTAUTH_URL=https://zalo.inova.io.vn
+      - PRISMA_QUERY_ENGINE_LIBRARY=/app/apps/web/.next/server/libquery_engine-linux-arm64-openssl-3.0.x.so.node
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: omniagent-worker
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - web
+
+  redis:
+    image: redis:7-alpine
+    container_name: omniagent-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes

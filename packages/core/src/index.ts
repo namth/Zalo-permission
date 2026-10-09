@@ -8,4 +8,4 @@ export * from './agents/worker-agent.js';
 export * from './agents/vision-agent.js';
 export * from './agents/text-splitter-agent.js';
 export * from './utils/media-extractor.js';
-
+export * from './contacts/contact-service.js';

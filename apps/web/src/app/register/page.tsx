@@ -33,7 +33,7 @@ function RegisterContent() {
         throw new Error(data.error || 'Registration failed');
       }
 
-      router.push('/admin/dashboard');
+      router.push('/dashboard');
       router.refresh();
     } catch (err: any) {
       setError(err.message);

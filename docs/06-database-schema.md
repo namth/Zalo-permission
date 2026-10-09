@@ -165,6 +165,21 @@ erDiagram
         integer latency_ms
         timestamp created_at
     }
+
+    CONTACTS {
+        uuid id PK
+        string name
+        string zalo_id UK
+        string telegram_id UK
+        string role "USER | SUPER_ADMIN"
+        string gender
+        integer birth_year
+        string email
+        string phone
+        string hobbies
+        timestamp created_at
+        timestamp updated_at
+    }
 ```
 
 ---
@@ -187,6 +202,11 @@ enum PlatformType {
   TELEGRAM
   ZALO
   WEBHOOK
+}
+
+enum ContactRole {
+  USER
+  SUPER_ADMIN
 }
 
 enum CallbackStatus {
@@ -454,6 +474,23 @@ model AuditLog {
   @@index([webhookId, createdAt])
   @@map("audit_logs")
 }
+
+model Contact {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String
+  zaloId      String?     @unique
+  telegramId  String?     @unique
+  role        ContactRole @default(USER)
+  gender      String?
+  birthYear   Int?
+  email       String?
+  phone       String?
+  hobbies     String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("contacts")
+}
 ```
 
 ---
@@ -469,10 +506,12 @@ Neo4j lưu trữ cấu trúc liên kết và giải quyết các bài toán phâ
 * `(:ToolGroup { id: String, key: String, name: String })`
 * `(:Tool { id: String, key: String, name: String })`
 * `(:Skill { id: String, key: String, name: String })`
+* `(:Contact { id: String, name: String })`
 
 ### 3.2. Các Loại Quan hệ (Relationships):
 * `(:ChannelChat)-[:BELONGS_TO]->(:Workspace)`: Nhóm chat thuộc Workspace nào.
 * `(:WorkspaceWebhook)-[:BELONGS_TO]->(:Workspace)`: Webhook endpoint thuộc Workspace nào.
+* `(:Contact)-[:BELONGS_TO]->(:Workspace)`: Người dùng (danh bạ) được gán để quản lý trong Workspace nào.
 * `(:Tool)-[:PART_OF]->(:ToolGroup)`: Tool API thuộc nhóm công cụ nào.
 * `(:Skill)-[:REQUIRES]->(:Tool)`: Skill cần Tool nào để hoạt động.
 * `(:Workspace)-[:CAN_USE]->(:Skill)`: Workspace được phép chạy Skill nào.

@@ -167,3 +167,22 @@ export interface AgentExecutionOutput {
   status: 'SUCCESS' | 'FAILED' | 'REJECTED';
   latencyMs: number;
 }
+
+export type ContactRole = 'USER' | 'SUPER_ADMIN';
+
+export interface ContactData {
+  id: string;
+  name: string;
+  nickname?: string | null;
+  zaloId?: string | null;
+  telegramId?: string | null;
+  role: ContactRole;
+  gender?: string | null;
+  birthYear?: number | null;
+  email?: string | null;
+  phone?: string | null;
+  hobbies?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+

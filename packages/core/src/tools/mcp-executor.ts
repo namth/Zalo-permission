@@ -3,7 +3,13 @@ import type { ToolExecutionResult } from '../types.js';
 /**
  * Kiểm tra xem hostname/IP có nằm trong dải IP nội bộ hay không để phòng ngừa SSRF
  */
-function isPrivateIpOrHost(hostname: string): boolean {
+function isPrivateIpOrHost(hostname: string, pathname?: string): boolean {
+  if (pathname && (pathname.startsWith('/api/mcp') || pathname.startsWith('/api/v1/mcp'))) {
+    return false;
+  }
+  if (process.env.ALLOW_INTERNAL_MCP === 'true') {
+    return false;
+  }
   const lower = hostname.toLowerCase();
   if (
     lower === 'localhost' ||
@@ -59,7 +65,7 @@ export class McpToolExecutor {
     const { endpointUrl, authHeaders = {}, timeoutMs = 15000 } = options;
 
     const url = new URL(endpointUrl);
-    if (isPrivateIpOrHost(url.hostname)) {
+    if (isPrivateIpOrHost(url.hostname, url.pathname)) {
       throw new Error(`Endpoint URL không an toàn (bảo vệ SSRF): ${url.hostname}`);
     }
 
@@ -186,7 +192,7 @@ export class McpToolExecutor {
     const startTime = Date.now();
 
     const targetUrl = new URL(endpointUrl);
-    if (isPrivateIpOrHost(targetUrl.hostname)) {
+    if (isPrivateIpOrHost(targetUrl.hostname, targetUrl.pathname)) {
       const latencyMs = Date.now() - startTime;
       return {
         toolId,

@@ -477,3 +477,26 @@ Tất cả các API quản trị nội bộ đều tuân theo chuẩn RESTful JS
 * **Kiểm tra kết nối Firebase:** `POST /api/workspaces/{id}/firebase-config/test`
 
 
+
+---
+
+## 7. Internal MCP Server & Contacts API
+
+### 7.1. Internal MCP Server Endpoint
+*   **Đường dẫn:** `POST /api/mcp` (hoặc `GET` cho SSE)
+*   **Mô tả:** Máy chủ Model Context Protocol nội bộ, cung cấp các công cụ cho Agent tự quản lý nền tảng.
+*   **Xác thực:** Yêu cầu quyền gọi nội bộ hoặc kiểm tra động quyền người gửi (`ContactRole == SUPER_ADMIN`).
+*   **Tools được cung cấp:**
+    *   `create_workspace(name, description)`
+    *   `add_contact(name, zalo_id, telegram_id)`
+    *   `update_contact_info(contact_id, gender, birth_year, email, phone, hobbies)`
+    *   `assign_contact_to_workspace(contact_id, workspace_id)`
+    *   `remove_contact_from_workspace(contact_id, workspace_id)`
+    *   `merge_contacts(primary_contact_id, secondary_contact_id)`
+
+### 7.2. Quản lý Danh bạ (Contacts API cho Dashboard)
+*   **Lấy danh sách:** `GET /api/contacts` (hỗ trợ phân trang, tìm kiếm)
+*   **Lấy chi tiết:** `GET /api/contacts/{id}`
+*   **Tạo thủ công:** `POST /api/contacts`
+*   **Cập nhật:** `PATCH /api/contacts/{id}`
+*   **Hợp nhất 2 tài khoản:** `POST /api/contacts/merge` (Body: `{ "primary_id": "...", "secondary_id": "..." }`)

@@ -5,7 +5,13 @@ import { McpToolExecutor } from './mcp-executor.js';
 /**
  * Kiểm tra xem hostname/IP có nằm trong dải IP nội bộ hay không để phòng ngừa SSRF
  */
-export function isPrivateIpOrHost(hostname: string): boolean {
+export function isPrivateIpOrHost(hostname: string, pathname?: string): boolean {
+  if (pathname && (pathname.startsWith('/api/mcp') || pathname.startsWith('/api/v1/mcp'))) {
+    return false;
+  }
+  if (process.env.ALLOW_INTERNAL_MCP === 'true') {
+    return false;
+  }
   const lower = hostname.toLowerCase();
   if (
     lower === 'localhost' ||
@@ -89,6 +95,13 @@ export class ToolExecutor {
         }
       }
 
+      // Inject caller context headers for internal security/authorization
+      if (scopedVariables.CALLER_ROLE) authHeaders['X-Caller-Role'] = scopedVariables.CALLER_ROLE;
+      if (scopedVariables.CALLER_SENDER_ID) authHeaders['X-Caller-Sender-Id'] = scopedVariables.CALLER_SENDER_ID;
+      if (scopedVariables.CALLER_PLATFORM) authHeaders['X-Caller-Platform'] = scopedVariables.CALLER_PLATFORM;
+      if (scopedVariables.CALLER_CONTACT_ID) authHeaders['X-Caller-Contact-Id'] = scopedVariables.CALLER_CONTACT_ID;
+      if (scopedVariables.CURRENT_WORKSPACE_ID) authHeaders['X-Current-Workspace-Id'] = scopedVariables.CURRENT_WORKSPACE_ID;
+
       // Hỗ trợ merge thêm defaultHeaders nếu có
       if (group.defaultHeaders) {
         Object.assign(authHeaders, group.defaultHeaders);
@@ -141,7 +154,7 @@ export class ToolExecutor {
     const targetUrl = new URL(fullUrlString);
 
     // 3. SSRF Protection check
-    if (isPrivateIpOrHost(targetUrl.hostname)) {
+    if (isPrivateIpOrHost(targetUrl.hostname, targetUrl.pathname)) {
       const latencyMs = Date.now() - startTime;
       return {
         toolId: tool.id,

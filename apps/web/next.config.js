@@ -8,7 +8,9 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
     instrumentationHook: true,
   },
 };

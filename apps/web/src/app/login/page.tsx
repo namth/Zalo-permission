@@ -8,7 +8,7 @@ import { Lock, User, Eye, EyeSlash, ShieldCheck } from '@phosphor-icons/react';
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const from = searchParams.get('from') || '/admin/dashboard';
+  const from = searchParams.get('from') || '/dashboard';
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');

@@ -110,3 +110,22 @@ zalo-permission/
   * Form Validation: **React Hook Form + Zod** cho tất cả các form nhập liệu (Tool Group, Parameters Schema, Workspace Config).
 * **Background Worker:**
   * Luôn sử dụng `async/await` với error boundary `try/catch` bọc quanh từng bước để đảm bảo worker không bao giờ bị crash khi có tin nhắn lỗi hoặc API bên thứ ba chết.
+
+---
+
+## 5. Quy chuẩn Đồng bộ Tài liệu & Chống Lệch pha (Docs Drift Prevention)
+
+Để đảm bảo bộ tài liệu kiến trúc 13 file luôn phản ánh chính xác 100% mã nguồn thực tế (Living Documentation), mọi kỹ sư và AI Assistant bắt buộc phải tuân thủ nguyên tắc **"Atomic Docs Sync"**:
+
+1. **Khi thay đổi Database Schema / Migrations:**
+   * Tác động: `packages/database/prisma/schema.prisma` hoặc `seed-constraints.ts`.
+   * **Bắt buộc đồng bộ:** Cập nhật ngay bảng tương ứng trong `docs/06-database-schema.md` trong cùng một phiên làm việc / Git commit.
+2. **Khi thêm / sửa API Endpoint hoặc MCP Tool:**
+   * Tác động: `apps/web/src/app/api/**/route.ts` hoặc schema MCP tools.
+   * **Bắt buộc đồng bộ:** Cập nhật request/response payload mẫu và mã lỗi trong `docs/07-api-contracts.md`.
+3. **Khi thay đổi Logic Nghiệp vụ / Quyền hạn / State Machine:**
+   * Tác động: `packages/core/**` hoặc `apps/agent-worker/**`.
+   * **Bắt buộc đồng bộ:** Cập nhật mã quy tắc (`BR-XXX`) trong `docs/12-business-rules.md`.
+4. **Khi đưa ra Quyết định Kiến trúc Lớn (Trade-offs / Công nghệ mới):**
+   * **Bắt buộc khởi tạo:** Một file ADR mới trong thư mục `docs/adr/000X-[ten-quyet-dinh].md`.
+

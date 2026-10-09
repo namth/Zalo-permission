@@ -14,6 +14,7 @@ const CONSTRAINTS = [
   'CREATE CONSTRAINT unique_tool_key IF NOT EXISTS FOR (t:Tool) REQUIRE t.key IS UNIQUE',
   'CREATE CONSTRAINT unique_skill_id IF NOT EXISTS FOR (s:Skill) REQUIRE s.id IS UNIQUE',
   'CREATE CONSTRAINT unique_skill_key IF NOT EXISTS FOR (s:Skill) REQUIRE s.key IS UNIQUE',
+  'CREATE CONSTRAINT unique_contact_id IF NOT EXISTS FOR (c:Contact) REQUIRE c.id IS UNIQUE',
 ];
 
 export async function seedNeo4jConstraints(): Promise<void> {

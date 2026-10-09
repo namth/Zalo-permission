@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>OmniAgent Gateway & Workspace Platform - System Interaction Diagram</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #fbfbfb;
+      font-family: 'Inter', sans-serif;
+      color: #212529;
+    }
+    .header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px dashed #dee2e6;
+      padding-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-family: 'Caveat', cursive;
+      font-weight: 700;
+      color: #1971c2;
+    }
+    .badge {
+      background: #e7f5ff;
+      color: #1c7ed6;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid #a5d8ff;
+    }
+    .canvas-container {
+      background: #ffffff;
+      border: 2px solid #e9ecef;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+      overflow-x: auto;
+      padding: 20px;
+    }
+    svg {
+      min-width: 1850px;
+      height: 800px;
+    }
+    .zone-box {
+      fill-opacity: 0.4;
+      stroke-dasharray: 6 6;
+      stroke-width: 1.5;
+      rx: 12;
+    }
+    .zone-title {
+      font-family: 'Caveat', cursive;
+      font-size: 22px;
+      font-weight: 700;
+      fill: #495057;
+    }
+    .card {
+      rx: 10;
+      stroke-width: 2;
+      filter: drop-shadow(2px 3px 0px rgba(0,0,0,0.06));
+    }
+    .card-title {
+      font-family: 'Caveat', cursive;
+      font-size: 20px;
+      font-weight: 700;
+      text-anchor: middle;
+      fill: #212529;
+    }
+    .card-sub {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      text-anchor: middle;
+      fill: #495057;
+    }
+    .arrow-line {
+      stroke-width: 2;
+      stroke: #495057;
+      fill: none;
+    }
+    .arrow-label {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      fill: #d9480f;
+      font-weight: 700;
+      text-anchor: middle;
+    }
+    .tip {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #868e96;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>✏️ OmniAgent System Interaction & Data Flow (Excalidraw Style)</h1>
+      <p style="margin: 4px 0 0; color: #495057; font-size: 14px;">Mô hình hóa tương tác giữa các phân hệ: Kênh Chat $\rightarrow$ Multi-Agent $\rightarrow$ Global Contacts & Neo4j $\rightarrow$ Internal MCP Server</p>
+    </div>
+    <div>
+      <span class="badge">🎨 File gốc: docs/diagrams/system-interaction.excalidraw</span>
+    </div>
+  </div>
+
+  <div class="canvas-container">
+    <svg viewBox="0 0 1860 780">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#495057" />
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#1c7ed6" />
+        </marker>
+        <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#2b8a3e" />
+        </marker>
+      </defs>
+
+      <!-- 1. ZONE CHANNELS -->
+      <rect x="40" y="40" width="280" height="700" fill="#f1f3f5" stroke="#ced4da" class="zone-box" />
+      <text x="60" y="75" class="zone-title">📱 1. CHANNELS & USERS</text>
+
+      <rect x="70" y="100" width="220" height="85" fill="#e7f5ff" stroke="#339af0" class="card" />
+      <text x="180" y="132" class="card-title">👤 Zalo User</text>
+      <text x="180" y="155" class="card-sub">Group / Direct Chat</text>
+
+      <rect x="70" y="220" width="220" height="85" fill="#e7f5ff" stroke="#339af0" class="card" />
+      <text x="180" y="252" class="card-title">👤 Telegram User</text>
+      <text x="180" y="275" class="card-sub">Group / Private Bot Chat</text>
+
+      <rect x="70" y="340" width="220" height="85" fill="#e7f5ff" stroke="#339af0" class="card" />
+      <text x="180" y="372" class="card-title">🌐 External App</text>
+      <text x="180" y="395" class="card-sub">Inbound Webhook API</text>
+
+      <rect x="70" y="520" width="220" height="95" fill="#fff0f6" stroke="#f783ac" class="card" />
+      <text x="180" y="555" class="card-title">👨‍💼 SuperAdmin</text>
+      <text x="180" y="580" class="card-sub">Web Dashboard (Next.js)</text>
+
+
+      <!-- 2. ZONE QUEUE -->
+      <rect x="360" y="40" width="290" height="700" fill="#fff9db" stroke="#ffd43b" class="zone-box" />
+      <text x="380" y="75" class="zone-title">⚡ 2. INGESTION & QUEUE</text>
+
+      <rect x="395" y="150" width="220" height="100" fill="#fff3bf" stroke="#f59f00" class="card" />
+      <text x="505" y="188" class="card-title">📡 Channel Gateway</text>
+      <text x="505" y="210" class="card-sub">grammY (Tele) + zca-js (Zalo)</text>
+      <text x="505" y="225" class="card-sub">Cold/Warm Session Filter</text>
+
+      <rect x="395" y="300" width="220" height="110" fill="#ffe8cc" stroke="#fd7e14" class="card" />
+      <text x="505" y="340" class="card-title">📬 Redis Streams</text>
+      <text x="505" y="365" class="card-sub">stream:inbound_messages</text>
+      <text x="505" y="382" class="card-sub">stream:outbound_messages</text>
+
+      <rect x="395" y="520" width="220" height="95" fill="#f8f9fa" stroke="#868e96" class="card" />
+      <text x="505" y="555" class="card-title">🖥️ Next.js Web API</text>
+      <text x="505" y="580" class="card-sub">/api/workspaces, /api/contacts</text>
+
+
+      <!-- 3. ZONE AGENT WORKER -->
+      <rect x="690" y="40" width="380" height="700" fill="#e7f5ff" stroke="#74c0fc" class="zone-box" />
+      <text x="710" y="75" class="zone-title">🧠 3. AGENT WORKER ENGINE</text>
+
+      <rect x="725" y="100" width="310" height="95" fill="#d0ebff" stroke="#1c7ed6" class="card" />
+      <text x="880" y="135" class="card-title">👥 Contact Identity Service</text>
+      <text x="880" y="158" class="card-sub">Auto-upsert Zalo/Tele, Nickname, Role</text>
+      <text x="880" y="172" class="card-sub">Smart Same-name Link per Workspace</text>
+
+      <rect x="725" y="230" width="310" height="105" fill="#e3fafc" stroke="#15aabf" class="card" />
+      <text x="880" y="268" class="card-title">🎯 Router Agent (Fast LLM)</text>
+      <text x="880" y="292" class="card-sub">Gemini 2.0 Flash (OpenRouter)</text>
+      <text x="880" y="308" class="card-sub">Intent Classify & Skill Match in Neo4j</text>
+
+      <rect x="725" y="370" width="310" height="145" fill="#e7f5ff" stroke="#1971c2" class="card" />
+      <text x="880" y="410" class="card-title">🤖 Worker Agent (Reasoning)</text>
+      <text x="880" y="435" class="card-sub">Claude 3.5 Sonnet (Plan-and-Solve)</text>
+      <text x="880" y="452" class="card-sub">Injects: CALLER_ROLE, CALLER_NAME</text>
+      <text x="880" y="470" class="card-sub">Vietnamese Given-Name Persona</text>
+      <text x="880" y="488" class="card-sub">Executes: Internal MCP & External Tools</text>
+
+      <rect x="725" y="550" width="310" height="85" fill="#f8f9fa" stroke="#adb5bd" class="card" />
+      <text x="880" y="585" class="card-title">📜 Audit & Tracing Logger</text>
+      <text x="880" y="608" class="card-sub">Plan steps, tool calls, latency, errors</text>
+
+
+      <!-- 4. ZONE DATA -->
+      <rect x="1110" y="40" width="330" height="700" fill="#f3f0ff" stroke="#b197fc" class="zone-box" />
+      <text x="1130" y="75" class="zone-title">🗄️ 4. DATA & GRAPH RBAC</text>
+
+      <rect x="1140" y="120" width="270" height="190" fill="#f3f0ff" stroke="#7950f2" class="card" />
+      <text x="1275" y="155" class="card-title">🌐 Neo4j Graph RBAC</text>
+      <text x="1275" y="185" class="card-sub">(:Contact)-[:BELONGS_TO]->(:Workspace)</text>
+      <text x="1275" y="205" class="card-sub">(:ChannelChat)-[:BELONGS_TO]->(:Workspace)</text>
+      <text x="1275" y="225" class="card-sub">(:Workspace)-[:CAN_USE]->(:ToolGroup)</text>
+      <text x="1275" y="245" class="card-sub">(:Workspace)-[:CAN_USE]->(:Skill)</text>
+      <text x="1275" y="270" class="card-sub" style="fill:#5f3dc4; font-weight:600;">O(1) Millisecond Authorization</text>
+
+      <rect x="1140" y="350" width="270" height="240" fill="#eebefa" stroke="#ae3ec9" class="card" />
+      <text x="1275" y="390" class="card-title">🐘 PostgreSQL (Prisma)</text>
+      <text x="1275" y="420" class="card-sub"><b>contacts:</b> name, nickname, role, bio</text>
+      <text x="1275" y="440" class="card-sub"><b>workspaces:</b> id, slug, name, config</text>
+      <text x="1275" y="460" class="card-sub"><b>channel_chats:</b> thread mapping</text>
+      <text x="1275" y="480" class="card-sub"><b>tool_groups & tools:</b> schemas</text>
+      <text x="1275" y="500" class="card-sub"><b>scoped_vault:</b> AES-256-GCM keys</text>
+      <text x="1275" y="520" class="card-sub"><b>audit_logs:</b> full execution traces</text>
+
+
+      <!-- 5. ZONE TOOLS -->
+      <rect x="1480" y="40" width="340" height="700" fill="#ebfbee" stroke="#8ce99a" class="zone-box" />
+      <text x="1500" y="75" class="zone-title">🛠️ 5. TOOLS & INTERNAL MCP</text>
+
+      <rect x="1515" y="140" width="270" height="230" fill="#d3f9d8" stroke="#2b8a3e" class="card" />
+      <text x="1650" y="180" class="card-title">⚡ Internal System MCP</text>
+      <text x="1650" y="205" class="card-sub"><b>Endpoint:</b> POST /api/mcp</text>
+      <text x="1650" y="225" class="card-sub">• create_workspace</text>
+      <text x="1650" y="245" class="card-sub">• add_contact (with nickname)</text>
+      <text x="1650" y="265" class="card-sub">• update_contact_info</text>
+      <text x="1650" y="285" class="card-sub">• merge_contacts</text>
+      <text x="1650" y="315" class="card-sub" style="fill:#c92a2a; font-weight:600;">🔒 Guard: X-Caller-Role == SUPER_ADMIN</text>
+
+      <rect x="1515" y="420" width="270" height="180" fill="#d3f9d8" stroke="#2f9e44" class="card" />
+      <text x="1650" y="460" class="card-title">🔌 External APIs & Tools</text>
+      <text x="1650" y="490" class="card-sub">ERP / KiotViet / CRM API</text>
+      <text x="1650" y="510" class="card-sub">Automatic Scoped Injection:</text>
+      <text x="1650" y="530" class="card-sub">{{API_KEY}}, {{BRANCH_ID}}</text>
+
+
+      <!-- CONNECTING ARROWS -->
+      <!-- User to Gateway -->
+      <path d="M 290 142 L 395 180" class="arrow-line" marker-end="url(#arrow)" />
+      <path d="M 290 262 L 395 210" class="arrow-line" marker-end="url(#arrow)" />
+
+      <!-- Gateway to Redis -->
+      <path d="M 505 250 L 505 300" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="560" y="280" class="arrow-label">XADD inbound</text>
+
+      <!-- Webhook to Redis -->
+      <path d="M 290 382 L 395 365" class="arrow-line" marker-end="url(#arrow)" />
+
+      <!-- Redis to ContactService & Agent -->
+      <path d="M 615 355 L 725 150" class="arrow-line" marker-end="url(#arrow-blue)" />
+      <text x="660" y="240" class="arrow-label">Consume</text>
+
+      <!-- Contact Service to DB & Graph -->
+      <path d="M 1035 145 L 1140 180" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="1080" y="155" class="arrow-label">MERGE Contact</text>
+
+      <path d="M 1035 170 L 1140 400" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="1085" y="290" class="arrow-label">Upsert Profile</text>
+
+      <!-- Contact to Router to Worker -->
+      <path d="M 880 195 L 880 230" class="arrow-line" marker-end="url(#arrow)" />
+      <path d="M 880 335 L 880 370" class="arrow-line" marker-end="url(#arrow)" />
+
+      <!-- Worker to Graph & Scoped Vault -->
+      <path d="M 1035 410 L 1140 260" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="1080" y="340" class="arrow-label">Check RBAC</text>
+
+      <path d="M 1035 440 L 1140 450" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="1080" y="435" class="arrow-label">Fetch Keys</text>
+
+      <!-- Worker to Tools -->
+      <path d="M 1035 390 L 1515 240" class="arrow-line" marker-end="url(#arrow-green)" />
+      <text x="1275" y="325" class="arrow-label">Call MCP Tool</text>
+
+      <path d="M 1035 490 L 1515 500" class="arrow-line" marker-end="url(#arrow-green)" />
+      <text x="1275" y="540" class="arrow-label">Call REST API</text>
+
+      <!-- MCP to DB -->
+      <path d="M 1515 320 L 1410 420" class="arrow-line" marker-end="url(#arrow)" />
+
+      <!-- Worker to Audit Logger -->
+      <path d="M 880 515 L 880 550" class="arrow-line" marker-end="url(#arrow)" />
+      <path d="M 1035 590 L 1140 540" class="arrow-line" marker-end="url(#arrow)" />
+
+      <!-- Worker Reply back to Redis & User -->
+      <path d="M 725 470 L 615 380" class="arrow-line" marker-end="url(#arrow)" />
+      <text x="670" y="445" class="arrow-label">XADD reply</text>
+
+      <path d="M 395 380 L 180 220" class="arrow-line" marker-end="url(#arrow)" style="stroke-dasharray: 4 4;" />
+      <text x="280" y="310" class="arrow-label">Bot Response</text>
+
+      <!-- Admin Dashboard to Next.js API -->
+      <path d="M 290 570 L 395 570" class="arrow-line" marker-end="url(#arrow)" />
+      <path d="M 615 570 L 1140 500" class="arrow-line" marker-end="url(#arrow)" />
+
+    </svg>
+  </div>
+
+  <p class="tip">💡 Mẹo: Bạn có thể kéo thả file <code>system-interaction.excalidraw</code> vào <a href="https://excalidraw.com" target="_blank">excalidraw.com</a> hoặc mở trực tiếp trên VS Code với extension Excalidraw để kéo thả di chuyển từng khối hộp!</p>
+
+</body>
+</html>

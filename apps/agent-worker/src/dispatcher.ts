@@ -6,6 +6,7 @@ import {
   TextSplitterAgent,
   extractImageUrls,
   cleanTextAfterMediaExtraction,
+  ContactService,
   type InboundChatMessage,
   type SkillDefinition,
   type ToolGroupDefinition,
@@ -161,6 +162,20 @@ export class MessageDispatcher {
       console.warn(`[Dispatcher] Chat ${message.platformChatId} is not assigned to any Workspace.`);
       await this.sendOutbound(message, 'Nhóm chat này chưa được kích hoạt trong bất kỳ không gian làm việc (Workspace) nào.');
       return;
+    }
+
+    // 1.1 Tự động định danh và thu thập thông tin danh bạ (Global Contacts)
+    let callerContact: any = null;
+    try {
+      callerContact = await ContactService.upsertFromMessage({
+        platform: message.platform,
+        senderId: String(message.senderId),
+        senderName: message.senderName,
+        workspaceId,
+      });
+      console.log(`[Dispatcher] 👤 Contact identified: "${callerContact.name}" (Role: ${callerContact.role})`);
+    } catch (contactErr) {
+      console.warn('[Dispatcher] Failed to upsert contact:', contactErr);
     }
 
     // 2. Fetch accessible Skills for this Workspace from Neo4j & Postgres
@@ -356,6 +371,17 @@ export class MessageDispatcher {
       } catch (e) {
         console.error('[Dispatcher] Failed to fetch Neo4j scoped variables:', e);
       }
+    }
+
+    // 3.0 Inject caller identity & role into scopedVariablesMap for authorization
+    for (const tgId of allToolGroupIds) {
+      const vars = scopedVariablesMap.get(tgId) || {};
+      vars['CALLER_SENDER_ID'] = String(message.senderId);
+      vars['CALLER_PLATFORM'] = String(message.platform);
+      vars['CALLER_ROLE'] = callerContact?.role || 'USER';
+      vars['CALLER_CONTACT_ID'] = callerContact?.id || '';
+      vars['CURRENT_WORKSPACE_ID'] = workspaceId || '';
+      scopedVariablesMap.set(tgId, vars);
     }
 
     const accessibleTools: ToolDefinition[] = toolsFromDb.map((t) => ({
