@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { VariableInjector } from '../tools/variable-injector.js';
+import { VariableInjector } from '../tools/variable-injector.ts';
 
 console.log('Running Variable Injector Unit Tests...');
 

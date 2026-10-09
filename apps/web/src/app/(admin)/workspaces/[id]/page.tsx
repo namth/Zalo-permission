@@ -180,16 +180,13 @@ export default function WorkspaceDetailPage() {
         ]);
       }
       if (activeTab === 'tools') {
-        await fetchTools();
-        await fetchAllTools();
+        await Promise.all([fetchTools(), fetchAllTools()]);
       }
       if (activeTab === 'users') {
-        await fetchUsers();
-        await fetchAllUsers();
+        await Promise.all([fetchUsers(), fetchAllUsers()]);
       }
       if (activeTab === 'skills') {
-        await fetchSkills();
-        await fetchAllSkills();
+        await Promise.all([fetchSkills(), fetchAllSkills()]);
       }
     } catch (err) {
       setError(String(err));

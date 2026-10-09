@@ -50,15 +50,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
-    const result = await db.query(query, params);
     const countQuery = conditions.length > 0
       ? `SELECT COUNT(*) as total FROM tools WHERE ${conditions.join(' AND ')}`
       : `SELECT COUNT(*) as total FROM tools`;
-    const countResult = await db.query(countQuery, params.slice(0, conditions.length));
-    const total = parseInt(countResult.rows[0].total, 10);
+
+    const [result, countResult, pgGroupsRes, neo4jRes] = await Promise.all([
+      db.query(query, params),
+      db.query(countQuery, params.slice(0, conditions.length)),
+      db.query('SELECT id, key, name, protocol_type, base_url FROM tool_groups'),
+      neo4jClient.run(`
+        MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
+        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
+        UNION
+        MATCH (tg:ToolGroup)-[:CONTAINS]->(t:Tool)
+        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
+      `).catch((err) => {
+        logger.warn(`Neo4j tool groups query warning: ${err}`);
+        return { records: [] };
+      })
+    ]);
+
+    const total = parseInt(countResult.rows[0]?.total || '0', 10);
 
     // Get group mapping from PostgreSQL tool_groups
-    const pgGroupsRes = await db.query('SELECT id, key, name, protocol_type, base_url FROM tool_groups');
     const pgGroupMap = new Map<string, { id: string; key: string; name: string; protocol_type: string; base_url: string }>();
     for (const g of pgGroupsRes.rows) {
       pgGroupMap.set(String(g.id), {
@@ -72,15 +86,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // Get group mapping from Neo4j (both BELONGS_TO_GROUP and CONTAINS)
     const groupMap = new Map<string, { id: string; key: string; name: string }>();
-    try {
-      const neo4jRes = await neo4jClient.run(`
-        MATCH (t:Tool)-[:BELONGS_TO_GROUP]->(tg:ToolGroup)
-        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
-        UNION
-        MATCH (tg:ToolGroup)-[:CONTAINS]->(t:Tool)
-        RETURN t.id AS tool_id, tg.id AS group_id, tg.key AS group_key, tg.name AS group_name
-      `);
-      
+    if (neo4jRes?.records) {
       for (const record of neo4jRes.records) {
         const toolId = record.get('tool_id');
         const rGroupId = record.get('group_id');
@@ -93,8 +99,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           });
         }
       }
-    } catch (neoErr) {
-      logger.warn(`Failed to fetch Neo4j tool group mappings: ${neoErr}`);
     }
 
     const data = result.rows.map((row: any) => {

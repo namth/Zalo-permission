@@ -78,31 +78,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-        const result = await query(
-            `SELECT s.id, s.key, s.name, s.description, s.detail, s.system_prompt, s.trigger_intents, s.required_tools, s.sop_steps, s.execution_mode, s.is_shared,
-              s.status, s.created_at, s.updated_at
-       FROM skills s
-       ${whereClause}
-       ORDER BY s.created_at DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-            [...params, limit, offset]
-        );
+        const [result, countResult] = await Promise.all([
+            query(
+                `SELECT s.id, s.key, s.name, s.description, s.detail, s.system_prompt, s.trigger_intents, s.required_tools, s.sop_steps, s.execution_mode, s.is_shared,
+                  s.status, s.created_at, s.updated_at
+           FROM skills s
+           ${whereClause}
+           ORDER BY s.created_at DESC
+           LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+                [...params, limit, offset]
+            ),
+            query(
+                `SELECT COUNT(*) as count FROM skills s ${whereClause}`,
+                params
+            )
+        ]);
 
-        const countResult = await query(
-            `SELECT COUNT(*) as count FROM skills s ${whereClause}`,
-            params
-        );
-        const total = parseInt(countResult.rows[0].count, 10);
-
+        const total = parseInt(countResult.rows[0]?.count || '0', 10);
         const skills = result.rows.map(mapRowToSkill);
 
-        // Fetch Neo4j relationships for these skills
+        // Fetch Neo4j relationships for all skills in a single batched query
         if (skills.length > 0) {
             const { neo4jClient } = await import('@/lib/neo4j');
+            const skillIds = skills.map(s => s.id);
+            const batchRelations = await neo4jClient.getBatchSkillRelations(skillIds);
+            
             for (const skill of skills) {
-                const relations = await neo4jClient.getSkillRelations(skill.id);
-                skill.category = relations.category;
-                skill.tools = relations.tools;
+                const relations = batchRelations.get(skill.id);
+                if (relations) {
+                    skill.category = relations.category;
+                    skill.tools = relations.tools;
+                }
             }
             
             // Filter by category if requested (in memory, since category is in Neo4j)

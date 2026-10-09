@@ -63,8 +63,16 @@ export class MessageDispatcher {
 
     console.log(`[Dispatcher] Processing message from ${message.platform} chat: ${message.platformChatId} (${alwaysRespond ? '⚡ ALWAYS-RESPOND' : session.isWarm ? '🔥 WARM' : '⚡ COLD->WARM'}) by user: ${message.senderName || message.senderId}`);
 
-    // 1. Resolve Workspace via Neo4j Graph or Inbound Webhook Payload
+    // 1. Resolve Workspace via Redis cache, Neo4j Graph, or Inbound Webhook Payload
     let workspaceId = message.workspaceId;
+    const chatWsCacheKey = `cache:chat_ws:${message.platform}:${message.platformChatId}`;
+
+    if (!workspaceId && !isWebhook) {
+      const cachedWsId = await redis.get(chatWsCacheKey).catch(() => null);
+      if (cachedWsId) {
+        workspaceId = cachedWsId;
+      }
+    }
 
     if (!workspaceId && isWebhook && message.webhookId) {
       const whResult = await runCypher<{ workspace_id: string; workspace_name: string }>(
@@ -164,213 +172,35 @@ export class MessageDispatcher {
       return;
     }
 
-    // 1.1 Tự động định danh và thu thập thông tin danh bạ (Global Contacts)
-    let callerContact: any = null;
-    try {
-      callerContact = await ContactService.upsertFromMessage({
+    // Cache resolved chat-to-workspace mapping for 30 minutes
+    if (!isWebhook) {
+      redis.set(chatWsCacheKey, workspaceId, 'EX', 1800).catch(() => {});
+    }
+
+    // 1.1 Tự động định danh danh bạ (Global Contacts) và Nạp Workspace Context song song
+    const [workspaceCtx, callerContact] = await Promise.all([
+      this.getWorkspaceContext(workspaceId, redis),
+      ContactService.upsertFromMessage({
         platform: message.platform,
         senderId: String(message.senderId),
         senderName: message.senderName,
         workspaceId,
-      });
-      console.log(`[Dispatcher] 👤 Contact identified: "${callerContact.name}" (Role: ${callerContact.role})`);
-    } catch (contactErr) {
-      console.warn('[Dispatcher] Failed to upsert contact:', contactErr);
-    }
-
-    // 2. Fetch accessible Skills for this Workspace from Neo4j & Postgres
-    const skillsQuery = `
-      MATCH (w:Workspace { id: $workspace_id })-[:CAN_USE]->(s:Skill)
-      WHERE s.is_active = true
-      RETURN s.id AS id
-    `;
-    const skillNodes = await runCypher<{ id: string }>(skillsQuery, { workspace_id: workspaceId });
-    const skillIds = skillNodes.map((s) => s.id);
-
-    const skillsFromDb = await prisma.skill.findMany({
-      where: { id: { in: skillIds }, isActive: true },
-    });
-
-    const accessibleSkills: SkillDefinition[] = skillsFromDb.map((s) => ({
-      id: s.id,
-      key: s.key || s.name,
-      name: s.name,
-      description: s.description || '',
-      systemPrompt: s.systemPrompt || '',
-      triggerIntents: (s.triggerIntents as string[]) || [],
-      requiredTools: s.requiredTools,
-      isActive: s.isActive,
-    }));
-
-    // 3. Fetch accessible Tool Groups & Tools from Neo4j (resilient 2-tier permission)
-    const toolsQuery = `
-      MATCH (w:Workspace { id: $workspace_id })
-      OPTIONAL MATCH (w)-[:CAN_USE]->(dt:Tool)
-      OPTIONAL MATCH (w)-[:CAN_USE]->(tg:ToolGroup)
-      OPTIONAL MATCH (w)-[:CAN_USE]->(tgGroup:ToolGroup)<-[:BELONGS_TO_GROUP|PART_OF|CONTAINS]-(groupTool:Tool)
-      OPTIONAL MATCH (w)-[:DISABLED]->(disabledTool:Tool)
-      RETURN 
-        collect(DISTINCT coalesce(dt.id, dt.key)) AS direct_tool_refs,
-        collect(DISTINCT coalesce(tg.id, tg.key)) AS explicit_group_refs,
-        collect(DISTINCT coalesce(groupTool.id, groupTool.key)) AS group_tool_refs,
-        collect(DISTINCT coalesce(disabledTool.id, disabledTool.key)) AS disabled_tool_refs
-    `;
-    const neoRows = await runCypher<{
-      direct_tool_refs: string[];
-      explicit_group_refs: string[];
-      group_tool_refs: string[];
-      disabled_tool_refs: string[];
-    }>(toolsQuery, { workspace_id: workspaceId });
-
-    const neoResult = neoRows[0] || {
-      direct_tool_refs: [],
-      explicit_group_refs: [],
-      group_tool_refs: [],
-      disabled_tool_refs: [],
-    };
-
-    const directToolRefs = (neoResult.direct_tool_refs || []).filter(Boolean);
-    const explicitGroupRefs = (neoResult.explicit_group_refs || []).filter(Boolean);
-    const groupToolRefs = (neoResult.group_tool_refs || []).filter(Boolean);
-    const disabledToolRefs = new Set((neoResult.disabled_tool_refs || []).filter(Boolean));
-
-    const combinedToolRefs = Array.from(new Set([...directToolRefs, ...groupToolRefs]));
-
-    // Query explicit ToolGroups if any
-    let explicitGroupsFromDb: any[] = [];
-    if (explicitGroupRefs.length > 0) {
-      explicitGroupsFromDb = await prisma.toolGroup.findMany({
-        where: {
-          OR: [
-            { id: { in: explicitGroupRefs } },
-            { key: { in: explicitGroupRefs } },
-          ],
-          isActive: true,
-        },
-      });
-    }
-
-    const explicitGroupIds = explicitGroupsFromDb.map((g) => g.id);
-
-    // Fetch accessible tools from Postgres
-    const toolOrConditions: any[] = [];
-    if (combinedToolRefs.length > 0) {
-      toolOrConditions.push({ id: { in: combinedToolRefs } });
-      toolOrConditions.push({ key: { in: combinedToolRefs } });
-    }
-    if (explicitGroupIds.length > 0) {
-      toolOrConditions.push({ toolGroupId: { in: explicitGroupIds } });
-    }
-
-    let toolsFromDb: any[] = [];
-    if (toolOrConditions.length > 0) {
-      const candidateTools = await prisma.tool.findMany({
-        where: {
-          OR: toolOrConditions,
-          isActive: true,
-        },
-      });
-
-      // Filter out disabled tools
-      toolsFromDb = candidateTools.filter(
-        (t) => !disabledToolRefs.has(t.id) && !disabledToolRefs.has(t.key)
-      );
-    }
-
-    // Collect all unique toolGroupIds needed by the accessible tools + explicit groups
-    const allToolGroupIds = Array.from(
-      new Set([
-        ...explicitGroupIds,
-        ...toolsFromDb.map((t) => t.toolGroupId).filter((id): id is string => Boolean(id)),
-      ])
-    );
-
-    // Fetch tool groups and workspace configs from Postgres
-    const [groupsFromDb, scopedConfigsFromDb] = await Promise.all([
-      prisma.toolGroup.findMany({
-        where: { id: { in: allToolGroupIds }, isActive: true },
-      }),
-      prisma.workspaceToolConfig.findMany({
-        where: { workspaceId, toolGroupId: { in: allToolGroupIds } },
+      }).catch((contactErr) => {
+        console.warn('[Dispatcher] Failed to upsert contact:', contactErr);
+        return null;
       }),
     ]);
 
-    const toolGroupsMap = new Map<string, ToolGroupDefinition>();
-    groupsFromDb.forEach((g: any) => {
-      toolGroupsMap.set(g.id, {
-        id: g.id,
-        key: g.key,
-        name: g.name,
-        description: g.description,
-        protocolType: g.protocolType || 'REST',
-        baseUrl: g.baseUrl || '',
-        mcpTransport: g.mcpTransport || 'SSE',
-        mcpRawConfig: (g.mcpRawConfig as Record<string, unknown>) || null,
-        timeoutSeconds: g.timeoutSeconds || 15,
-        authType: g.authType,
-        defaultAuthConfig: (g.defaultAuthConfig as Record<string, unknown>) || {},
-        defaultHeaders: (g.defaultHeaders as Record<string, string>) || {},
-        requiredVariables: (g.requiredVariables as string[]) || [],
-        isActive: g.isActive,
-      });
-    });
-
-    // Decrypt Scoped Variables per ToolGroup for this Workspace
-    const scopedVariablesMap = new Map<string, Record<string, string>>();
-    for (const sc of scopedConfigsFromDb) {
-      if (sc.encryptedEnvOverrides) {
-        try {
-          const decryptedVars = decryptJson<Record<string, string>>(sc.encryptedEnvOverrides);
-          scopedVariablesMap.set(sc.toolGroupId, decryptedVars);
-        } catch (e) {
-          console.error(`[Dispatcher] Failed to decrypt env overrides for group ${sc.toolGroupId}:`, e);
-        }
-      }
+    if (callerContact) {
+      console.log(`[Dispatcher] 👤 Contact identified: "${callerContact.name}" (Role: ${callerContact.role})`);
     }
 
-    // Nạp thêm Biến Mặc Định (Master Group Data) và Biến Không Gian (Workspace Scoped Vault) từ Neo4j
-    if (allToolGroupIds.length > 0) {
-      try {
-        const allToolGroupKeys = groupsFromDb.map((g: any) => g.key).filter(Boolean);
-        const cypherQuery = `
-          MATCH (tg:ToolGroup)
-          WHERE tg.id IN $allToolGroupIds OR tg.key IN $allToolGroupKeys
-          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dMaster:Data)
-          WHERE NOT (dMaster)<-[:HAS_DATA]-(:Workspace)
-          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dWs:Data)<-[:HAS_DATA]-(w:Workspace {id: $workspaceId})
-          RETURN tg.id AS toolGroupId, tg.key AS toolGroupKey,
-                 collect(DISTINCT { key: dMaster.key, value: dMaster.value }) AS masterVars,
-                 collect(DISTINCT { key: dWs.key, value: dWs.value }) AS wsVars
-        `;
-        const neo4jData = await runCypher<any>(cypherQuery, { allToolGroupIds, allToolGroupKeys, workspaceId });
-        for (const row of neo4jData) {
-          // Resolve tool group id
-          const matchingGroup = groupsFromDb.find(
-            (g: any) => g.id === row.toolGroupId || g.key === row.toolGroupKey
-          );
-          const tgId = matchingGroup ? matchingGroup.id : row.toolGroupId;
-          if (!tgId) continue;
+    const { accessibleSkills, toolsFromDb, toolGroupsMap, scopedVariablesMap: baseScopedVars, allToolGroupIds } = workspaceCtx;
 
-          const currentVars = scopedVariablesMap.get(tgId) || {};
-          const merged: Record<string, string> = { ...currentVars };
-
-          // 1. Master variables (dùng chung cho mọi workspace)
-          if (Array.isArray(row.masterVars)) {
-            for (const item of row.masterVars) {
-              if (item && item.key && item.value) merged[item.key] = item.value;
-            }
-          }
-          // 2. Workspace Scoped variables (ưu tiên ghi đè master)
-          if (Array.isArray(row.wsVars)) {
-            for (const item of row.wsVars) {
-              if (item && item.key && item.value) merged[item.key] = item.value;
-            }
-          }
-          scopedVariablesMap.set(tgId, merged);
-        }
-      } catch (e) {
-        console.error('[Dispatcher] Failed to fetch Neo4j scoped variables:', e);
-      }
+    // Clone scopedVariablesMap so each request gets caller identity without mutating cached base variables
+    const scopedVariablesMap = new Map<string, Record<string, string>>();
+    for (const [tgId, vars] of baseScopedVars.entries()) {
+      scopedVariablesMap.set(tgId, { ...vars });
     }
 
     // 3.0 Inject caller identity & role into scopedVariablesMap for authorization
@@ -378,6 +208,7 @@ export class MessageDispatcher {
       const vars = scopedVariablesMap.get(tgId) || {};
       vars['CALLER_SENDER_ID'] = String(message.senderId);
       vars['CALLER_PLATFORM'] = String(message.platform);
+      vars['CALLER_SENDER_NAME'] = String(message.senderName || message.senderId);
       vars['CALLER_ROLE'] = callerContact?.role || 'USER';
       vars['CALLER_CONTACT_ID'] = callerContact?.id || '';
       vars['CURRENT_WORKSPACE_ID'] = workspaceId || '';
@@ -645,5 +476,259 @@ export class MessageDispatcher {
         headersSent: maskedHeaders,
       };
     });
+  }
+
+  /**
+   * Resolve and cache workspace context (skills, tools, groups, scoped variables) in Redis
+   */
+  private async getWorkspaceContext(
+    workspaceId: string,
+    redis: any
+  ): Promise<{
+    accessibleSkills: SkillDefinition[];
+    toolsFromDb: any[];
+    toolGroupsMap: Map<string, ToolGroupDefinition>;
+    scopedVariablesMap: Map<string, Record<string, string>>;
+    allToolGroupIds: string[];
+  }> {
+    const cacheKey = `cache:ws_context:${workspaceId}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const toolGroupsMap = new Map<string, ToolGroupDefinition>();
+        for (const [id, def] of Object.entries(parsed.toolGroupsMap || {})) {
+          toolGroupsMap.set(id, def as ToolGroupDefinition);
+        }
+        const scopedVariablesMap = new Map<string, Record<string, string>>();
+        for (const [id, vars] of Object.entries(parsed.scopedVariablesMap || {})) {
+          scopedVariablesMap.set(id, vars as Record<string, string>);
+        }
+        return {
+          accessibleSkills: parsed.accessibleSkills || [],
+          toolsFromDb: parsed.toolsFromDb || [],
+          toolGroupsMap,
+          scopedVariablesMap,
+          allToolGroupIds: parsed.allToolGroupIds || [],
+        };
+      }
+    } catch (e) {
+      console.warn('[Dispatcher] Failed to read workspace context cache:', e);
+    }
+
+    // Cache Miss: Query Database & Graph
+    // 1. Fetch accessible Skills for this Workspace from Neo4j & Postgres
+    const skillsQuery = `
+      MATCH (w:Workspace { id: $workspace_id })-[:CAN_USE]->(s:Skill)
+      WHERE s.is_active = true
+      RETURN s.id AS id
+    `;
+    const skillNodes = await runCypher<{ id: string }>(skillsQuery, { workspace_id: workspaceId });
+    const skillIds = skillNodes.map((s) => s.id);
+
+    const skillsFromDb = await prisma.skill.findMany({
+      where: { id: { in: skillIds }, isActive: true },
+    });
+
+    const accessibleSkills: SkillDefinition[] = skillsFromDb.map((s) => ({
+      id: s.id,
+      key: s.key || s.name,
+      name: s.name,
+      description: s.description || '',
+      systemPrompt: s.systemPrompt || '',
+      triggerIntents: (s.triggerIntents as string[]) || [],
+      requiredTools: s.requiredTools,
+      isActive: s.isActive,
+    }));
+
+    // 2. Fetch accessible Tool Groups & Tools from Neo4j (resilient 2-tier permission)
+    const toolsQuery = `
+      MATCH (w:Workspace { id: $workspace_id })
+      OPTIONAL MATCH (w)-[:CAN_USE]->(dt:Tool)
+      OPTIONAL MATCH (w)-[:CAN_USE]->(tg:ToolGroup)
+      OPTIONAL MATCH (w)-[:CAN_USE]->(tgGroup:ToolGroup)<-[:BELONGS_TO_GROUP|PART_OF|CONTAINS]-(groupTool:Tool)
+      OPTIONAL MATCH (w)-[:DISABLED]->(disabledTool:Tool)
+      RETURN 
+        collect(DISTINCT coalesce(dt.id, dt.key)) AS direct_tool_refs,
+        collect(DISTINCT coalesce(tg.id, tg.key)) AS explicit_group_refs,
+        collect(DISTINCT coalesce(groupTool.id, groupTool.key)) AS group_tool_refs,
+        collect(DISTINCT coalesce(disabledTool.id, disabledTool.key)) AS disabled_tool_refs
+    `;
+    const neoRows = await runCypher<{
+      direct_tool_refs: string[];
+      explicit_group_refs: string[];
+      group_tool_refs: string[];
+      disabled_tool_refs: string[];
+    }>(toolsQuery, { workspace_id: workspaceId });
+
+    const neoResult = neoRows[0] || {
+      direct_tool_refs: [],
+      explicit_group_refs: [],
+      group_tool_refs: [],
+      disabled_tool_refs: [],
+    };
+
+    const directToolRefs = (neoResult.direct_tool_refs || []).filter(Boolean);
+    const explicitGroupRefs = (neoResult.explicit_group_refs || []).filter(Boolean);
+    const groupToolRefs = (neoResult.group_tool_refs || []).filter(Boolean);
+    const disabledToolRefs = new Set((neoResult.disabled_tool_refs || []).filter(Boolean));
+
+    const combinedToolRefs = Array.from(new Set([...directToolRefs, ...groupToolRefs]));
+
+    // Query explicit ToolGroups if any
+    let explicitGroupsFromDb: any[] = [];
+    if (explicitGroupRefs.length > 0) {
+      explicitGroupsFromDb = await prisma.toolGroup.findMany({
+        where: {
+          OR: [
+            { id: { in: explicitGroupRefs } },
+            { key: { in: explicitGroupRefs } },
+          ],
+          isActive: true,
+        },
+      });
+    }
+
+    const explicitGroupIds = explicitGroupsFromDb.map((g) => g.id);
+
+    // Fetch accessible tools from Postgres
+    const toolOrConditions: any[] = [];
+    if (combinedToolRefs.length > 0) {
+      toolOrConditions.push({ id: { in: combinedToolRefs } });
+      toolOrConditions.push({ key: { in: combinedToolRefs } });
+    }
+    if (explicitGroupIds.length > 0) {
+      toolOrConditions.push({ toolGroupId: { in: explicitGroupIds } });
+    }
+
+    let toolsFromDb: any[] = [];
+    if (toolOrConditions.length > 0) {
+      const candidateTools = await prisma.tool.findMany({
+        where: {
+          OR: toolOrConditions,
+          isActive: true,
+        },
+      });
+
+      // Filter out disabled tools
+      toolsFromDb = candidateTools.filter(
+        (t) => !disabledToolRefs.has(t.id) && !disabledToolRefs.has(t.key)
+      );
+    }
+
+    // Collect all unique toolGroupIds needed by the accessible tools + explicit groups
+    const allToolGroupIds = Array.from(
+      new Set([
+        ...explicitGroupIds,
+        ...toolsFromDb.map((t) => t.toolGroupId).filter((id): id is string => Boolean(id)),
+      ])
+    );
+
+    // Fetch tool groups and workspace configs from Postgres in parallel
+    const [groupsFromDb, scopedConfigsFromDb] = await Promise.all([
+      prisma.toolGroup.findMany({
+        where: { id: { in: allToolGroupIds }, isActive: true },
+      }),
+      prisma.workspaceToolConfig.findMany({
+        where: { workspaceId, toolGroupId: { in: allToolGroupIds } },
+      }),
+    ]);
+
+    const toolGroupsMap = new Map<string, ToolGroupDefinition>();
+    groupsFromDb.forEach((g: any) => {
+      toolGroupsMap.set(g.id, {
+        id: g.id,
+        key: g.key,
+        name: g.name,
+        description: g.description,
+        protocolType: g.protocolType || 'REST',
+        baseUrl: g.baseUrl || '',
+        mcpTransport: g.mcpTransport || 'SSE',
+        mcpRawConfig: (g.mcpRawConfig as Record<string, unknown>) || null,
+        timeoutSeconds: g.timeoutSeconds || 15,
+        authType: g.authType,
+        defaultAuthConfig: (g.defaultAuthConfig as Record<string, unknown>) || {},
+        defaultHeaders: (g.defaultHeaders as Record<string, string>) || {},
+        requiredVariables: (g.requiredVariables as string[]) || [],
+        isActive: g.isActive,
+      });
+    });
+
+    // Decrypt Scoped Variables per ToolGroup for this Workspace
+    const scopedVariablesMap = new Map<string, Record<string, string>>();
+    for (const sc of scopedConfigsFromDb) {
+      if (sc.encryptedEnvOverrides) {
+        try {
+          const decryptedVars = decryptJson<Record<string, string>>(sc.encryptedEnvOverrides);
+          scopedVariablesMap.set(sc.toolGroupId, decryptedVars);
+        } catch (e) {
+          console.error(`[Dispatcher] Failed to decrypt env overrides for group ${sc.toolGroupId}:`, e);
+        }
+      }
+    }
+
+    // Nạp thêm Biến Mặc Định (Master Group Data) và Biến Không Gian (Workspace Scoped Vault) từ Neo4j
+    if (allToolGroupIds.length > 0) {
+      try {
+        const allToolGroupKeys = groupsFromDb.map((g: any) => g.key).filter(Boolean);
+        const cypherQuery = `
+          MATCH (tg:ToolGroup)
+          WHERE tg.id IN $allToolGroupIds OR tg.key IN $allToolGroupKeys
+          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dMaster:Data)
+          WHERE NOT (dMaster)<-[:HAS_DATA]-(:Workspace)
+          OPTIONAL MATCH (tg)-[:HAS_DATA]->(dWs:Data)<-[:HAS_DATA]-(w:Workspace {id: $workspaceId})
+          RETURN tg.id AS toolGroupId, tg.key AS toolGroupKey,
+                 collect(DISTINCT { key: dMaster.key, value: dMaster.value }) AS masterVars,
+                 collect(DISTINCT { key: dWs.key, value: dWs.value }) AS wsVars
+        `;
+        const neo4jData = await runCypher<any>(cypherQuery, { allToolGroupIds, allToolGroupKeys, workspaceId });
+        for (const row of neo4jData) {
+          const matchingGroup = groupsFromDb.find(
+            (g: any) => g.id === row.toolGroupId || g.key === row.toolGroupKey
+          );
+          const tgId = matchingGroup ? matchingGroup.id : row.toolGroupId;
+          if (!tgId) continue;
+
+          const currentVars = scopedVariablesMap.get(tgId) || {};
+          const merged: Record<string, string> = { ...currentVars };
+
+          if (Array.isArray(row.masterVars)) {
+            for (const item of row.masterVars) {
+              if (item && item.key && item.value) merged[item.key] = item.value;
+            }
+          }
+          if (Array.isArray(row.wsVars)) {
+            for (const item of row.wsVars) {
+              if (item && item.key && item.value) merged[item.key] = item.value;
+            }
+          }
+          scopedVariablesMap.set(tgId, merged);
+        }
+      } catch (e) {
+        console.error('[Dispatcher] Failed to fetch Neo4j scoped variables:', e);
+      }
+    }
+
+    // Save to Redis cache for 180 seconds (3 minutes)
+    try {
+      const serializableContext = {
+        accessibleSkills,
+        toolsFromDb,
+        toolGroupsMap: Object.fromEntries(toolGroupsMap.entries()),
+        scopedVariablesMap: Object.fromEntries(scopedVariablesMap.entries()),
+        allToolGroupIds,
+      };
+      await redis.set(cacheKey, JSON.stringify(serializableContext), 'EX', 180);
+    } catch (cacheErr) {
+      console.warn('[Dispatcher] Failed to write workspace context cache:', cacheErr);
+    }
+
+    return {
+      accessibleSkills,
+      toolsFromDb,
+      toolGroupsMap,
+      scopedVariablesMap,
+      allToolGroupIds,
+    };
   }
 }

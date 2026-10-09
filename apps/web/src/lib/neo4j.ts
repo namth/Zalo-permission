@@ -303,6 +303,57 @@ export class Neo4jClient {
   }
 
   /**
+   * Get skill category and tools for multiple skills in a single roundtrip (eliminates N+1 query overhead)
+   */
+  async getBatchSkillRelations(skillIds: string[]): Promise<Map<string, {
+      category: string | null, 
+      tools: {id: string, name: string}[],
+      owner_zalo_id: string | null,
+      workspace_id: string | null
+  }>> {
+    const map = new Map<string, { category: string | null, tools: {id: string, name: string}[], owner_zalo_id: string | null, workspace_id: string | null }>();
+    if (!skillIds || skillIds.length === 0) return map;
+
+    const session = this.driver.session();
+    try {
+      const result = await session.run(
+        `
+        MATCH (s:Skill)
+        WHERE s.id IN $skillIds
+        OPTIONAL MATCH (s)-[:HAS_CATEGORY]->(c:Category)
+        OPTIONAL MATCH (s)-[:USES_TOOL]->(t:Tool)
+        OPTIONAL MATCH (u:ZaloUser)-[:OWNER_OF]->(s)
+        OPTIONAL MATCH (s)-[:SHARED_TO]->(w:Workspace)
+        RETURN s.id AS skill_id,
+               c.name AS category, 
+               collect(DISTINCT {id: t.id, name: t.name}) AS tools,
+               u.zalo_id AS owner_zalo_id,
+               w.id AS workspace_id
+        `,
+        { skillIds }
+      );
+
+      for (const record of result.records) {
+        const skillId = record.get('skill_id');
+        const toolsRaw = record.get('tools');
+        const tools = Array.isArray(toolsRaw) ? toolsRaw.filter(t => t.id != null) : [];
+        map.set(skillId, {
+          category: record.get('category') || null,
+          tools,
+          owner_zalo_id: record.get('owner_zalo_id') || null,
+          workspace_id: record.get('workspace_id') || null
+        });
+      }
+      return map;
+    } catch (error) {
+      logger.error(`Failed to get batch skill relations: ${error}`);
+      return map;
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
    * Get skill IDs filtered by owner or workspace from Neo4j
    */
   async getSkillIdsByFilter(filters: { owner_zalo_id?: string, workspace_id?: string, category?: string }): Promise<string[]> {

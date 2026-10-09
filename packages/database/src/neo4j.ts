@@ -6,10 +6,16 @@ declare global {
   var neo4jDriverGlobal: Driver | undefined;
 }
 
+let cachedDriver: Driver | null = null;
+
 export function getNeo4jDriver(): Driver {
   ensureEnvLoaded();
+  if (cachedDriver) {
+    return cachedDriver;
+  }
   if (global.neo4jDriverGlobal) {
-    return global.neo4jDriverGlobal;
+    cachedDriver = global.neo4jDriverGlobal;
+    return cachedDriver;
   }
 
   const uri = process.env.NEO4J_URI || 'bolt://localhost:7687';
@@ -17,13 +23,14 @@ export function getNeo4jDriver(): Driver {
   const password = process.env.NEO4J_PASSWORD || 'neo4j_password_here';
 
   const driver = neo4j.driver(uri, neo4j.auth.basic(user, password), {
-    maxConnectionPoolSize: 50,
-    connectionTimeout: 10000,
+    maxConnectionPoolSize: 25,
+    connectionAcquisitionTimeout: 20000,
+    maxConnectionLifetime: 3600000,
+    disableLosslessIntegers: true,
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    global.neo4jDriverGlobal = driver;
-  }
+  cachedDriver = driver;
+  global.neo4jDriverGlobal = driver;
 
   return driver;
 }

@@ -14,6 +14,9 @@ function ensureEnvLoaded() {
   }
 }
 
+let isSchemaEnsured = false;
+let isSchemaEnsuring = false;
+
 /**
  * Initialize PostgreSQL connection pool
  */
@@ -40,32 +43,15 @@ export function initDb(): Pool {
     console.error('Unexpected error on idle PostgreSQL client:', err?.message || err);
   });
 
-  // Self-heal: ensure user_profile table exists
-  pool.query(`
-    CREATE TABLE IF NOT EXISTS user_profile (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      zalo_id VARCHAR(255) UNIQUE,
-      username VARCHAR(255) UNIQUE,
-      password_hash TEXT,
-      full_name VARCHAR(255),
-      email VARCHAR(255),
-      phone VARCHAR(20),
-      gender VARCHAR(20),
-      note TEXT,
-      role VARCHAR(50) DEFAULT 'user',
-      status VARCHAR(50) DEFAULT 'active',
-      api_token VARCHAR(255),
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `).catch((err) => {
-    console.error('Failed to auto-ensure user_profile table:', err.message);
-  });
-
-  // Self-heal: ensure all tables and schemas match application requirements
-  ensureWorkspacesSchema(pool).catch((err) => {
-    console.error('Failed to auto-ensure database schema:', err.message);
-  });
+  // In production, tables already exist and sequential DDL roundtrips take 50+ seconds over Tokyo link.
+  // Only run auto-ensure if explicitly requested or in non-production environments.
+  if (process.env.AUTO_MIGRATE_SCHEMA === 'true' || process.env.NODE_ENV !== 'production') {
+    ensureWorkspacesSchema(pool).catch((err) => {
+      console.warn('Failed to auto-ensure database schema:', err.message);
+    });
+  } else {
+    isSchemaEnsured = true;
+  }
 
   return pool;
 }
@@ -73,7 +59,11 @@ export function initDb(): Pool {
 /**
  * Ensure all tables have required columns and drop legacy conflicting camelCase constraints
  */
-export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
+export async function ensureWorkspacesSchema(dbPool?: Pool, force = false): Promise<void> {
+  if (!force && (isSchemaEnsured || isSchemaEnsuring)) {
+    return;
+  }
+  isSchemaEnsuring = true;
   const db = dbPool || getDb();
   const steps = [
     // 1. WORKSPACES
@@ -413,12 +403,17 @@ export async function ensureWorkspacesSchema(dbPool?: Pool): Promise<void> {
      WHERE t.tool_group_id IS NULL AND t.key LIKE tg.key || '_%'`
   ];
 
-  for (const queryStr of steps) {
-    try {
-      await db.query(queryStr);
-    } catch (err: any) {
-      console.warn(`[DB Migration Notice]: ${err.message}`);
+  try {
+    for (const queryStr of steps) {
+      try {
+        await db.query(queryStr);
+      } catch (err: any) {
+        console.warn(`[DB Migration Notice]: ${err.message}`);
+      }
     }
+  } finally {
+    isSchemaEnsured = true;
+    isSchemaEnsuring = false;
   }
 }
 
