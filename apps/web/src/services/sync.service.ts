@@ -1131,42 +1131,24 @@ export class WorkspaceUserSyncService {
         throw new Error(`Invalid role: ${role}`);
       }
 
-      // 1. Check if assignment already exists
-      const existCheck = await txn.pgQuery(
-        'SELECT id FROM workspace_user_roles WHERE workspace_id = $1 AND user_id = $2',
-        [workspace_id, user_id]
-      );
-
-      let roleRecord;
-
-      if (existCheck.rows.length > 0) {
-        // Update existing
-        const updateResult = await txn.pgQuery(
-          `UPDATE workspace_user_roles
-           SET role = $1, assigned_by = $2, updated_at = NOW()
-           WHERE workspace_id = $3 AND user_id = $4
-           RETURNING id, workspace_id, user_id, role, assigned_by, created_at, updated_at`,
-          [role, assigned_by || null, workspace_id, user_id]
-        );
-        roleRecord = updateResult.rows[0];
-      } else {
-        // Create new
-        const createResult = await txn.pgQuery(
-          `INSERT INTO workspace_user_roles (workspace_id, user_id, role, assigned_by, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
-           RETURNING id, workspace_id, user_id, role, assigned_by, created_at, updated_at`,
-          [workspace_id, user_id, role, assigned_by || null]
-        );
-        roleRecord = createResult.rows[0];
+      // 1. Verify existence in PostgreSQL (Entity Store)
+      const userCheck = await txn.pgQuery('SELECT id FROM user_profile WHERE id = $1', [user_id]);
+      if (userCheck.rows.length === 0) {
+        throw new Error(`User not found: ${user_id}`);
       }
 
-      // 2. Update/Create in Neo4j
+      const wsCheck = await txn.pgQuery('SELECT id FROM workspaces WHERE id = $1', [workspace_id]);
+      if (wsCheck.rows.length === 0) {
+        throw new Error(`Workspace not found: ${workspace_id}`);
+      }
+
+      // 2. Manage Authorization exclusively in Neo4j (Graph RBAC)
       const neo4jResult = await txn.neo4jRun(
         `MATCH (u:ZaloUser {id: $user_id})
          MATCH (w:Workspace {id: $workspace_id})
-         MERGE (u)-[r:HAS_ROLE {role: $role}]->(w)
-         SET r.updated_at = datetime()
-         RETURN r`,
+         MERGE (u)-[r:PART_OF]->(w)
+         SET r.role = $role, r.assigned_at = datetime()
+         RETURN r.role as role`,
         {
           user_id,
           workspace_id,
@@ -1175,14 +1157,14 @@ export class WorkspaceUserSyncService {
       );
 
       if (neo4jResult.records.length === 0) {
-        throw new Error('Failed to update role in Neo4j');
+        throw new Error('Failed to update PART_OF role relationship in Neo4j');
       }
 
       await txn.commit();
       logger.info(
-        `User role assigned: user ${user_id} -> workspace ${workspace_id} (${role})`
+        `User role assigned in Neo4j: user ${user_id} -[:PART_OF {role: '${role}'}]-> workspace ${workspace_id}`
       );
-      return roleRecord;
+      return { workspace_id, user_id, role, assigned_by: assigned_by || null };
     } catch (error) {
       await txn.rollback();
       logger.error(`Failed to assign user role: ${error}`);
@@ -1191,7 +1173,7 @@ export class WorkspaceUserSyncService {
   }
 
   /**
-   * Remove user from workspace
+   * Remove user from workspace (Neo4j Graph RBAC)
    */
   static async removeUserFromWorkspace(
     workspace_id: string,
@@ -1202,15 +1184,9 @@ export class WorkspaceUserSyncService {
     try {
       await txn.begin();
 
-      // 1. Delete from PostgreSQL
-      await txn.pgQuery(
-        'DELETE FROM workspace_user_roles WHERE workspace_id = $1 AND user_id = $2',
-        [workspace_id, user_id]
-      );
-
-      // 2. Delete from Neo4j
+      // Delete PART_OF relationship from Neo4j (Single Source of Truth)
       const neo4jResult = await txn.neo4jRun(
-        `MATCH (u:ZaloUser {id: $user_id})-[r:HAS_ROLE]->(w:Workspace {id: $workspace_id})
+        `MATCH (u:ZaloUser {id: $user_id})-[r:PART_OF]->(w:Workspace {id: $workspace_id})
          DELETE r
          RETURN count(r) as deleted`,
         {

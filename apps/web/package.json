@@ -5,7 +5,7 @@
   "description": "OmniAgent Web Dashboard - Next.js Control Plane",
   "scripts": {
     "dev": "next dev -p 7140",
-    "build": "next build",
+    "build": "next build && mkdir -p .next/standalone/apps/web/.next/server && cp ../../node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma/client/libquery_engine-linux-arm64-openssl-3.0.x.so.node .next/standalone/apps/web/.next/server/ 2>/dev/null || true",
     "start": "next start -p 7140",
     "lint": "next lint"
   },

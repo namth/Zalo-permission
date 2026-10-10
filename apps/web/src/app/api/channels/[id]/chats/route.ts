@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, runCypher } from '@omniagent/database';
+import { query } from '@/lib/db';
+import { runCypher } from '@omniagent/database';
 
 export async function GET(
   _req: NextRequest,
@@ -10,27 +11,35 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const accountId = params.id;
-    const chats = await prisma.channelChat.findMany({
-      where: { accountId },
-      include: {
-        workspace: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const chatsRes = await query(`
+      SELECT 
+        cc.id,
+        cc.platform,
+        cc.platform_chat_id,
+        cc.title,
+        cc.chat_type,
+        cc.is_active,
+        cc.always_respond,
+        cc.workspace_id,
+        w.name as workspace_name,
+        cc.created_at
+      FROM channel_chats cc
+      LEFT JOIN workspaces w ON w.id = cc.workspace_id
+      WHERE cc.account_id = $1
+      ORDER BY cc.created_at DESC
+    `, [accountId]);
 
-    const data = chats.map((c: any) => ({
+    const data = chatsRes.rows.map((c: any) => ({
       id: c.id,
       platform: c.platform,
-      platform_chat_id: c.platformChatId,
+      platform_chat_id: c.platform_chat_id,
       title: c.title,
-      chat_type: c.chatType,
-      is_active: c.isActive,
-      always_respond: Boolean(c.alwaysRespond),
-      workspace_id: c.workspaceId,
-      workspace_name: c.workspace?.name || null,
-      created_at: c.createdAt,
+      chat_type: c.chat_type,
+      is_active: Boolean(c.is_active),
+      always_respond: Boolean(c.always_respond),
+      workspace_id: c.workspace_id,
+      workspace_name: c.workspace_name || null,
+      created_at: c.created_at,
     }));
 
     return NextResponse.json({ success: true, data });
@@ -59,44 +68,34 @@ export async function POST(
       );
     }
 
-    const account = await prisma.channelAccount.findUnique({
-      where: { id: accountId },
-    });
-
-    if (!account) {
+    const accRes = await query(`SELECT id, platform FROM channel_accounts WHERE id = $1`, [accountId]);
+    if (accRes.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Channel account not found' },
         { status: 404 }
       );
     }
+    const account = accRes.rows[0];
 
     // Upsert chat in PostgreSQL
-    const chat = await prisma.channelChat.upsert({
-      where: {
-        platform_platformChatId: {
-          platform: account.platform,
-          platformChatId: String(platform_chat_id).trim(),
-        },
-      },
-      update: {
-        title: title.trim(),
-        workspaceId: workspace_id ? String(workspace_id) : null,
-        chatType: chat_type,
-        isActive: true,
-      },
-      create: {
-        accountId,
-        platform: account.platform,
-        platformChatId: String(platform_chat_id).trim(),
-        title: title.trim(),
-        chatType: chat_type,
-        workspaceId: workspace_id ? String(workspace_id) : null,
-        isActive: true,
-      },
-      include: {
-        workspace: { select: { id: true, name: true } },
-      },
-    });
+    const chatRes = await query(`
+      INSERT INTO channel_chats (id, account_id, platform, platform_chat_id, title, chat_type, workspace_id, is_active, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+      ON CONFLICT (platform, platform_chat_id) DO UPDATE
+      SET title = EXCLUDED.title,
+          workspace_id = EXCLUDED.workspace_id,
+          chat_type = EXCLUDED.chat_type,
+          is_active = true,
+          updated_at = NOW()
+      RETURNING *
+    `, [accountId, account.platform, String(platform_chat_id).trim(), title.trim(), chat_type, workspace_id ? String(workspace_id) : null]);
+    const chat = chatRes.rows[0];
+
+    let wsName = null;
+    if (chat.workspace_id) {
+      const wsRes = await query(`SELECT name FROM workspaces WHERE id = $1`, [chat.workspace_id]);
+      wsName = wsRes.rows[0]?.name || null;
+    }
 
     // Sync to Neo4j graph
     const cypher = `
@@ -132,13 +131,13 @@ export async function POST(
       data: {
         id: chat.id,
         platform: chat.platform,
-        platform_chat_id: chat.platformChatId,
+        platform_chat_id: chat.platform_chat_id,
         title: chat.title,
-        chat_type: chat.chatType,
-        is_active: chat.isActive,
-        workspace_id: chat.workspaceId,
-        workspace_name: chat.workspace?.name || null,
-        created_at: chat.createdAt,
+        chat_type: chat.chat_type,
+        is_active: chat.is_active,
+        workspace_id: chat.workspace_id,
+        workspace_name: wsName,
+        created_at: chat.created_at,
       },
     });
   } catch (error) {
@@ -166,33 +165,36 @@ export async function PATCH(
       );
     }
 
-    const existing = await prisma.channelChat.findFirst({
-      where: { id: chat_id, accountId },
-    });
-
-    if (!existing) {
+    const existingRes = await query(`SELECT * FROM channel_chats WHERE id = $1 AND account_id = $2`, [chat_id, accountId]);
+    if (existingRes.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Chat not found for this account' },
         { status: 404 }
       );
     }
+    const oldChat = existingRes.rows[0];
+
+    const targetWsId = workspace_id !== undefined ? (workspace_id || null) : oldChat.workspace_id;
+    const targetTitle = title !== undefined ? String(title).trim() : oldChat.title;
+    const targetIsActive = is_active !== undefined ? Boolean(is_active) : oldChat.is_active;
+    const targetAlwaysRespond = always_respond !== undefined ? Boolean(always_respond) : Boolean(oldChat.always_respond);
 
     // Update in Postgres
-    const updated = await prisma.channelChat.update({
-      where: { id: chat_id },
-      data: {
-        workspaceId: workspace_id !== undefined ? (workspace_id || null) : undefined,
-        title: title !== undefined ? String(title).trim() : undefined,
-        isActive: is_active !== undefined ? Boolean(is_active) : undefined,
-        alwaysRespond: always_respond !== undefined ? Boolean(always_respond) : undefined,
-      },
-      include: {
-        workspace: { select: { id: true, name: true } },
-      },
-    });
+    const updatedRes = await query(`
+      UPDATE channel_chats
+      SET workspace_id = $1, title = $2, is_active = $3, always_respond = $4, updated_at = NOW()
+      WHERE id = $5
+      RETURNING *
+    `, [targetWsId, targetTitle, targetIsActive, targetAlwaysRespond, chat_id]);
+    const updated = updatedRes.rows[0];
+
+    let wsName = null;
+    if (updated.workspace_id) {
+      const wsRes = await query(`SELECT name FROM workspaces WHERE id = $1`, [updated.workspace_id]);
+      wsName = wsRes.rows[0]?.name || null;
+    }
 
     // Update in Neo4j
-    const targetWsId = workspace_id !== undefined ? (workspace_id || null) : updated.workspaceId;
     const cypher = `
       MATCH (c:ChannelChat { id: $id })
       OPTIONAL MATCH (c)-[r:BELONGS_TO]->(:Workspace)
@@ -213,7 +215,7 @@ export async function PATCH(
     await runCypher(cypher, {
       id: chat_id,
       workspace_id: targetWsId,
-      always_respond: updated.alwaysRespond,
+      always_respond: updated.always_respond,
     }).catch((e) => console.warn('[Neo4j update warning]:', e));
 
     return NextResponse.json({
@@ -221,14 +223,14 @@ export async function PATCH(
       data: {
         id: updated.id,
         platform: updated.platform,
-        platform_chat_id: updated.platformChatId,
+        platform_chat_id: updated.platform_chat_id,
         title: updated.title,
-        chat_type: updated.chatType,
-        is_active: updated.isActive,
-        always_respond: Boolean(updated.alwaysRespond),
-        workspace_id: updated.workspaceId,
-        workspace_name: updated.workspace?.name || null,
-        created_at: updated.createdAt,
+        chat_type: updated.chat_type,
+        is_active: updated.is_active,
+        always_respond: Boolean(updated.always_respond),
+        workspace_id: updated.workspace_id,
+        workspace_name: wsName,
+        created_at: updated.created_at,
       },
     });
   } catch (error) {
@@ -256,11 +258,8 @@ export async function DELETE(
       );
     }
 
-    const existing = await prisma.channelChat.findFirst({
-      where: { id: chatId, accountId },
-    });
-
-    if (!existing) {
+    const existingRes = await query(`SELECT * FROM channel_chats WHERE id = $1 AND account_id = $2`, [chatId, accountId]);
+    if (existingRes.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Chat not found for this account' },
         { status: 404 }
@@ -268,9 +267,7 @@ export async function DELETE(
     }
 
     // Delete in Postgres
-    await prisma.channelChat.delete({
-      where: { id: chatId },
-    });
+    await query(`DELETE FROM channel_chats WHERE id = $1`, [chatId]);
 
     // Delete in Neo4j
     await runCypher(`MATCH (c:ChannelChat { id: $id }) DETACH DELETE c`, {

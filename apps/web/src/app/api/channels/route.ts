@@ -2,8 +2,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@omniagent/database';
-import { ensureWorkspacesSchema } from '@/lib/db';
+import { query, ensureWorkspacesSchema } from '@/lib/db';
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -11,49 +10,42 @@ export async function GET(): Promise<NextResponse> {
       console.warn('[API /api/channels] ensureWorkspacesSchema warning:', schemaErr?.message);
     });
 
-    let accounts: any[] = [];
-    try {
-      accounts = await prisma.channelAccount.findMany({
-        include: {
-          _count: {
-            select: { channelChats: true },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (countErr: any) {
-      console.warn('[API /api/channels] Count query failed, falling back to simple findMany:', countErr?.message);
-      try {
-        accounts = await prisma.channelAccount.findMany({
-          orderBy: { createdAt: 'desc' },
-        });
-      } catch (findErr: any) {
-        console.warn('[API /api/channels] Prisma findMany failed, falling back to raw SQL:', findErr?.message);
-        const rawRows: any = await prisma.$queryRawUnsafe(`
-          SELECT id, platform, 
-                 COALESCE("accountName", account_name, 'Tài khoản') as "accountName",
-                 COALESCE("authType", auth_type, 'QR_SESSION') as "authType", 
-                 status, metadata,
-                 COALESCE("lastSyncedAt", last_synced_at) as "lastSyncedAt",
-                 COALESCE("createdAt", created_at, NOW()) as "createdAt"
-          FROM channel_accounts
-          ORDER BY created_at DESC
-        `);
-        accounts = rawRows;
-      }
-    }
+    const res = await query(`
+      SELECT 
+        ca.id, 
+        ca.platform, 
+        COALESCE(ca.account_name, 'Tài khoản') as account_name,
+        COALESCE(ca.auth_type, 'QR_SESSION') as auth_type,
+        ca.status, 
+        ca.metadata, 
+        ca.last_synced_at, 
+        ca.created_at,
+        (SELECT COUNT(*)::int FROM channel_chats cc WHERE cc.account_id = ca.id) as chat_count
+      FROM channel_accounts ca
+      ORDER BY ca.created_at DESC
+    `);
 
-    const data = accounts.map((acc: any) => ({
-      id: acc.id,
-      platform: acc.platform,
-      account_name: acc.accountName || acc.account_name || 'Tài khoản',
-      auth_type: acc.authType || acc.auth_type || 'QR_SESSION',
-      status: acc.status || 'ACTIVE',
-      metadata: acc.metadata || {},
-      chat_count: acc._count?.channelChats || 0,
-      last_synced_at: acc.lastSyncedAt || acc.last_synced_at || null,
-      created_at: acc.createdAt || acc.created_at || new Date().toISOString(),
-    }));
+    const data = res.rows.map((acc: any) => {
+      let meta = acc.metadata;
+      if (typeof meta === 'string') {
+        try {
+          meta = JSON.parse(meta);
+        } catch (_) {
+          meta = {};
+        }
+      }
+      return {
+        id: acc.id,
+        platform: acc.platform,
+        account_name: acc.account_name || 'Tài khoản',
+        auth_type: acc.auth_type || 'QR_SESSION',
+        status: acc.status || 'ACTIVE',
+        metadata: meta || {},
+        chat_count: Number(acc.chat_count || 0),
+        last_synced_at: acc.last_synced_at || null,
+        created_at: acc.created_at || new Date().toISOString(),
+      };
+    });
 
     return NextResponse.json(
       { success: true, data },

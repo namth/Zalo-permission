@@ -274,45 +274,9 @@ export class UserService {
     const finalSource = await this.getUserById(realSourceId);
     if (!finalTarget || !finalSource) throw new Error('Terminal error: users not found after identification');
 
-    // 1. Move relationships in PostgreSQL
-    // Update workspace roles
-    // First, delete any s.user_id = sourceId that already exist as t.user_id = targetId in the same workspace
-    await query(
-      `DELETE FROM workspace_user_roles s
-       WHERE s.user_id = $2 
-       AND EXISTS (
-         SELECT 1 FROM workspace_user_roles t 
-         WHERE t.user_id = $1 
-         AND t.workspace_id = s.workspace_id
-       )`,
-      [realTargetId, realSourceId]
-    );
-    // Then update the remaining ones
-    await query(
-      `UPDATE workspace_user_roles SET user_id = $1 WHERE user_id = $2`,
-      [realTargetId, realSourceId]
-    );
-
+    // 1. Update entities in PostgreSQL (Entity Store)
     // Update audit logs
     await query(`UPDATE audit_logs SET user_id = $1 WHERE user_id = $2`, [realTargetId, realSourceId]);
-
-    // Update zalo group members
-    // First, delete any s.user_id = sourceId that already exist as t.user_id = targetId in the same zalo_group
-    await query(
-      `DELETE FROM zalo_group_members s
-       WHERE s.user_id = $2 
-       AND EXISTS (
-         SELECT 1 FROM zalo_group_members t 
-         WHERE t.user_id = $1 
-         AND t.zalo_group_id = s.zalo_group_id
-       )`,
-      [realTargetId, realSourceId]
-    );
-    // Then update the remaining ones
-    await query(
-      `UPDATE zalo_group_members SET user_id = $1 WHERE user_id = $2`,
-      [realTargetId, realSourceId]
-    );
 
     // 2. Move relationships in Neo4j
     try {

@@ -12,6 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { ToolGroup, fetchToolGroups, getToolGroupData, createToolGroupData, ToolGroupData, updateToolGroupData, deleteToolGroupData } from '../../tool-groups/api';
 import { WorkspaceWebhooksTab } from './components/workspace-webhooks-tab';
+import { WorkspaceDirectAssistantSection } from './components/workspace-direct-assistant-section';
 
 interface Workspace {
   id: string;
@@ -63,13 +64,6 @@ interface AvailableChannelChat {
   is_assigned_to_current: boolean;
 }
 
-interface ZaloGroup {
-  id: string;
-  thread_id: string;
-  name?: string;
-  created_at: string;
-}
-
 interface Tool {
   id: string;
   key: string;
@@ -114,7 +108,6 @@ export default function WorkspaceDetailPage() {
   const [availableChats, setAvailableChats] = useState<AvailableChannelChat[]>([]);
   const [chatIdToAssign, setChatIdToAssign] = useState('');
   const [assigningChat, setAssigningChat] = useState(false);
-  const [zaloGroups, setZaloGroups] = useState<ZaloGroup[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -126,7 +119,6 @@ export default function WorkspaceDetailPage() {
 
   // Forms
   const [formData, setFormData] = useState({ name: '', description: '' });
-  const [zaloFormData, setZaloFormData] = useState({ thread_id: '', name: '' });
   const [toolIdToAdd, setToolIdToAdd] = useState('');
   const [userIdToAdd, setUserIdToAdd] = useState('');
   const [userRoleToAdd, setUserRoleToAdd] = useState('MEMBER');
@@ -176,7 +168,6 @@ export default function WorkspaceDetailPage() {
           fetchChannelChats(),
           fetchAvailableChats(),
           fetchChannelAccounts(),
-          fetchZaloGroups(),
         ]);
       }
       if (activeTab === 'tools') {
@@ -240,11 +231,6 @@ export default function WorkspaceDetailPage() {
     }
   };
 
-  const fetchZaloGroups = async () => {
-    const res = await fetch(`/api/admin/workspaces/${workspaceId}/zalo-groups`);
-    const data = await res.json();
-    if (data.success) setZaloGroups(data.data || []);
-  };
 
   const fetchTools = async () => {
     const res = await fetch(`/api/admin/workspaces/${workspaceId}/tools`);
@@ -500,25 +486,6 @@ export default function WorkspaceDetailPage() {
     }
   };
 
-  const handleAddZaloGroup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = await fetch(`/api/admin/workspaces/${workspaceId}/zalo-groups`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(zaloFormData),
-    });
-    const data = await res.json();
-    if (data.success) {
-      setZaloFormData({ thread_id: '', name: '' });
-      fetchZaloGroups();
-    } else alert(data.error);
-  };
-
-  const handleRemoveZaloGroup = async (threadId: string) => {
-    if (!confirm('Remove this group?')) return;
-    const res = await fetch(`/api/admin/workspaces/${workspaceId}/zalo-groups?thread_id=${threadId}`, { method: 'DELETE' });
-    if ((await res.json()).success) fetchZaloGroups();
-  };
 
   const handleAddTool = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -899,58 +866,9 @@ export default function WorkspaceDetailPage() {
                 </div>
               </div>
 
-              {/* Legacy Zalo Groups (Accordion) */}
-              <div className="pt-6 border-t border-gray-200">
-                <details className="group">
-                  <summary className="cursor-pointer text-xs font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1 select-none">
-                    <span>Cấu hình nhóm Zalo Legacy (Cũ)</span>
-                  </summary>
-                  <div className="mt-4 space-y-4">
-                    {isAdmin && (
-                      <form onSubmit={handleAddZaloGroup} className="flex gap-2 p-3 bg-gray-50 rounded-lg">
-                        <input
-                          placeholder="Thread ID"
-                          className="border px-3 py-1.5 text-xs rounded flex-1"
-                          value={zaloFormData.thread_id}
-                          onChange={(e) => setZaloFormData({ ...zaloFormData, thread_id: e.target.value })}
-                          required
-                        />
-                        <input
-                          placeholder="Tên nhóm"
-                          className="border px-3 py-1.5 text-xs rounded flex-1"
-                          value={zaloFormData.name}
-                          onChange={(e) => setZaloFormData({ ...zaloFormData, name: e.target.value })}
-                        />
-                        <button className="flex items-center gap-1 bg-gray-700 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-gray-800 transition">
-                          <Plus size={14} weight="bold" />
-                          Thêm Legacy
-                        </button>
-                      </form>
-                    )}
-                    <div className="space-y-2">
-                      {zaloGroups.map((g) => (
-                        <div key={g.id} className="flex justify-between items-center border p-2.5 rounded-lg text-xs">
-                          <div>
-                            <Link href={`/zalo-groups/${g.id}`} className="font-semibold text-gray-800 hover:underline">
-                              {g.name || 'Unnamed'}
-                            </Link>
-                            <div className="text-[11px] text-gray-400">{g.thread_id}</div>
-                          </div>
-                          {isAdmin && (
-                            <button
-                              onClick={() => handleRemoveZaloGroup(g.thread_id)}
-                              className="text-red-600 hover:text-red-800"
-                            >
-                              <X size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      {zaloGroups.length === 0 && <p className="text-gray-400 text-xs">Không có nhóm zalo legacy nào.</p>}
-                    </div>
-                  </div>
-                </details>
-              </div>
+
+              {/* SECTION 2: TRỢ LÝ CHAT CÁ NHÂN THEO KHUNG GIỜ (FEAT-002) */}
+              <WorkspaceDirectAssistantSection workspaceId={workspaceId} />
             </div>
           )}
 
