@@ -1,6 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { UserService } from '@/services/user.service';
+import { getCurrentUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -33,8 +34,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
     try {
+        const currentUser = await getCurrentUser(req);
         const body = await req.json();
-        const user = await UserService.createUser(body); // TODO: get real admin ID from session
+        const user = await UserService.createUser(body, currentUser?.id);
 
         return NextResponse.json({ success: true, data: user }, { status: 201 });
     } catch (error) {

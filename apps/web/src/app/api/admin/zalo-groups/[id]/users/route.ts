@@ -1,6 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ZaloGroupService } from '@/services/zalo-group.service';
+import { getCurrentUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,7 @@ export async function POST(
     { params }: { params: { id: string } }
 ): Promise<NextResponse> {
     try {
+        const currentUser = await getCurrentUser(req);
         const body = await req.json();
         const { user_id, role } = body;
 
@@ -40,7 +42,7 @@ export async function POST(
             return NextResponse.json({ success: false, error: 'user_id is required' }, { status: 400 });
         }
 
-        const member = await ZaloGroupService.addUserToGroup(params.id, user_id, role || 'MEMBER', undefined); // TODO: replace with actual user_id from session
+        const member = await ZaloGroupService.addUserToGroup(params.id, user_id, role || 'MEMBER', currentUser?.id);
         return NextResponse.json({ success: true, data: member }, { status: 201 });
     } catch (error) {
         logger.error(`Error adding user to zalo group: ${error}`);
@@ -54,6 +56,7 @@ export async function DELETE(
     { params }: { params: { id: string } }
 ): Promise<NextResponse> {
     try {
+        const currentUser = await getCurrentUser(req);
         const url = new URL(req.url);
         const user_id = url.searchParams.get('user_id');
 
@@ -61,7 +64,7 @@ export async function DELETE(
             return NextResponse.json({ success: false, error: 'user_id is required' }, { status: 400 });
         }
 
-        await ZaloGroupService.removeUserFromGroup(params.id, user_id, undefined); // TODO: replace with actual user_id from session
+        await ZaloGroupService.removeUserFromGroup(params.id, user_id, currentUser?.id);
         return NextResponse.json({ success: true, message: 'User removed from zalo group' }, { status: 200 });
     } catch (error) {
         logger.error(`Error removing user from zalo group: ${error}`);
